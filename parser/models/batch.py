@@ -1,11 +1,11 @@
-async def create_batch(pool, batch_no: str, project_id: int, year_month: str,
+async def create_batch(pool, batch_no: str, project_id: int, ym: str,
                        uploaded_by: int, file_name: str, file_size: int) -> int:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO upload_batches (batch_no, project_id, year_month, uploaded_by, file_name, file_size) "
+                "INSERT INTO upload_batches (batch_no, project_id, ym, uploaded_by, file_name, file_size) "
                 "VALUES (%s,%s,%s,%s,%s,%s)",
-                (batch_no, project_id, year_month, uploaded_by, file_name, file_size),
+                (batch_no, project_id, ym, uploaded_by, file_name, file_size),
             )
             return cur.lastrowid
 
@@ -29,7 +29,7 @@ async def get_batch(pool, batch_id: int) -> dict | None:
             return dict(zip(cols, row))
 
 
-async def list_batches(pool, project_id: int = None, year_month: str = None) -> list[dict]:
+async def list_batches(pool, project_id: int = None, ym: str = None) -> list[dict]:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             sql = "SELECT * FROM upload_batches WHERE 1=1"
@@ -37,9 +37,9 @@ async def list_batches(pool, project_id: int = None, year_month: str = None) -> 
             if project_id:
                 sql += " AND project_id=%s"
                 params.append(project_id)
-            if year_month:
-                sql += " AND year_month=%s"
-                params.append(year_month)
+            if ym:
+                sql += " AND ym=%s"
+                params.append(ym)
             sql += " ORDER BY id DESC"
             await cur.execute(sql, params)
             rows = await cur.fetchall()

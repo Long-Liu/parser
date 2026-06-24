@@ -11,9 +11,9 @@ bp = Blueprint("batches", url_prefix="/api/batches")
 async def get_batches(request):
     pool = request.app.ctx.pool
     project_id = request.args.get("project_id")
-    year_month = request.args.get("year_month")
+    ym = request.args.get("ym")
     batches = await list_batches(pool, project_id=int(project_id) if project_id else None,
-                                  year_month=year_month)
+                                  ym=ym)
     return json({"batches": batches})
 
 

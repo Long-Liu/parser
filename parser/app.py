@@ -5,7 +5,7 @@ app = Sanic("excel_parser")
 
 
 @app.listener("before_server_start")
-async def setup_db(app, loop):
+async def setup_db(app):
     from parser.db.connection import get_pool
     from parser.db.schema import init_db
     from parser.db.seed import seed_defaults
@@ -17,7 +17,7 @@ async def setup_db(app, loop):
 
 
 @app.listener("after_server_stop")
-async def close_db(app, loop):
+async def close_db(app):
     if hasattr(app.ctx, "pool"):
         app.ctx.pool.close()
         await app.ctx.pool.wait_closed()

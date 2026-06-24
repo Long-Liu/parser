@@ -23,7 +23,7 @@ async def upload(request):
 
     file = request.files["file"]
     project_id = int(request.form.get("project_id", 0))
-    year_month = request.form.get("year_month", datetime.now().strftime("%Y-%m"))
+    ym = request.form.get("ym", datetime.now().strftime("%Y-%m"))
     batch_no = request.form.get("batch_no", f"B{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}")
 
     if project_id <= 0:
@@ -38,7 +38,7 @@ async def upload(request):
 
     pool = request.app.ctx.pool
     batch_id = await create_batch(pool, batch_no=batch_no, project_id=project_id,
-                                   year_month=year_month, uploaded_by=request.ctx.user_id,
+                                   ym=ym, uploaded_by=request.ctx.user_id,
                                    file_name=file.name, file_size=file_size)
 
     try:
