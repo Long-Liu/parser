@@ -1,11 +1,42 @@
 import pytest
 import os
+from parser.db.connection import engine, SessionLocal
+from parser.db.schema import init_db, create_data_table
+from parser.utils.config_loader import list_configs
 from parser.core.pipeline import Pipeline
 from parser.utils.config_loader import match_template
 import openpyxl
 
 
+@pytest.mark.asyncio
+async def test_db_init():
+    """Test that fixed tables can be created"""
+    await init_db()
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            __import__("sqlalchemy").text("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='excel_parser'")
+        )
+        count = result.scalar()
+        assert count > 0
+
+
+@pytest.mark.asyncio
+async def test_data_tables_created():
+    """Test that all template data tables are created"""
+    configs = list_configs()
+    for config in configs:
+        await create_data_table(config["template_id"], config.get("columns", []))
+
+    async with engine.connect() as conn:
+        for config in configs:
+            result = await conn.execute(
+                __import__("sqlalchemy").text(f"SHOW TABLES LIKE 'data_{config['template_id']}'")
+            )
+            assert result.fetchone() is not None, f"Table data_{config['template_id']} not found"
+
+
 def test_full_parse_with_real_excel():
+    """Test that all 15 sheets parse correctly"""
     excel_path = "excel/xxx项目主体施工动态成本表-样式 - 副本.xlsx"
     if not os.path.exists(excel_path):
         pytest.skip("Excel file not found")
@@ -25,12 +56,11 @@ def test_full_parse_with_real_excel():
                   f"({result['error_rows']} errors) [template: {result['template_id']}]")
         else:
             skipped += 1
-            print(f"\n  {sheet_name}: SKIPPED (no template match)")
+            print(f"\n  {sheet_name}: SKIPPED")
 
     matched = len(results)
-    print(f"\nMatched sheets: {matched}, Skipped: {skipped}")
     total_rows = sum(r["success_rows"] for r in results)
-    print(f"Total data rows extracted: {total_rows}")
+    print(f"\nMatched: {matched}, Skipped: {skipped}, Total rows: {total_rows}")
 
-    assert matched > 0, "At least one sheet should match a template"
+    assert matched > 0, "At least one sheet should match"
     assert total_rows > 0, "Should extract some data"
