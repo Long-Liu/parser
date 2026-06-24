@@ -13,7 +13,31 @@ async def setup_db(app):
     pool = await get_pool()
     await init_db(pool)
     await seed_defaults(pool)
+    await _create_template_tables(pool)
     app.ctx.pool = pool
+
+
+async def _create_template_tables(pool):
+    from parser.utils.config_loader import list_configs
+    configs = list_configs()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            for config in configs:
+                tid = config["template_id"]
+                cols = [
+                    "id INT AUTO_INCREMENT PRIMARY KEY",
+                    "batch_id INT NOT NULL",
+                    "hierarchy_code VARCHAR(50)",
+                ]
+                for col_def in config.get("columns", []):
+                    col_sql = f"`{col_def['db_field']}` {col_def.get('type', 'varchar(255)')}"
+                    cols.append(col_sql)
+                cols.append("monthly_data JSON")
+                cols.append("created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+                cols.append("INDEX idx_batch (batch_id)")
+                cols.append("INDEX idx_hierarchy (hierarchy_code)")
+                sql = f"CREATE TABLE IF NOT EXISTS data_{tid} ({', '.join(cols)})"
+                await cur.execute(sql)
 
 
 @app.listener("after_server_stop")
