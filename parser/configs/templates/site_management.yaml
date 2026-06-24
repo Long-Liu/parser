@@ -1,0 +1,67 @@
+template_id: site_management
+sheet_pattern: "表3*现场管理费*"
+description: "现场管理费动态表"
+
+headers:
+  rows: [3, 4]
+  data_start_row: 5
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: fee_name
+    match_header: ["费用名称"]
+    type: varchar(200)
+  - db_field: unit
+    match_header: ["单位"]
+    type: varchar(50)
+  - db_field: quantity
+    match_header: ["数量"]
+    type: decimal(10,2)
+  - db_field: unit_price_ex_tax
+    match_header: ["单价", "不含税"]
+    type: decimal(15,2)
+  - db_field: tax_rate
+    match_header: ["单价", "税率"]
+    type: decimal(5,4)
+  - db_field: unit_price_with_tax
+    match_header: ["单价", "含税单价"]
+    type: decimal(15,2)
+  - db_field: total_ex_tax
+    match_header: ["合价", "不含税"]
+    type: decimal(15,2)
+  - db_field: tax_amount
+    match_header: ["合价", "税金"]
+    type: decimal(15,2)
+  - db_field: total_with_tax
+    match_header: ["合计"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text
+  - db_field: current_amount
+    match_header: ["截止到当前"]
+    type: decimal(15,2)
+  - db_field: subsequent_amount
+    match_header: ["后续发生"]
+    type: decimal(15,2)
+  - db_field: estimated_amount
+    match_header: ["预计完工成本"]
+    type: decimal(15,2)
+
+dynamic_columns:
+  - db_prefix: monthly
+    match_header: ["2025年"]
+    type: decimal(15,2)
+  - db_prefix: monthly_2026
+    match_header: ["2026年"]
+    type: decimal(15,2)

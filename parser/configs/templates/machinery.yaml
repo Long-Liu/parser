@@ -1,0 +1,86 @@
+template_id: machinery
+sheet_pattern: "表4*机械费用*"
+description: "机械费用动态表"
+
+headers:
+  rows: [1, 2]
+  data_start_row: 3
+
+hierarchy:
+  column_name: "序号 "
+  separator: "-"
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: cell_match
+    patterns: ["^金额单位"]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: machine_name
+    match_header: ["名称"]
+    type: varchar(200)
+  - db_field: model_spec
+    match_header: ["型号规格"]
+    type: varchar(100)
+  - db_field: quantity
+    match_header: ["数量"]
+    type: int
+  - db_field: planned_start
+    match_header: ["计划使用时间"]
+    type: varchar(50)
+  - db_field: planned_end
+    match_header: ["计划退场时间"]
+    type: varchar(50)
+  - db_field: source
+    match_header: ["机械来源"]
+    type: varchar(50)
+  - db_field: usage_desc
+    match_header: ["用途说明"]
+    type: text
+  - db_field: billing_method
+    match_header: ["计费方式"]
+    type: varchar(50)
+  - db_field: planned_period
+    match_header: ["使用周期"]
+    type: decimal(10,2)
+  - db_field: planned_monthly_rate
+    match_header: ["请示上报机械策划", "含税月租"]
+    type: decimal(15,2)
+  - db_field: planned_entry_exit_fee
+    match_header: ["请示上报机械策划", "含税进退场及安拆费"]
+    type: decimal(15,2)
+  - db_field: planned_mgmt_fee
+    match_header: ["请示上报机械策划", "管理费"]
+    type: decimal(15,2)
+  - db_field: planned_total
+    match_header: ["请示上报机械策划", "含税合计"]
+    type: decimal(15,2)
+  - db_field: contract_period
+    match_header: ["机械合同", "使用周期"]
+    type: decimal(10,2)
+  - db_field: contract_monthly_rate
+    match_header: ["机械合同", "含税月租"]
+    type: decimal(15,2)
+  - db_field: contract_entry_exit_fee
+    match_header: ["机械合同", "含税进退场及安拆费"]
+    type: decimal(15,2)
+  - db_field: contract_mgmt_fee
+    match_header: ["机械合同", "管理费"]
+    type: decimal(15,2)
+  - db_field: contract_ex_tax
+    match_header: ["机械合同", "不含税合价"]
+    type: decimal(15,2)
+  - db_field: contract_tax
+    match_header: ["机械合同", "税金"]
+    type: decimal(15,2)
+  - db_field: contract_total
+    match_header: ["机械合同", "含税合计"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

@@ -1,0 +1,8 @@
+sanic>=24.6.0
+aiomysql>=0.2.0
+openpyxl>=3.1.0
+pyyaml>=6.0
+pyjwt>=2.8.0
+bcrypt>=4.1.0
+pytest>=8.0
+pytest-sanic>=1.9.0

@@ -1,0 +1,83 @@
+template_id: dynamic_indicator
+sheet_pattern: "动态指标"
+description: "动态指标总表"
+
+headers:
+  rows: [3, 4]
+  data_start_row: 5
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: item_name
+    match_header: ["名称"]
+    type: varchar(300)
+  - db_field: indicator_ex_tax
+    match_header: ["清单量经济考核指标", "不含增值税指标"]
+    type: decimal(15,2)
+  - db_field: indicator_tax_rate
+    match_header: ["清单量经济考核指标", "增值税税率"]
+    type: decimal(5,4)
+  - db_field: indicator_tax
+    match_header: ["清单量经济考核指标", "增值税税金"]
+    type: decimal(15,2)
+  - db_field: indicator_with_tax
+    match_header: ["清单量经济考核指标", "含税指标"]
+    type: decimal(15,2)
+  - db_field: indicator_ratio
+    match_header: ["清单量经济考核指标", "比例"]
+    type: decimal(15,10)
+  - db_field: estimated_ex_tax
+    match_header: ["预计完工量经济考核指标", "不含增值税指标"]
+    type: decimal(15,2)
+  - db_field: estimated_tax_rate
+    match_header: ["预计完工量经济考核指标", "增值税税率"]
+    type: decimal(5,4)
+  - db_field: estimated_tax
+    match_header: ["预计完工量经济考核指标", "增值税税金"]
+    type: decimal(15,2)
+  - db_field: estimated_with_tax
+    match_header: ["预计完工量经济考核指标", "含税指标"]
+    type: decimal(15,2)
+  - db_field: estimated_ratio
+    match_header: ["预计完工量经济考核指标", "比例"]
+    type: decimal(15,10)
+  - db_field: qty_change
+    match_header: ["工程量增减变动情况"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text
+  - db_field: transfer_in
+    match_header: ["调进", "调进金额"]
+    type: decimal(15,2)
+  - db_field: transfer_in_desc
+    match_header: ["调进", "调进说明"]
+    type: text
+  - db_field: transfer_out
+    match_header: ["调出", "调出金额"]
+    type: decimal(15,2)
+  - db_field: transfer_out_desc
+    match_header: ["调出", "调出说明"]
+    type: text
+  - db_field: adjusted_ex_tax
+    match_header: ["按分包策划标段各税率调整后指标", "不含增值税指标"]
+    type: decimal(15,2)
+  - db_field: adjusted_with_tax
+    match_header: ["按分包策划标段各税率调整后指标", "含税指标"]
+    type: decimal(15,2)
+  - db_field: current_budget
+    match_header: ["现执行预算"]
+    type: decimal(15,2)
+  - db_field: incurred_cost
+    match_header: ["截止目前已发生成本"]
+    type: decimal(15,2)
