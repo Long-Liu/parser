@@ -1,0 +1,56 @@
+template_id: bid_comparison
+sheet_pattern: "表5*标段对比*"
+description: "建安标段对比分析表"
+
+headers:
+  rows: [2, 3, 4]
+  data_start_row: 5
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: item_name
+    match_header: ["项目名称"]
+    type: varchar(300)
+  - db_field: subcontract_budget
+    match_header: ["分包指标预算"]
+    type: decimal(15,2)
+  - db_field: subcontract_price
+    match_header: ["分包定标价"]
+    type: decimal(15,2)
+  - db_field: deviation
+    match_header: ["偏差"]
+    type: decimal(15,2)
+  - db_field: process_settlement
+    match_header: ["分包过程结算产值"]
+    type: decimal(15,2)
+  - db_field: estimated_in_scope
+    match_header: ["预计完工成本", "清单内"]
+    type: decimal(15,2)
+  - db_field: estimated_out_scope_active
+    match_header: ["预计完工成本", "有源"]
+    type: decimal(15,2)
+  - db_field: estimated_out_scope_passive
+    match_header: ["预计完工成本", "无源"]
+    type: decimal(15,2)
+  - db_field: estimated_total
+    match_header: ["预计完工成本", "合计"]
+    type: decimal(15,2)
+  - db_field: estimated_indicator
+    match_header: ["预计完工指标"]
+    type: decimal(15,2)
+  - db_field: indicator_deviation
+    match_header: ["预计完工指标", "偏差"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

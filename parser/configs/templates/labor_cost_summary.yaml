@@ -1,0 +1,62 @@
+template_id: labor_cost_summary
+sheet_pattern: "表1-1*"
+description: "人工费动态汇总表"
+
+headers:
+  rows: [1, 2]
+  data_start_row: 3
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: total_labor
+    match_header: ["人工费总额"]
+    type: decimal(15,2)
+  - db_field: planned_progress
+    match_header: ["截止当月计划进度"]
+    type: decimal(10,4)
+  - db_field: planned_labor
+    match_header: ["计划发生人工费"]
+    type: decimal(15,2)
+  - db_field: actual_progress
+    match_header: ["截止当月实际进度"]
+    type: decimal(10,4)
+  - db_field: actual_labor
+    match_header: ["实际进度发生人工费"]
+    type: decimal(15,2)
+  - db_field: planned_person_months
+    match_header: ["计划发生人月数"]
+    type: decimal(10,2)
+  - db_field: planned_labor_indicator
+    match_header: ["实际与指标策划对比", "计划发生人工费"]
+    type: decimal(15,2)
+  - db_field: actual_person_months
+    match_header: ["实际发生人月数"]
+    type: decimal(10,2)
+  - db_field: actual_labor_indicator
+    match_header: ["实际与指标策划对比", "实际发生人工费"]
+    type: decimal(15,2)
+  - db_field: indicator_person_months
+    match_header: ["指标人月数"]
+    type: decimal(10,2)
+  - db_field: indicator_labor
+    match_header: ["指标人工费"]
+    type: decimal(15,2)
+  - db_field: completed_person_months
+    match_header: ["完工人月数"]
+    type: decimal(10,2)
+  - db_field: completed_labor
+    match_header: ["完工人工费"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

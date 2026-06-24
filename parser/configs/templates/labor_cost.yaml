@@ -1,5 +1,5 @@
 template_id: labor_cost
-sheet_pattern: "表1*人工费*"
+sheet_pattern: "表1 人工费-动态"
 description: "人工费动态表"
 
 headers:

@@ -1,0 +1,91 @@
+template_id: installation_dynamic
+sheet_pattern: "表7*安装工程*"
+description: "安装工程动态表"
+
+headers:
+  rows: [2, 3, 4]
+  data_start_row: 5
+
+hierarchy:
+  column_name: "项目编码"
+  separator: ""
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明：", "^金额单位"]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 10
+
+columns:
+  - db_field: project_code
+    match_header: ["项目编码"]
+    type: varchar(50)
+  - db_field: project_name
+    match_header: ["项目名称"]
+    type: varchar(300)
+  - db_field: project_feature
+    match_header: ["项目特征"]
+    type: text
+  - db_field: unit
+    match_header: ["计量单位"]
+    type: varchar(50)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text
+  - db_field: clarification
+    match_header: ["澄清"]
+    type: text
+  - db_field: cost_category
+    match_header: ["成本科目"]
+    type: varchar(200)
+  - db_field: initial_bid_qty
+    match_header: ["初始招标工程量"]
+    type: decimal(15,2)
+  - db_field: device_material_fee
+    match_header: ["主承接价格", "装置性材料费"]
+    type: decimal(15,2)
+  - db_field: installation_fee
+    match_header: ["主承接价格", "安装费"]
+    type: decimal(15,2)
+  - db_field: contract_device_material
+    match_header: ["主合同", "装置性材料费"]
+    type: decimal(15,2)
+  - db_field: contract_installation
+    match_header: ["主合同", "安装费"]
+    type: decimal(15,2)
+  - db_field: indicator_device_material
+    match_header: ["经济考核指标单价", "装置性材料费"]
+    type: decimal(15,2)
+  - db_field: indicator_fabrication
+    match_header: ["指标单价", "制作费"]
+    type: decimal(15,2)
+  - db_field: indicator_construction
+    match_header: ["指标单价", "施工费"]
+    type: decimal(15,2)
+  - db_field: upstream_qty
+    match_header: ["上游动态", "工程量"]
+    type: decimal(15,2)
+  - db_field: drawing_stat_qty
+    match_header: ["施工图统计量"]
+    type: decimal(15,2)
+  - db_field: drawing_confirmed_qty
+    match_header: ["施工图确权量"]
+    type: decimal(15,2)
+  - db_field: cumulative_settlement_qty
+    match_header: ["累计结算量"]
+    type: decimal(15,2)
+  - db_field: estimated_device_material
+    match_header: ["预计完工合价", "装置性材料费"]
+    type: decimal(15,2)
+  - db_field: estimated_installation
+    match_header: ["预计完工合价", "安装费"]
+    type: decimal(15,2)
+
+dynamic_columns:
+  - db_prefix: monthly
+    match_header: ["2025年"]
+    type: decimal(15,2)
+  - db_prefix: monthly_2026
+    match_header: ["2026年"]
+    type: decimal(15,2)

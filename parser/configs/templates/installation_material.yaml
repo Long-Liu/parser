@@ -1,0 +1,50 @@
+template_id: installation_material
+sheet_pattern: "表9-3*安装材料*"
+description: "安装材料回归主合同清单"
+
+headers:
+  rows: [2]
+  data_start_row: 3
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: project_category
+    match_header: ["项目分类"]
+    type: varchar(300)
+  - db_field: project_feature
+    match_header: ["项目特征"]
+    type: text
+  - db_field: unit
+    match_header: ["单位"]
+    type: varchar(50)
+  - db_field: drawing_qty
+    match_header: ["图纸量"]
+    type: decimal(15,2)
+  - db_field: budget_unit_price
+    match_header: ["预算单价"]
+    type: decimal(15,4)
+  - db_field: budget_total
+    match_header: ["预算合价"]
+    type: decimal(15,2)
+  - db_field: contract_qty
+    match_header: ["合同量"]
+    type: decimal(15,2)
+  - db_field: contract_unit_price
+    match_header: ["合同单价"]
+    type: decimal(15,4)
+  - db_field: contract_total
+    match_header: ["合同合价"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

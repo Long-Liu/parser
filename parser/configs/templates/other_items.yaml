@@ -1,0 +1,47 @@
+template_id: other_items
+sheet_pattern: "表8*其他项目*"
+description: "其他项目清单与计价汇总表"
+
+headers:
+  rows: [3]
+  data_start_row: 4
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 3
+
+columns:
+  - db_field: item_name
+    match_header: ["项目名称"]
+    type: varchar(300)
+  - db_field: work_desc
+    match_header: ["工作内容"]
+    type: text
+  - db_field: calc_instruction
+    match_header: ["计算说明"]
+    type: text
+  - db_field: unit
+    match_header: ["计量单位"]
+    type: varchar(50)
+  - db_field: quantity
+    match_header: ["工程量"]
+    type: decimal(15,2)
+  - db_field: pricing_method
+    match_header: ["计价方式"]
+    type: varchar(200)
+  - db_field: contract_price
+    match_header: ["主合同承接价格"]
+    type: decimal(15,2)
+  - db_field: cost_amount
+    match_header: ["成本金额"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

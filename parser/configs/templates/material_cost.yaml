@@ -1,0 +1,89 @@
+template_id: material_cost
+sheet_pattern: "表9建安材料成本表*"
+description: "建安材料成本表"
+
+headers:
+  rows: [1, 2]
+  data_start_row: 3
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^注：", "^注 :", "^说明："]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 5
+
+columns:
+  - db_field: budget_category
+    match_header: ["预算科目"]
+    type: varchar(200)
+  - db_field: unit
+    match_header: ["单位"]
+    type: varchar(50)
+  - db_field: indicator_qty
+    match_header: ["经济考核指标", "数量"]
+    type: decimal(15,4)
+  - db_field: indicator_unit_price
+    match_header: ["经济考核指标", "单价"]
+    type: decimal(15,4)
+  - db_field: indicator_total
+    match_header: ["经济考核指标", "合价"]
+    type: decimal(15,2)
+  - db_field: budget_qty
+    match_header: ["现执行预算", "数量"]
+    type: decimal(15,4)
+  - db_field: budget_unit_price
+    match_header: ["现执行预算", "单价"]
+    type: decimal(15,4)
+  - db_field: budget_total
+    match_header: ["现执行预算", "合价"]
+    type: decimal(15,2)
+  - db_field: contract_qty
+    match_header: ["已签订合同", "合同数量"]
+    type: decimal(15,4)
+  - db_field: contract_unit_price
+    match_header: ["已签订合同", "合同单价"]
+    type: decimal(15,4)
+  - db_field: contract_total
+    match_header: ["已签订合同", "合同合价"]
+    type: decimal(15,2)
+  - db_field: contract_remark
+    match_header: ["已签订合同", "分析备注"]
+    type: text
+  - db_field: actual_paid_qty
+    match_header: ["实际已发生情况", "实际采购数量"]
+    type: decimal(15,4)
+  - db_field: actual_paid_unit_price
+    match_header: ["实际已发生情况", "实际单价"]
+    type: decimal(15,4)
+  - db_field: actual_paid_total
+    match_header: ["实际已发生情况", "实际合价"]
+    type: decimal(15,2)
+  - db_field: actual_unpaid_qty
+    match_header: ["实际已发生情况", "实际采购数量"]
+    type: decimal(15,4)
+  - db_field: actual_unpaid_unit_price
+    match_header: ["实际已发生情况", "实际单价"]
+    type: decimal(15,4)
+  - db_field: actual_unpaid_total
+    match_header: ["实际已发生情况", "实际合价"]
+    type: decimal(15,2)
+  - db_field: estimated_completion_qty
+    match_header: ["预计完工测算", "测算完工数量"]
+    type: decimal(15,4)
+  - db_field: estimated_completion_unit_price
+    match_header: ["预计完工测算", "测算完工单价"]
+    type: decimal(15,4)
+  - db_field: estimated_completion_total
+    match_header: ["预计完工测算", "测算完工合价"]
+    type: decimal(15,2)
+  - db_field: qty_diff
+    match_header: ["量差"]
+    type: decimal(15,4)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text
