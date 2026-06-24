@@ -1,32 +1,40 @@
+import os
 from sanic import Sanic
 from sanic.response import json
-from parser.db.connection import init_pool, engine, SessionLocal
-from parser.db.schema import init_db, create_data_table
-from parser.utils.config_loader import list_configs
 
 app = Sanic("excel_parser")
 
 
 @app.listener("before_server_start")
 async def setup_db(app):
-    # SQLAlchemy engine + session factory
-    await init_pool(app)
+    # 根据环境变量加载配置（默认 local）
+    from config import load_config
+    app.ctx.config = load_config()
 
-    # Create all fixed tables
+    # 用配置创建引擎
+    from db.connection import create_engine, create_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession
+    engine = create_engine(app.ctx.config)
+    app.ctx.engine = engine
+    app.ctx.Session = create_sessionmaker(engine, AsyncSession)
+
+    # Fixed tables
+    from db.schema import init_db
     await init_db()
 
-    # Seed roles/permissions/admin user
-    from parser.db.seed import seed_defaults
-    session = SessionLocal()
+    # Seed
+    from db.seed import seed_defaults
+    session = app.ctx.Session()
     try:
         await seed_defaults(session)
     finally:
         await session.close()
 
-    # Create data tables from template configs
-    configs = list_configs()
-    for config in configs:
-        await create_data_table(config["template_id"], config.get("columns", []))
+    # Dynamic data tables from YAML configs
+    from db.schema import create_data_table
+    from utils.config_loader import list_configs
+    for cfg in list_configs():
+        await create_data_table(cfg["template_id"], cfg.get("columns", []))
 
 
 @app.listener("after_server_stop")
@@ -37,16 +45,15 @@ async def close_db(app):
 
 @app.get("/health")
 async def health(request):
-    return json({"status": "ok"})
+    return json({"status": "ok", "env": os.getenv("APP_ENV", "local")})
 
 
-# Register blueprints
-from parser.api.auth import bp as auth_bp
-from parser.api.project import bp as project_bp
-from parser.api.upload import bp as upload_bp
-from parser.api.data import bp as data_bp
-from parser.api.template import bp as template_bp
-from parser.api.batch import bp as batch_bp
+from api.auth import bp as auth_bp
+from api.project import bp as project_bp
+from api.upload import bp as upload_bp
+from api.data import bp as data_bp
+from api.template import bp as template_bp
+from api.batch import bp as batch_bp
 
 app.blueprint(auth_bp)
 app.blueprint(project_bp)
@@ -54,7 +61,3 @@ app.blueprint(upload_bp)
 app.blueprint(data_bp)
 app.blueprint(template_bp)
 app.blueprint(batch_bp)
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)

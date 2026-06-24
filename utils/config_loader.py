@@ -2,7 +2,7 @@ import os
 import fnmatch
 import yaml
 
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs", "templates")
+DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "config", "templates")
 
 
 def _config_dir(config_dir=None):

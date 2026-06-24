@@ -1,6 +1,6 @@
 import pytest
 import openpyxl
-from parser.core.cell_unmerger import unmerge
+from core.cell_unmerger import unmerge
 
 
 @pytest.fixture

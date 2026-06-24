@@ -1,4 +1,4 @@
-from parser.core.data_extractor import DataExtractor
+from core.data_extractor import DataExtractor
 
 
 def make_config():

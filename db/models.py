@@ -1,9 +1,9 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, BigInteger, Boolean,
-    UniqueConstraint, Index, ForeignKey, JSON,
+    UniqueConstraint, Index, JSON,
 )
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
@@ -20,8 +20,6 @@ class User(Base):
     phone = Column(String(20))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    user_roles = relationship("UserRole", back_populates="user")
 
 
 class Role(Base):
@@ -44,18 +42,16 @@ class Permission(Base):
 class UserRole(Base):
     __tablename__ = "user_roles"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
+    user_id = Column(Integer, nullable=False)
+    role_id = Column(Integer, nullable=False)
     __table_args__ = (UniqueConstraint("user_id", "role_id"),)
-
-    user = relationship("User", back_populates="user_roles")
 
 
 class RolePermission(Base):
     __tablename__ = "role_permissions"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
-    permission_id = Column(Integer, ForeignKey("permissions.id"), nullable=False)
+    role_id = Column(Integer, nullable=False)
+    permission_id = Column(Integer, nullable=False)
     __table_args__ = (UniqueConstraint("role_id", "permission_id"),)
 
 

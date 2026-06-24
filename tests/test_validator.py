@@ -1,4 +1,4 @@
-from parser.core.validator import validate
+from core.validator import validate
 
 
 def make_columns():

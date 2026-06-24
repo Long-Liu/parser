@@ -1,7 +1,7 @@
 import pytest
 import tempfile
 import os
-from parser.utils.config_loader import load_config, list_configs, match_template
+from utils import load_config, list_configs, match_template
 
 
 @pytest.fixture

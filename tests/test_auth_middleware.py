@@ -1,21 +1,19 @@
-import pytest
-import time
-from parser.middleware.auth import (
-    generate_token, verify_token, hash_password, check_password
-)
+from middleware.auth import generate_token, verify_token, hash_password, check_password
+
+TEST_SECRET = "test-secret-key-for-pytest"
 
 
 def test_token_roundtrip():
-    token = generate_token(user_id=1, username="admin", secret="test_secret")
-    payload = verify_token(token, secret="test_secret")
+    token = generate_token(user_id=1, username="admin", secret=TEST_SECRET)
+    payload = verify_token(token, secret=TEST_SECRET)
     assert payload["user_id"] == 1
     assert payload["username"] == "admin"
 
 
 def test_token_expiry():
-    token = generate_token(user_id=1, username="admin", secret="test_secret", expiry_seconds=-1)
+    token = generate_token(user_id=1, username="admin", secret=TEST_SECRET, expiry_hours=-1)
     try:
-        verify_token(token, secret="test_secret")
+        verify_token(token, secret=TEST_SECRET)
         assert False, "Should have raised"
     except Exception:
         pass

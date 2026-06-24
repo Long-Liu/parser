@@ -1,10 +1,10 @@
 import pytest
 import os
-from parser.db.connection import engine, SessionLocal
-from parser.db.schema import init_db, create_data_table
-from parser.utils.config_loader import list_configs
-from parser.core.pipeline import Pipeline
-from parser.utils.config_loader import match_template
+from db.connection import engine, SessionLocal
+from db.schema import init_db, create_data_table
+from utils import list_configs
+from core.pipeline import Pipeline
+from utils import match_template
 import openpyxl
 
 

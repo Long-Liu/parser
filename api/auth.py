@@ -1,8 +1,8 @@
+from sqlalchemy import text
 from sanic import Blueprint
 from sanic.response import json
-from sqlalchemy import text
-from parser.middleware.auth import generate_token, hash_password, check_password
-from parser.models.user import get_user_by_username, create_user
+from middleware.auth import generate_token, hash_password, check_password
+from models.user import get_user_by_username, create_user
 
 bp = Blueprint("auth", url_prefix="/api/auth")
 
@@ -10,6 +10,7 @@ bp = Blueprint("auth", url_prefix="/api/auth")
 @bp.post("/login")
 async def login(request):
     data = request.json
+    cfg = request.app.ctx.config
     session = request.app.ctx.Session()
     try:
         user = await get_user_by_username(session, data.get("username", ""))
@@ -17,7 +18,7 @@ async def login(request):
             return json({"error": "invalid credentials"}, status=401)
         if not user.is_active:
             return json({"error": "account disabled"}, status=403)
-        token = generate_token(user.id, user.username)
+        token = generate_token(user.id, user.username, cfg.SECRET_KEY, cfg.JWT_EXPIRY_HOURS)
         return json({"token": token, "user": {"id": user.id, "username": user.username, "real_name": user.real_name}})
     finally:
         await session.close()
@@ -32,7 +33,6 @@ async def register(request):
         async with session.begin():
             uid = await create_user(session, data["username"], hashed,
                                      data.get("real_name"), data.get("email"), data.get("phone"))
-            # Assign role: admin for first user, viewer for others
             result = await session.execute(text("SELECT COUNT(*) FROM users"))
             user_count = result.scalar()
             role_code = "admin" if user_count == 1 else "viewer"

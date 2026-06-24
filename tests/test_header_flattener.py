@@ -1,4 +1,4 @@
-from parser.core.header_flattener import flatten_headers
+from core.header_flattener import flatten_headers
 
 
 def test_flatten_headers_concatenates():

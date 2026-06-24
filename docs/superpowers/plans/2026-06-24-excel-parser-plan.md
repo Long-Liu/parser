@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
 ```python
 import pytest
-from parser.app import app
+from app import app
 
 
 @pytest.fixture
@@ -321,9 +321,9 @@ async def seed_defaults(pool):
 
 ```python
 import pytest
-from parser.db.connection import get_pool
-from parser.db.schema import init_db
-from parser.db.seed import seed_defaults
+from db.connection import get_pool
+from db.schema import init_db
+from db.seed import seed_defaults
 
 
 @pytest.mark.asyncio
@@ -394,7 +394,7 @@ git add -A && git commit -m "feat: database connection pool, schema, and seed da
 import pytest
 import tempfile
 import os
-from parser.utils.config_loader import load_config, list_configs, match_template
+from utils import load_config, list_configs, match_template
 
 
 @pytest.fixture
@@ -594,7 +594,7 @@ git add -A && git commit -m "feat: YAML config loader with template matching"
 ```python
 import openpyxl
 import tempfile
-from parser.core.cell_unmerger import unmerge
+from core.cell_unmerger import unmerge
 
 
 @pytest.fixture
@@ -690,7 +690,7 @@ git add -A && git commit -m "feat: merged cell unmerger"
 
 ```python
 import pytest
-from parser.core.header_flattener import flatten_headers
+from core.header_flattener import flatten_headers
 
 
 def test_flatten_headers_concatenates():
@@ -797,7 +797,7 @@ git add -A && git commit -m "feat: multi-level header flattener"
 
 ```python
 import pytest
-from parser.core.stop_detector import StopDetector
+from core.stop_detector import StopDetector
 
 
 def make_col_map(headers):
@@ -942,7 +942,7 @@ git add -A && git commit -m "feat: stop rule detector for end-of-data patterns"
 
 ```python
 import pytest
-from parser.core.data_extractor import DataExtractor
+from core.data_extractor import DataExtractor
 
 
 def make_config():
@@ -1032,7 +1032,7 @@ Expected: 4 FAIL
 - [ ] **Step 3: 实现 parser/core/data_extractor.py**
 
 ```python
-from parser.core.stop_detector import StopDetector
+from core.stop_detector import StopDetector
 
 
 class DataExtractor:
@@ -1134,7 +1134,7 @@ git add -A && git commit -m "feat: data extractor with header-name matching"
 
 ```python
 import pytest
-from parser.core.validator import validate
+from core.validator import validate
 
 
 def make_columns():
@@ -1251,7 +1251,7 @@ git add -A && git commit -m "feat: data validator with type casting"
 import pytest
 import openpyxl
 import tempfile
-from parser.core.pipeline import Pipeline
+from core.pipeline import Pipeline
 
 
 def make_test_workbook():
@@ -1261,11 +1261,21 @@ def make_test_workbook():
     # Row 1: title, Row 2-4: headers, Row 5+: data
     ws["A1"] = "测试标题"
     ws.merge_cells("A1:C1")
-    ws["A2"] = "序号"; ws["B2"] = "姓名"; ws["C2"] = "部门"
-    ws["A3"] = ""; ws["B3"] = ""; ws["C3"] = ""
-    ws["A4"] = ""; ws["B4"] = ""; ws["C4"] = ""
-    ws["A5"] = "1.1"; ws["B5"] = "张三"; ws["C5"] = "技术部"
-    ws["A6"] = "1.2"; ws["B6"] = "李四"; ws["C6"] = "经营部"
+    ws["A2"] = "序号";
+    ws["B2"] = "姓名";
+    ws["C2"] = "部门"
+    ws["A3"] = "";
+    ws["B3"] = "";
+    ws["C3"] = ""
+    ws["A4"] = "";
+    ws["B4"] = "";
+    ws["C4"] = ""
+    ws["A5"] = "1.1";
+    ws["B5"] = "张三";
+    ws["C5"] = "技术部"
+    ws["A6"] = "1.2";
+    ws["B6"] = "李四";
+    ws["C6"] = "经营部"
     return wb
 
 
@@ -1305,10 +1315,13 @@ def test_pipeline_stops_on_comment_row():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "表1 测试"
-    ws["A1"] = "序号"; ws["B1"] = "姓名"
-    ws["A2"] = "1"; ws["B2"] = "数据1"
+    ws["A1"] = "序号";
+    ws["B1"] = "姓名"
+    ws["A2"] = "1";
+    ws["B2"] = "数据1"
     ws["A3"] = "注：以下为说明"
-    ws["A4"] = "不应该被读取"; ws["B4"] = "忽略"
+    ws["A4"] = "不应该被读取";
+    ws["B4"] = "忽略"
 
     config = {
         "template_id": "test",
@@ -1342,10 +1355,10 @@ Expected: 2 FAIL
 - [ ] **Step 3: 实现 parser/core/pipeline.py**
 
 ```python
-from parser.core.cell_unmerger import unmerge
-from parser.core.header_flattener import flatten_headers
-from parser.core.data_extractor import DataExtractor
-from parser.core.validator import validate
+from core.cell_unmerger import unmerge
+from core.header_flattener import flatten_headers
+from core.data_extractor import DataExtractor
+from core.validator import validate
 
 
 class Pipeline:
@@ -1410,16 +1423,16 @@ git add -A && git commit -m "feat: parse pipeline orchestration"
 
 ```python
 import pytest
-from parser.models.user import create_user, get_user_by_username
-from parser.models.project import create_project, list_projects
-from parser.models.batch import create_batch, get_batch, insert_log
-from parser.models.template import register_template, get_active_templates
+from models.user import create_user, get_user_by_username
+from models.project import create_project, list_projects
+from models.batch import create_batch, get_batch, insert_log
+from models.template import register_template, get_active_templates
 
 
 @pytest.mark.asyncio
 async def test_create_and_get_user():
-    from parser.db.connection import get_pool
-    from parser.db.schema import init_db
+    from db.connection import get_pool
+    from db.schema import init_db
     pool = await get_pool()
     await init_db(pool)
 
@@ -1432,8 +1445,8 @@ async def test_create_and_get_user():
 
 @pytest.mark.asyncio
 async def test_create_and_list_projects():
-    from parser.db.connection import get_pool
-    from parser.db.schema import init_db
+    from db.connection import get_pool
+    from db.schema import init_db
     pool = await get_pool()
     await init_db(pool)
 
@@ -1445,15 +1458,17 @@ async def test_create_and_list_projects():
 
 @pytest.mark.asyncio
 async def test_create_batch_and_log():
-    from parser.db.connection import get_pool
-    from parser.db.schema import init_db
+    from db.connection import get_pool
+    from db.schema import init_db
     pool = await get_pool()
     await init_db(pool)
 
-    batch_id = await create_batch(pool, batch_no="B001", project_id=1, year_month="2025-07", uploaded_by=1, file_name="test.xlsx", file_size=1024)
+    batch_id = await create_batch(pool, batch_no="B001", project_id=1, year_month="2025-07", uploaded_by=1,
+                                  file_name="test.xlsx", file_size=1024)
     assert batch_id > 0
 
-    log_id = await insert_log(pool, batch_id=batch_id, sheet_name="表1", template_id="t1", action="matched", total_rows=10, success_rows=10)
+    log_id = await insert_log(pool, batch_id=batch_id, sheet_name="表1", template_id="t1", action="matched",
+                              total_rows=10, success_rows=10)
     assert log_id > 0
 
     batch = await get_batch(pool, batch_id)
@@ -1462,12 +1477,13 @@ async def test_create_batch_and_log():
 
 @pytest.mark.asyncio
 async def test_register_template():
-    from parser.db.connection import get_pool
-    from parser.db.schema import init_db
+    from db.connection import get_pool
+    from db.schema import init_db
     pool = await get_pool()
     await init_db(pool)
 
-    tid = await register_template(pool, template_id="test_tpl", description="test", config_yaml="headers: {}", data_table="data_test")
+    tid = await register_template(pool, template_id="test_tpl", description="test", config_yaml="headers: {}",
+                                  data_table="data_test")
     assert tid > 0
 
     templates = await get_active_templates(pool)
@@ -1687,7 +1703,7 @@ git add -A && git commit -m "feat: data model layer with CRUD operations"
 ```python
 import pytest
 import time
-from parser.middleware.auth import generate_token, verify_token, hash_password, check_password
+from middleware.auth import generate_token, verify_token, hash_password, check_password
 
 
 def test_token_roundtrip():
@@ -1827,7 +1843,7 @@ git add -A && git commit -m "feat: JWT auth middleware with permission control"
 
 ```python
 import pytest
-from parser.app import app
+from app import app
 
 
 @pytest.fixture
@@ -1859,8 +1875,8 @@ async def test_projects_unauthorized():
 ```python
 from sanic import Blueprint
 from sanic.response import json
-from parser.middleware.auth import generate_token, hash_password, check_password
-from parser.models.user import get_user_by_username, create_user
+from middleware.auth import generate_token, hash_password, check_password
+from models.user import get_user_by_username, create_user
 
 bp = Blueprint("auth", url_prefix="/api/auth")
 
@@ -1879,7 +1895,8 @@ async def login(request):
         return json({"error": "account disabled"}, status=403)
 
     token = generate_token(user["id"], user["username"])
-    return json({"token": token, "user": {"id": user["id"], "username": user["username"], "real_name": user.get("real_name")}})
+    return json(
+        {"token": token, "user": {"id": user["id"], "username": user["username"], "real_name": user.get("real_name")}})
 ```
 
 - [ ] **Step 3: 实现 parser/api/project.py**
@@ -1887,8 +1904,8 @@ async def login(request):
 ```python
 from sanic import Blueprint
 from sanic.response import json
-from parser.middleware.auth import require_auth, require_permission
-from parser.models.project import create_project, list_projects
+from middleware.auth import require_auth, require_permission
+from models.project import create_project, list_projects
 
 bp = Blueprint("projects", url_prefix="/api/projects")
 
@@ -1920,11 +1937,11 @@ import uuid
 from datetime import datetime
 from sanic import Blueprint
 from sanic.response import json
-from parser.middleware.auth import require_auth, require_permission
-from parser.models.batch import create_batch, update_batch_status, insert_log
-from parser.models.template import get_template_by_id
-from parser.core.pipeline import Pipeline
-from parser.utils.config_loader import match_template
+from middleware.auth import require_auth, require_permission
+from models.batch import create_batch, update_batch_status, insert_log
+from models.template import get_template_by_id
+from core.pipeline import Pipeline
+from utils import match_template
 import openpyxl
 
 bp = Blueprint("upload", url_prefix="/api")
@@ -1953,8 +1970,8 @@ async def upload(request):
 
     pool = request.app.ctx.pool
     batch_id = await create_batch(pool, batch_no=batch_no, project_id=project_id,
-                                   year_month=year_month, uploaded_by=request.ctx.user_id,
-                                   file_name=file.name, file_size=file_size)
+                                  year_month=year_month, uploaded_by=request.ctx.user_id,
+                                  file_name=file.name, file_size=file_size)
 
     # Parse asynchronously
     try:
@@ -2031,7 +2048,8 @@ async def _insert_rows(pool, table_name, rows):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             for row in rows:
-                values = [row.get(c) for c in fixed_cols] + [_json.dumps(row.get("monthly_data", {}), ensure_ascii=False)]
+                values = [row.get(c) for c in fixed_cols] + [
+                    _json.dumps(row.get("monthly_data", {}), ensure_ascii=False)]
                 sql = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders})"
                 await cur.execute(sql, values)
 ```
@@ -2042,7 +2060,7 @@ async def _insert_rows(pool, table_name, rows):
 import json as _json
 from sanic import Blueprint
 from sanic.response import json
-from parser.middleware.auth import require_auth, require_permission
+from middleware.auth import require_auth, require_permission
 
 bp = Blueprint("data", url_prefix="/api/data")
 
@@ -2109,9 +2127,9 @@ async def get_data(request, template_id):
 ```python
 from sanic import Blueprint
 from sanic.response import json
-from parser.middleware.auth import require_auth, require_permission
-from parser.models.template import get_active_templates, register_template
-from parser.utils.config_loader import load_config
+from middleware.auth import require_auth, require_permission
+from models.template import get_active_templates, register_template
+from utils import load_config
 
 bp = Blueprint("templates", url_prefix="/api/templates")
 
@@ -2194,9 +2212,9 @@ git add -A && git commit -m "feat: API endpoints for auth, projects, upload, dat
 ```python
 from sanic import Sanic
 from sanic.response import json
-from parser.db.connection import get_pool
-from parser.db.schema import init_db
-from parser.db.seed import seed_defaults
+from db.connection import get_pool
+from db.schema import init_db
+from db.seed import seed_defaults
 
 app = Sanic("excel_parser")
 
@@ -2222,18 +2240,17 @@ async def health(request):
 
 
 # Register blueprints
-from parser.api.auth import bp as auth_bp
-from parser.api.project import bp as project_bp
-from parser.api.upload import bp as upload_bp
-from parser.api.data import bp as data_bp
-from parser.api.template import bp as template_bp
+from api import bp as auth_bp
+from api import bp as project_bp
+from api import bp as upload_bp
+from api import bp as data_bp
+from api import bp as template_bp
 
 app.blueprint(auth_bp)
 app.blueprint(project_bp)
 app.blueprint(upload_bp)
 app.blueprint(data_bp)
 app.blueprint(template_bp)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
@@ -2301,9 +2318,9 @@ git add -A && git commit -m "feat: template configs for core sheets"
 ```python
 import pytest
 import os
-from parser.app import app
-from parser.core.pipeline import Pipeline
-from parser.utils.config_loader import match_template
+from app import app
+from core.pipeline import Pipeline
+from utils import match_template
 import openpyxl
 
 
@@ -2326,7 +2343,8 @@ def test_full_parse_with_real_excel():
     matched = [r for r in results]
     print(f"\nMatched sheets: {len(matched)}")
     for r in matched:
-        print(f"  {r['sheet_name']}: {r['success_rows']} rows ({r['error_rows']} errors) [template: {r['template_id']}]")
+        print(
+            f"  {r['sheet_name']}: {r['success_rows']} rows ({r['error_rows']} errors) [template: {r['template_id']}]")
 
     assert len(matched) > 0, "At least one sheet should match"
     total_rows = sum(r["success_rows"] for r in matched)
@@ -2349,7 +2367,8 @@ async def test_api_upload_flow():
             "project_id": "1",
             "year_month": "2025-07",
         },
-        files={"file": ("test.xlsx", file_content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": ("test.xlsx", file_content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
 
     assert response.status in (200, 401, 500)  # 401 if no auth, 200 on success

@@ -1,4 +1,4 @@
-from parser.core.stop_detector import StopDetector
+from core.stop_detector import StopDetector
 
 
 class DataExtractor:

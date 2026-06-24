@@ -1,6 +1,5 @@
-import pytest
 import openpyxl
-from parser.core.pipeline import Pipeline
+from core.pipeline import Pipeline
 
 
 def make_test_workbook():

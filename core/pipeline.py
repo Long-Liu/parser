@@ -1,7 +1,7 @@
-from parser.core.cell_unmerger import unmerge
-from parser.core.header_flattener import flatten_headers
-from parser.core.data_extractor import DataExtractor
-from parser.core.validator import validate
+from core.cell_unmerger import unmerge
+from core.header_flattener import flatten_headers
+from core.data_extractor import DataExtractor
+from core.validator import validate
 
 
 class Pipeline:
