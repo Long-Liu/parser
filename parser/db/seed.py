@@ -49,3 +49,20 @@ async def seed_defaults(pool):
                         "INSERT IGNORE INTO role_permissions (role_id, permission_id) VALUES (%s, %s)",
                         (role_id, perm_row[0]),
                     )
+
+            # Create default admin user (password: admin123)
+            from parser.middleware.auth import hash_password
+            await cur.execute(
+                "INSERT IGNORE INTO users (username, password, real_name) VALUES (%s, %s, %s)",
+                ("admin", hash_password("admin123"), "系统管理员"),
+            )
+            await cur.execute("SELECT id FROM users WHERE username='admin'")
+            user_row = await cur.fetchone()
+            if user_row:
+                await cur.execute("SELECT id FROM roles WHERE code='admin'")
+                role_row = await cur.fetchone()
+                if role_row:
+                    await cur.execute(
+                        "INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (%s, %s)",
+                        (user_row[0], role_row[0]),
+                    )

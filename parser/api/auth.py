@@ -29,4 +29,16 @@ async def register(request):
     pool = request.app.ctx.pool
     hashed = hash_password(data["password"])
     uid = await create_user(pool, data["username"], hashed, data.get("real_name"), data.get("email"), data.get("phone"))
-    return json({"id": uid, "username": data["username"]}, status=201)
+
+    # Assign default admin role to first user, viewer to others
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT COUNT(*) FROM users")
+            user_count = (await cur.fetchone())[0]
+            role_code = "admin" if user_count == 1 else "viewer"
+            await cur.execute("SELECT id FROM roles WHERE code=%s", (role_code,))
+            role_row = await cur.fetchone()
+            if role_row:
+                await cur.execute("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (%s, %s)", (uid, role_row[0]))
+
+    return json({"id": uid, "username": data["username"], "role": role_code}, status=201)

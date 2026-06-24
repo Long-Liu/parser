@@ -21,7 +21,9 @@ async def upload(request):
     if "file" not in request.files:
         return json({"error": "no file"}, status=400)
 
-    file = request.files["file"]
+    file = request.files.get("file")
+    if isinstance(file, list):
+        file = file[0]
     project_id = int(request.form.get("project_id", 0))
     ym = request.form.get("ym", datetime.now().strftime("%Y-%m"))
     batch_no = request.form.get("batch_no", f"B{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}")
