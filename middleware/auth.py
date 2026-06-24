@@ -2,6 +2,7 @@ import jwt
 import bcrypt
 from datetime import datetime, timedelta
 from functools import wraps
+from sqlalchemy import text
 from sanic.response import json
 
 JWT_ALGORITHM = "HS256"
@@ -56,7 +57,6 @@ def require_permission(perm_code: str):
             user_id = getattr(request.ctx, "user_id", None)
             if not user_id:
                 return json({"error": "not authenticated"}, status=401)
-            from sqlalchemy import text
             session = request.app.ctx.Session()
             try:
                 result = await session.execute(

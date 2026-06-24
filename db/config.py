@@ -5,7 +5,7 @@ import yaml
 def load_config(env: str = None):
     """启动时调用一次，加载指定环境的 YAML 配置"""
     env = env or os.getenv("APP_ENV", "local")
-    path = os.path.join(os.path.dirname(__file__), "config", f"{env}.yaml")
+    path = os.path.join(os.path.dirname(__file__), "..", "config", f"{env}.yaml")
 
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config not found: {path}")
