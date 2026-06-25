@@ -8,6 +8,7 @@ async def init_db(engine):
 
 
 async def create_data_table(engine, template_id: str, columns: list):
+    """创建模板数据表（统一入口，由启动和运行时共用）"""
     col_defs = [
         "id INT AUTO_INCREMENT PRIMARY KEY",
         "batch_id INT NOT NULL",
@@ -17,6 +18,7 @@ async def create_data_table(engine, template_id: str, columns: list):
         col_defs.append(f"`{col['db_field']}` {col.get('type', 'varchar(255)')}")
     col_defs.append("monthly_data JSON")
     col_defs.append("created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+    col_defs.append("FOREIGN KEY (batch_id) REFERENCES upload_batches(id)")
     col_defs.append("INDEX idx_batch (batch_id)")
     col_defs.append("INDEX idx_hierarchy (hierarchy_code)")
 

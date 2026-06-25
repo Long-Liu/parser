@@ -1,7 +1,7 @@
 from sanic import Blueprint
 from sanic.response import json
 from middleware.auth import require_auth, require_permission
-from models.project import create_project, list_projects
+from repositories.project import create_project, list_projects
 
 bp = Blueprint("projects", url_prefix="/api/projects")
 

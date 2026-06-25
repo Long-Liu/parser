@@ -2,7 +2,6 @@ import jwt
 import bcrypt
 from datetime import datetime, timedelta
 from functools import wraps
-from sqlalchemy import text
 from sanic.response import json
 
 JWT_ALGORITHM = "HS256"
@@ -57,19 +56,18 @@ def require_permission(perm_code: str):
             user_id = getattr(request.ctx, "user_id", None)
             if not user_id:
                 return json({"error": "not authenticated"}, status=401)
-            session = request.app.ctx.Session()
-            try:
-                result = await session.execute(
-                    text("""SELECT 1 FROM user_roles ur
+            pool = request.app.ctx.pool
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT 1 FROM user_roles ur
                            JOIN role_permissions rp ON ur.role_id = rp.role_id
                            JOIN permissions p ON rp.permission_id = p.id
-                           WHERE ur.user_id = :uid AND p.code = :pc LIMIT 1"""),
-                    {"uid": user_id, "pc": perm_code},
-                )
-                if not result.fetchone():
-                    return json({"error": f"missing permission: {perm_code}"}, status=403)
-            finally:
-                await session.close()
+                           WHERE ur.user_id = %s AND p.code = %s LIMIT 1""",
+                        (user_id, perm_code),
+                    )
+                    if not await cur.fetchone():
+                        return json({"error": f"missing permission: {perm_code}"}, status=403)
             return await f(request, *args, **kwargs)
         return decorated
     return decorator

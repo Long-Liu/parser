@@ -1,15 +1,21 @@
 import json as _json
+import re
 from sanic import Blueprint
 from sanic.response import json
 from middleware.auth import require_auth, require_permission
 
 bp = Blueprint("data", url_prefix="/api/data")
 
+_TEMPLATE_ID_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+
 
 @bp.get("/<template_id>")
 @require_auth
 @require_permission("data:view")
 async def get_data(request, template_id):
+    if not _TEMPLATE_ID_RE.match(template_id):
+        return json({"error": "invalid template_id"}, status=400)
+
     pool = request.app.ctx.pool
     batch_id = request.args.get("batch_id")
     page = int(request.args.get("page", 1))
@@ -22,23 +28,23 @@ async def get_data(request, template_id):
         async with conn.cursor() as cur:
             if batch_id:
                 await cur.execute(
-                    f"SELECT COUNT(*) FROM {table_name} WHERE batch_id=%s",
+                    f"SELECT COUNT(*) FROM `{table_name}` WHERE batch_id=%s",
                     (batch_id,),
                 )
                 count_row = await cur.fetchone()
                 total = count_row[0] if count_row else 0
 
                 await cur.execute(
-                    f"SELECT * FROM {table_name} WHERE batch_id=%s LIMIT %s OFFSET %s",
+                    f"SELECT * FROM `{table_name}` WHERE batch_id=%s LIMIT %s OFFSET %s",
                     (batch_id, size, offset),
                 )
             else:
-                await cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+                await cur.execute(f"SELECT COUNT(*) FROM `{table_name}`")
                 count_row = await cur.fetchone()
                 total = count_row[0] if count_row else 0
 
                 await cur.execute(
-                    f"SELECT * FROM {table_name} LIMIT %s OFFSET %s",
+                    f"SELECT * FROM `{table_name}` LIMIT %s OFFSET %s",
                     (size, offset),
                 )
 

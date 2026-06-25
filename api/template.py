@@ -1,10 +1,14 @@
+import re
 from sanic import Blueprint
 from sanic.response import json
 from middleware.auth import require_auth, require_permission
-from models.template import get_active_templates, register_template
+from repositories.template import get_active_templates, register_template
 from utils.config_loader import load_config
+from db.schema import create_data_table
 
 bp = Blueprint("templates", url_prefix="/api/templates")
+
+_TEMPLATE_ID_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
 @bp.get("/")
@@ -21,6 +25,10 @@ async def get_templates(request):
 async def post_template(request):
     data = request.json
     template_id = data["template_id"]
+
+    if not _TEMPLATE_ID_RE.match(template_id):
+        return json({"error": "invalid template_id"}, status=400)
+
     config_yaml = data["config_yaml"]
     description = data.get("description", "")
     data_table = f"data_{template_id}"
@@ -29,27 +37,7 @@ async def post_template(request):
     tid = await register_template(pool, template_id, description, config_yaml, data_table)
 
     config = load_config(template_id)
-    columns_sql = _build_create_table_sql(template_id, config)
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(columns_sql)
+    engine = request.app.ctx.engine
+    await create_data_table(engine, template_id, config.get("columns", []))
 
     return json({"id": tid, "table": data_table}, status=201)
-
-
-def _build_create_table_sql(template_id, config):
-    cols = [
-        "id INT AUTO_INCREMENT PRIMARY KEY",
-        "batch_id INT NOT NULL",
-        "hierarchy_code VARCHAR(50)",
-    ]
-    for col_def in config.get("columns", []):
-        col_sql = f"{col_def['db_field']} {col_def.get('type', 'varchar(255)')}"
-        cols.append(col_sql)
-    cols.append("monthly_data JSON")
-    cols.append("created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
-    cols.append("FOREIGN KEY (batch_id) REFERENCES upload_batches(id)")
-    cols.append("INDEX idx_batch (batch_id)")
-    cols.append("INDEX idx_hierarchy (hierarchy_code)")
-
-    return f"CREATE TABLE IF NOT EXISTS data_{template_id} ({', '.join(cols)})"

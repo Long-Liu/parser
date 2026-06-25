@@ -1,9 +1,8 @@
 import os
 import logging
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.config import load_config
-from db.connection import create_engine, create_sessionmaker
+from db.connection import create_engine, create_pool
 from db.schema import init_db, create_data_table
 from db.seed import seed_defaults
 from utils.config_loader import list_configs
@@ -19,16 +18,12 @@ def register(app):
 
         engine = create_engine(app.ctx.config)
         app.ctx.engine = engine
-        app.ctx.Session = create_sessionmaker(engine, AsyncSession)
+        app.ctx.pool = await create_pool(app.ctx.config)
 
         await init_db(engine)
         logger.info("db tables created")
 
-        session = app.ctx.Session()
-        try:
-            await seed_defaults(session)
-        finally:
-            await session.close()
+        await seed_defaults(app.ctx.pool)
         logger.info("db seed done")
 
         for cfg in list_configs():
@@ -39,4 +34,7 @@ def register(app):
     async def shutdown(app):
         if hasattr(app.ctx, "engine"):
             await app.ctx.engine.dispose()
+        if hasattr(app.ctx, "pool"):
+            app.ctx.pool.close()
+            await app.ctx.pool.wait_closed()
         logger.info("db closed")

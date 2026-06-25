@@ -1,7 +1,7 @@
 from sanic import Blueprint
 from sanic.response import json
 from middleware.auth import require_auth
-from models.batch import get_batch, list_batches, get_logs_by_batch
+from repositories.batch import get_batch, list_batches, get_logs_by_batch
 
 bp = Blueprint("batches", url_prefix="/api/batches")
 
