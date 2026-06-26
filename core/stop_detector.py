@@ -1,37 +1,69 @@
+"""Stop-detection rules for early termination of row scanning."""
+
 import re
+
+import openpyxl.utils
+
+DEFAULT_CONSECUTIVE_EMPTY_COUNT = 5
 
 
 class StopDetector:
+    """Evaluate rows against configurable stop rules (cell_match, consecutive_empty)."""
+
     def __init__(self, rules: list[dict]):
         self.rules = rules or []
         self.consecutive_empty = 0
+        self._compiled_rules = self._precompile(rules or [])
+
+    def reset(self):
+        """Reset internal state so this detector can be reused across sheets."""
+        self.consecutive_empty = 0
+
+    @staticmethod
+    def _precompile(rules: list[dict]) -> list[dict]:
+        compiled = []
+        for rule in rules:
+            entry = dict(rule)
+            if rule.get("type") == "cell_match":
+                entry["_patterns"] = [re.compile(p) for p in rule.get("patterns", [])]
+            compiled.append(entry)
+        return compiled
 
     def check(self, row: list, col_map: dict[str, int]) -> bool:
-        for rule in self.rules:
+        should_stop = False
+        for rule in self._compiled_rules:
             if rule["type"] == "cell_match":
-                if self._check_cell_match(row, col_map, rule):
-                    return True
+                if self._check_cell_match(row, rule):
+                    should_stop = True
             elif rule["type"] == "consecutive_empty_rows":
                 if self._check_consecutive_empty(row, rule):
-                    return True
+                    should_stop = True
         self._update_empty_counter(row)
-        return False
+        return should_stop
 
-    def _check_cell_match(self, row, col_map, rule) -> bool:
-        patterns = rule.get("patterns", [])
+    @staticmethod
+    def _column_index(col_letter: str) -> int | None:
+        """Convert column letter(s) A..ZZ to 0-based index, or None if invalid."""
+        try:
+            return openpyxl.utils.column_index_from_string(col_letter) - 1
+        except ValueError:
+            return None
+
+    def _check_cell_match(self, row, rule) -> bool:
+        patterns = rule.get("_patterns", [])
         columns = rule.get("columns", [])
         for col_letter in columns:
-            idx = col_map.get(col_letter)
+            idx = StopDetector._column_index(col_letter)
             if idx is None or idx >= len(row):
                 continue
             val = str(row[idx]) if row[idx] is not None else ""
             for pat in patterns:
-                if re.match(pat, val):
+                if pat.match(val):
                     return True
         return False
 
     def _check_consecutive_empty(self, row, rule) -> bool:
-        count = rule.get("count", 5)
+        count = rule.get("count", DEFAULT_CONSECUTIVE_EMPTY_COUNT)
         return self.consecutive_empty + 1 >= count
 
     def _update_empty_counter(self, row):

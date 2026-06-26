@@ -1,6 +1,8 @@
+"""Parse pipeline: unmerge → flatten headers → extract → validate."""
+
 from core.cell_unmerger import unmerge
-from core.header_flattener import flatten_headers
 from core.data_extractor import DataExtractor
+from core.header_flattener import flatten_headers
 from core.validator import validate
 
 
@@ -27,7 +29,7 @@ class Pipeline:
             "template_id": self.config.get("template_id"),
             "sheet_name": sheet_name,
             "total_rows": len(rows),
-            "success_rows": len(valid_rows),
+            "success_rows": len(valid_rows) - len(errors),
             "error_rows": len(errors),
             "rows": valid_rows,
             "errors": errors,

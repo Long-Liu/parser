@@ -1,7 +1,12 @@
+"""Application configuration loaded from YAML with env-var overrides for secrets."""
+
+import logging
 import os
 from dataclasses import dataclass
 
 import yaml
+
+logger = logging.getLogger("parser.config")
 
 
 @dataclass(frozen=True)
@@ -13,19 +18,12 @@ class Config:
     DB_PASSWORD: str
     DB_NAME: str
     DB_POOL_SIZE: int
+    DB_POOL_MIN_SIZE: int
     SECRET_KEY: str
     JWT_EXPIRY_HOURS: int
 
-    @property
-    def DB_URL(self) -> str:
-        return (
-            f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
-            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
-        )
-
-
 def load_config(env: str = None) -> Config:
-    """启动时调用一次，加载指定环境的 YAML 配置"""
+    """Load YAML config for *env*, with secrets preferentially from environment variables."""
     env = env or os.getenv("APP_ENV", "local")
     path = os.path.join(os.path.dirname(__file__), "..", "config", f"{env}.yaml")
 
@@ -35,14 +33,25 @@ def load_config(env: str = None) -> Config:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
+    db_password = os.getenv("DB_PASSWORD") or data["db"].get("password", "")
+    jwt_secret = os.getenv("JWT_SECRET") or data["jwt"].get("secret", "")
+
+    if not db_password:
+        logger.warning("DB_PASSWORD is empty — database connection will likely fail")
+    if not jwt_secret or jwt_secret in ("local-dev-secret-change-me",):
+        logger.warning(
+            "JWT_SECRET is weak or empty — generate a strong random secret for production"
+        )
+
     return Config(
         DEBUG=data.get("debug", False),
         DB_HOST=data["db"]["host"],
         DB_PORT=data["db"]["port"],
         DB_USER=data["db"]["user"],
-        DB_PASSWORD=data["db"]["password"],
+        DB_PASSWORD=db_password,
         DB_NAME=data["db"]["database"],
         DB_POOL_SIZE=data["db"]["pool_size"],
-        SECRET_KEY=data["jwt"]["secret"],
+        DB_POOL_MIN_SIZE=data["db"].get("pool_min_size", 1),
+        SECRET_KEY=jwt_secret,
         JWT_EXPIRY_HOURS=data["jwt"]["expiry_hours"],
     )

@@ -1,31 +1,23 @@
-async def create_user(pool, username: str, password: str, real_name: str = None,
+from db.connection import execute
+from db.tables import users
+
+
+async def create_user(username: str, password: str, real_name: str = None,
                       email: str = None, phone: str = None) -> int:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO users (username, password, real_name, email, phone) VALUES (%s,%s,%s,%s,%s)",
-                (username, password, real_name, email, phone),
-            )
-            return cur.lastrowid
+    result = await execute(users.insert().values(
+        username=username, password=password,
+        real_name=real_name, email=email, phone=phone,
+    ))
+    return result.lastrowid
 
 
-async def get_user_by_username(pool, username: str) -> dict | None:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT * FROM users WHERE username=%s", (username,))
-            row = await cur.fetchone()
-            if not row:
-                return None
-            cols = [d[0] for d in cur.description]
-            return dict(zip(cols, row))
+async def get_user_by_username(username: str) -> dict | None:
+    result = await execute(users.select().where(users.c.username == username))
+    row = await result.fetchone()
+    return dict(row) if row else None
 
 
-async def get_user_by_id(pool, user_id: int) -> dict | None:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
-            row = await cur.fetchone()
-            if not row:
-                return None
-            cols = [d[0] for d in cur.description]
-            return dict(zip(cols, row))
+async def get_user_by_id(user_id: int) -> dict | None:
+    result = await execute(users.select().where(users.c.id == user_id))
+    row = await result.fetchone()
+    return dict(row) if row else None

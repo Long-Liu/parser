@@ -1,72 +1,58 @@
-async def create_batch(pool, batch_no: str, project_id: int, ym: str,
+import sqlalchemy as sa
+from db.connection import execute, with_retry
+from db.tables import upload_batches, upload_logs
+
+
+@with_retry
+async def create_batch(batch_no: str, project_id: int, ym: str,
                        uploaded_by: int, file_name: str, file_size: int) -> int:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO upload_batches (batch_no, project_id, ym, uploaded_by, file_name, file_size) "
-                "VALUES (%s,%s,%s,%s,%s,%s)",
-                (batch_no, project_id, ym, uploaded_by, file_name, file_size),
-            )
-            return cur.lastrowid
+    result = await execute(upload_batches.insert().values(
+        batch_no=batch_no, project_id=project_id, ym=ym,
+        uploaded_by=uploaded_by, file_name=file_name, file_size=file_size,
+    ))
+    return result.lastrowid
 
 
-async def update_batch_status(pool, batch_id: int, status: str):
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE upload_batches SET status=%s WHERE id=%s", (status, batch_id)
-            )
+async def update_batch_status(batch_id: int, status: str):
+    await execute(upload_batches.update()
+                  .where(upload_batches.c.id == batch_id)
+                  .values(status=status))
 
 
-async def get_batch(pool, batch_id: int) -> dict | None:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT * FROM upload_batches WHERE id=%s", (batch_id,))
-            row = await cur.fetchone()
-            if not row:
-                return None
-            cols = [d[0] for d in cur.description]
-            return dict(zip(cols, row))
+async def get_batch(batch_id: int) -> dict | None:
+    result = await execute(upload_batches.select().where(upload_batches.c.id == batch_id))
+    row = await result.fetchone()
+    return dict(row) if row else None
 
 
-async def list_batches(pool, project_id: int = None, ym: str = None) -> list[dict]:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            sql = "SELECT * FROM upload_batches WHERE 1=1"
-            params = []
-            if project_id:
-                sql += " AND project_id=%s"
-                params.append(project_id)
-            if ym:
-                sql += " AND ym=%s"
-                params.append(ym)
-            sql += " ORDER BY id DESC"
-            await cur.execute(sql, params)
-            rows = await cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in rows]
+async def list_batches(project_id: int = None, ym: str = None) -> list[dict]:
+    conditions = []
+    if project_id:
+        conditions.append(upload_batches.c.project_id == project_id)
+    if ym:
+        conditions.append(upload_batches.c.ym == ym)
+    stmt = upload_batches.select().order_by(upload_batches.c.id.desc())
+    if conditions:
+        stmt = stmt.where(sa.and_(*conditions))
+    result = await execute(stmt)
+    return [dict(r) for r in await result.fetchall()]
 
 
-async def insert_log(pool, batch_id: int, sheet_name: str, template_id: str,
+@with_retry
+async def insert_log(batch_id: int, sheet_name: str, template_id: str,
                      action: str, total_rows: int = 0, success_rows: int = 0,
                      error_rows: int = 0, error_msg: str = None) -> int:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO upload_logs (batch_id, sheet_name, template_id, action, total_rows, success_rows, error_rows, error_msg) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                (batch_id, sheet_name, template_id, action, total_rows, success_rows, error_rows, error_msg),
-            )
-            return cur.lastrowid
+    result = await execute(upload_logs.insert().values(
+        batch_id=batch_id, sheet_name=sheet_name,
+        template_id=template_id, action=action,
+        total_rows=total_rows, success_rows=success_rows,
+        error_rows=error_rows, error_msg=error_msg,
+    ))
+    return result.lastrowid
 
 
-async def get_logs_by_batch(pool, batch_id: int) -> list[dict]:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT * FROM upload_logs WHERE batch_id=%s ORDER BY id",
-                (batch_id,),
-            )
-            rows = await cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in rows]
+async def get_logs_by_batch(batch_id: int) -> list[dict]:
+    result = await execute(upload_logs.select()
+                           .where(upload_logs.c.batch_id == batch_id)
+                           .order_by(upload_logs.c.id))
+    return [dict(r) for r in await result.fetchall()]

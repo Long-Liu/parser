@@ -1,63 +1,68 @@
 import json as _json
-import re
+
+import sqlalchemy as sa
 from sanic import Blueprint
 from sanic.response import json
+
+from db.connection import execute
+from db.tables import data_table_for
 from middleware.auth import require_auth, require_permission
+from utils.config_loader import load_config
+from utils.validators import is_valid_template_id
 
 bp = Blueprint("data", url_prefix="/api/data")
-
-_TEMPLATE_ID_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
 @bp.get("/<template_id>")
 @require_auth
 @require_permission("data:view")
 async def get_data(request, template_id):
-    if not _TEMPLATE_ID_RE.match(template_id):
+    if not is_valid_template_id(template_id):
         return json({"error": "invalid template_id"}, status=400)
 
-    pool = request.app.ctx.pool
     batch_id = request.args.get("batch_id")
-    page = int(request.args.get("page", 1))
-    size = int(request.args.get("size", 200))
+
+    try:
+        page = int(request.args.get("page", 1))
+        size = int(request.args.get("size", 200))
+    except (ValueError, TypeError):
+        return json({"error": "page and size must be integers"}, status=400)
+    if page < 1 or size < 1 or size > 1000:
+        return json({"error": "page >= 1, 1 <= size <= 1000"}, status=400)
+
     offset = (page - 1) * size
+    config = load_config(template_id)
+    dtable = data_table_for(template_id, config.get("columns", []))
 
-    table_name = f"data_{template_id}"
+    if batch_id:
+        count_result = await execute(
+            sa.select(sa.func.count().label("cnt"))
+            .select_from(dtable)
+            .where(dtable.c.batch_id == batch_id))
+        total = (await count_result.fetchone())["cnt"]
 
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            if batch_id:
-                await cur.execute(
-                    f"SELECT COUNT(*) FROM `{table_name}` WHERE batch_id=%s",
-                    (batch_id,),
-                )
-                count_row = await cur.fetchone()
-                total = count_row[0] if count_row else 0
+        result = await execute(
+            dtable.select()
+            .where(dtable.c.batch_id == batch_id)
+            .limit(size).offset(offset))
+    else:
+        count_result = await execute(
+            sa.select(sa.func.count().label("cnt")).select_from(dtable))
+        total = (await count_result.fetchone())["cnt"]
 
-                await cur.execute(
-                    f"SELECT * FROM `{table_name}` WHERE batch_id=%s LIMIT %s OFFSET %s",
-                    (batch_id, size, offset),
-                )
-            else:
-                await cur.execute(f"SELECT COUNT(*) FROM `{table_name}`")
-                count_row = await cur.fetchone()
-                total = count_row[0] if count_row else 0
+        result = await execute(
+            dtable.select().limit(size).offset(offset))
 
-                await cur.execute(
-                    f"SELECT * FROM `{table_name}` LIMIT %s OFFSET %s",
-                    (size, offset),
-                )
-
-            rows = await cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            data = []
-            for row in rows:
-                d = dict(zip(cols, row))
-                if d.get("monthly_data") and isinstance(d["monthly_data"], str):
-                    d["monthly_data"] = _json.loads(d["monthly_data"])
-                if "created_at" in d and d["created_at"]:
-                    d["created_at"] = str(d["created_at"])
-                data.append(d)
+    rows = await result.fetchall()
+    cols = list(rows[0].keys()) if rows else []
+    data = []
+    for row in rows:
+        d = dict(row)
+        if d.get("monthly_data") and isinstance(d["monthly_data"], str):
+            d["monthly_data"] = _json.loads(d["monthly_data"])
+        if d.get("created_at"):
+            d["created_at"] = str(d["created_at"])
+        data.append(d)
 
     return json({
         "template_id": template_id,

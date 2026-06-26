@@ -1,4 +1,15 @@
+"""Seed default permissions, roles, and admin user on first startup."""
+
+import logging
+import os
+
+import sqlalchemy as sa
+
+from db.connection import execute, Transaction
+from db.tables import permissions, roles, users
 from middleware.auth import hash_password
+
+logger = logging.getLogger("parser.seed")
 
 PERMISSIONS = [
     ("project:create", "创建项目"),
@@ -18,25 +29,49 @@ ROLES = {
 }
 
 
-async def seed_defaults(pool):
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            for code, name in PERMISSIONS:
-                await cur.execute(
-                    "INSERT IGNORE INTO permissions (code, name) VALUES (%s, %s)", (code, name))
-            for code in ROLES:
-                await cur.execute(
-                    "INSERT IGNORE INTO roles (code, name) VALUES (%s, %s)", (code, code))
-            for role_code, perm_codes in ROLES.items():
-                for pc in perm_codes:
-                    await cur.execute(
+def _get_default_admin_password() -> str:
+    password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    if not password:
+        logger.warning(
+            "DEFAULT_ADMIN_PASSWORD not set, using insecure default; change immediately"
+        )
+        password = "admin123"
+    return password
+
+
+async def seed_defaults():
+    admin_password = _get_default_admin_password()
+
+    async with Transaction() as conn:
+        for code, name in PERMISSIONS:
+            await conn.execute(
+                permissions.insert().prefix_with("IGNORE").values(code=code, name=name)
+            )
+        for code in ROLES:
+            await conn.execute(
+                roles.insert().prefix_with("IGNORE").values(code=code, name=code)
+            )
+        for role_code, perm_codes in ROLES.items():
+            for pc in perm_codes:
+                await conn.execute(
+                    sa.text(
                         "INSERT IGNORE INTO role_permissions (role_id, permission_id) "
-                        "SELECT r.id, p.id FROM roles r, permissions p WHERE r.code=%s AND p.code=%s",
-                        (role_code, pc))
-            await cur.execute(
-                "INSERT IGNORE INTO users (username, password, real_name) VALUES (%s, %s, %s)",
-                ("admin", hash_password("admin123"), "系统管理员"))
-            await cur.execute(
+                        "SELECT r.id, p.id FROM roles r, permissions p "
+                        "WHERE r.code=:rc AND p.code=:pc"
+                    ),
+                    {"rc": role_code, "pc": pc},
+                )
+        await conn.execute(
+            users.insert().prefix_with("IGNORE").values(
+                username="admin", password=hash_password(admin_password),
+                real_name="系统管理员",
+            )
+        )
+        await conn.execute(
+            sa.text(
                 "INSERT IGNORE INTO user_roles (user_id, role_id) "
-                "SELECT u.id, r.id FROM users u, roles r WHERE u.username=%s AND r.code=%s",
-                ("admin", "admin"))
+                "SELECT u.id, r.id FROM users u, roles r "
+                "WHERE u.username=:un AND r.code=:rc"
+            ),
+            {"un": "admin", "rc": "admin"},
+        )

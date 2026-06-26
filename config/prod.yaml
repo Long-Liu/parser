@@ -1,14 +1,15 @@
-# 生产环境
+# Production — sensitive values loaded from environment variables
+# Set: DB_PASSWORD, JWT_SECRET (use strong random values)
 debug: false
 
 db:
   host: 127.0.0.1
   port: 3306
   user: root
-  password: ""
+  password: ""   # loaded from DB_PASSWORD env var
   database: excel_parser
   pool_size: 20
 
 jwt:
-  secret: ""
+    secret: ""     # loaded from JWT_SECRET env var
   expiry_hours: 24

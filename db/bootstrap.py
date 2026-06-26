@@ -1,8 +1,10 @@
-import os
+"""Application bootstrap: config → db.init → schema + seed + data tables."""
+
 import logging
+import os
 
 from db.config import load_config
-from db.connection import create_engine, create_pool
+from db.connection import init as db_init, close as db_close
 from db.schema import init_db, create_data_table
 from db.seed import seed_defaults
 from utils.config_loader import list_configs
@@ -14,27 +16,22 @@ def register(app):
     @app.listener("before_server_start")
     async def startup(app):
         app.ctx.config = load_config()
-        logger.info(f"env={os.getenv('APP_ENV', 'local')} debug={app.ctx.config.DEBUG}")
+        logger.info("env=%s debug=%s", os.getenv("APP_ENV", "local"), app.ctx.config.DEBUG)
 
-        engine = create_engine(app.ctx.config)
-        app.ctx.engine = engine
-        app.ctx.pool = await create_pool(app.ctx.config)
+        await db_init(app.ctx.config)
 
-        await init_db(engine)
+        await init_db()
         logger.info("db tables created")
 
-        await seed_defaults(app.ctx.pool)
+        await seed_defaults()
         logger.info("db seed done")
 
-        for cfg in list_configs():
-            await create_data_table(engine, cfg["template_id"], cfg.get("columns", []))
-        logger.info(f"{len(list_configs())} data tables ready")
+        configs = list_configs()
+        for cfg in configs:
+            await create_data_table(cfg["template_id"], cfg.get("columns", []))
+        logger.info("%d data tables ready", len(configs))
 
     @app.listener("after_server_stop")
     async def shutdown(app):
-        if hasattr(app.ctx, "engine"):
-            await app.ctx.engine.dispose()
-        if hasattr(app.ctx, "pool"):
-            app.ctx.pool.close()
-            await app.ctx.pool.wait_closed()
+        await db_close()
         logger.info("db closed")

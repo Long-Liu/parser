@@ -1,35 +1,35 @@
-async def register_template(pool, template_id: str, description: str,
+import sqlalchemy as sa
+
+from db.connection import execute
+from db.tables import template_configs
+
+
+async def register_template(template_id: str, description: str,
                             config_yaml: str, data_table: str) -> int:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO template_configs (template_id, description, config_yaml, data_table) "
-                "VALUES (%s,%s,%s,%s) "
-                "ON DUPLICATE KEY UPDATE config_yaml=VALUES(config_yaml), data_table=VALUES(data_table), "
-                "description=VALUES(description)",
-                (template_id, description, config_yaml, data_table),
-            )
-            return cur.lastrowid
+    result = await execute(sa.text(
+        "INSERT INTO template_configs (template_id, description, config_yaml, data_table) "
+        "VALUES (:tid, :desc, :yaml, :dt) "
+        "ON DUPLICATE KEY UPDATE config_yaml=VALUES(config_yaml), "
+        "data_table=VALUES(data_table), description=VALUES(description)"
+    ), {"tid": template_id, "desc": description, "yaml": config_yaml, "dt": data_table})
+    if result.lastrowid:
+        return result.lastrowid
+    # ON DUPLICATE KEY UPDATE sets lastrowid=0 — fetch the real id
+    row = await get_template_by_id(template_id)
+    return row["id"] if row else 0
 
 
-async def get_template_by_id(pool, template_id: str) -> dict | None:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT * FROM template_configs WHERE template_id=%s AND is_active=1",
-                (template_id,),
-            )
-            row = await cur.fetchone()
-            if not row:
-                return None
-            cols = [d[0] for d in cur.description]
-            return dict(zip(cols, row))
+async def get_template_by_id(template_id: str) -> dict | None:
+    result = await execute(template_configs.select().where(
+        sa.and_(template_configs.c.template_id == template_id,
+                template_configs.c.is_active == True)  # noqa: E712
+    ))
+    row = await result.fetchone()
+    return dict(row) if row else None
 
 
-async def get_active_templates(pool) -> list[dict]:
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT * FROM template_configs WHERE is_active=1")
-            rows = await cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in rows]
+async def get_active_templates() -> list[dict]:
+    result = await execute(template_configs.select().where(
+        template_configs.c.is_active == True  # noqa: E712
+    ))
+    return [dict(r) for r in await result.fetchall()]
