@@ -1,3 +1,5 @@
+import pytest
+
 from middleware.auth import generate_token, verify_token, hash_password, check_password
 
 TEST_SECRET = "test-secret-key-for-pytest"
@@ -12,11 +14,8 @@ def test_token_roundtrip():
 
 def test_token_expiry():
     token = generate_token(user_id=1, username="admin", secret=TEST_SECRET, expiry_hours=-1)
-    try:
+    with pytest.raises(Exception):
         verify_token(token, secret=TEST_SECRET)
-        assert False, "Should have raised"
-    except Exception:
-        pass
 
 
 def test_hash_and_check_password():

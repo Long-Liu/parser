@@ -28,7 +28,7 @@ def register(app):
 
         configs = list_configs()
         for cfg in configs:
-            await create_data_table(cfg["template_id"], cfg.get("columns", []))
+            await create_data_table(cfg["template_id"])
         logger.info("%d data tables ready", len(configs))
 
     @app.listener("after_server_stop")

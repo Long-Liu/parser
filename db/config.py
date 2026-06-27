@@ -18,11 +18,10 @@ class Config:
     DB_PASSWORD: str
     DB_NAME: str
     DB_POOL_SIZE: int
-    DB_POOL_MIN_SIZE: int
     SECRET_KEY: str
     JWT_EXPIRY_HOURS: int
 
-def load_config(env: str = None) -> Config:
+def load_config(env: str | None = None) -> Config:
     """Load YAML config for *env*, with secrets preferentially from environment variables."""
     env = env or os.getenv("APP_ENV", "local")
     path = os.path.join(os.path.dirname(__file__), "..", "config", f"{env}.yaml")
@@ -51,7 +50,6 @@ def load_config(env: str = None) -> Config:
         DB_PASSWORD=db_password,
         DB_NAME=data["db"]["database"],
         DB_POOL_SIZE=data["db"]["pool_size"],
-        DB_POOL_MIN_SIZE=data["db"].get("pool_min_size", 1),
         SECRET_KEY=jwt_secret,
         JWT_EXPIRY_HOURS=data["jwt"]["expiry_hours"],
     )

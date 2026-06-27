@@ -11,5 +11,5 @@ db:
   pool_size: 20
 
 jwt:
-    secret: ""     # loaded from JWT_SECRET env var
+  secret: ""     # loaded from JWT_SECRET env var
   expiry_hours: 24

@@ -1,4 +1,8 @@
+"""Flatten multi-row merged headers into single column names."""
+
+
 def flatten_headers(grid: list[list], header_rows: list[int]) -> list[str]:
+    """Concatenate multi-row header values into column names joined by '_'."""
     if not grid or not header_rows:
         return []
 

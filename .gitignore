@@ -5,6 +5,7 @@ __pycache__/
 uploads/
 .superpowers/
 .idea/
+.ccg/
 # Local dev config with secrets (template in config/local.example.yaml)
 config/local.yaml
 config/prod.yaml

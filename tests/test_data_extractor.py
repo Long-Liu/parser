@@ -1,4 +1,4 @@
-from core.data_extractor import DataExtractor
+from core.data_extractor import extract_rows
 
 
 def make_config():
@@ -20,9 +20,7 @@ def test_extract_fixed_columns_by_header_name():
         ["1.1", "张三", "技术部"],
     ]
     flat_headers = ["序号", "姓名", "部门"]
-    config = make_config()
-    extractor = DataExtractor(config)
-    rows = extractor.extract_rows(grid, flat_headers)
+    rows = extract_rows(grid, flat_headers, make_config())
 
     assert len(rows) == 1
     assert rows[0]["person_name"] == "张三"
@@ -36,9 +34,7 @@ def test_extract_handles_column_order_change():
         ["技术部", "李四", "2.3"],
     ]
     flat_headers = ["部门", "姓名", "序号"]
-    config = make_config()
-    extractor = DataExtractor(config)
-    rows = extractor.extract_rows(grid, flat_headers)
+    rows = extract_rows(grid, flat_headers, make_config())
 
     assert len(rows) == 1
     assert rows[0]["person_name"] == "李四"
@@ -51,9 +47,7 @@ def test_extract_unmatched_column_is_none():
         ["1", "xxx"],
     ]
     flat_headers = ["序号", "其他列"]
-    config = make_config()
-    extractor = DataExtractor(config)
-    rows = extractor.extract_rows(grid, flat_headers)
+    rows = extract_rows(grid, flat_headers, make_config())
 
     assert rows[0]["person_name"] is None
     assert rows[0]["hierarchy_code"] == "1"
@@ -65,9 +59,7 @@ def test_extract_hierarchy_from_merged_header():
         ["技术部", "3.5", "王五"],
     ]
     flat_headers = ["部门", "序号", "姓名"]
-    config = make_config()
-    extractor = DataExtractor(config)
-    rows = extractor.extract_rows(grid, flat_headers)
+    rows = extract_rows(grid, flat_headers, make_config())
 
     assert rows[0]["hierarchy_code"] == "3.5"
     assert rows[0]["dept"] == "技术部"

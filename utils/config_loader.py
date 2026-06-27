@@ -2,12 +2,12 @@
 
 import fnmatch
 import os
-import re
 
 import yaml
 
+from utils.validators import TEMPLATE_ID_RE
+
 DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "config", "templates")
-_VALID_TEMPLATE_ID = re.compile(r"^[a-zA-Z0-9_]+$")
 
 _config_cache: dict[str, tuple[float, dict]] = {}
 
@@ -19,7 +19,7 @@ def _config_dir(config_dir=None):
 
 def load_config(template_id: str, config_dir=None) -> dict:
     """Load a single template config by id. Raises ValueError on invalid id."""
-    if not _VALID_TEMPLATE_ID.match(template_id):
+    if not TEMPLATE_ID_RE.match(template_id):
         raise ValueError(f"invalid template_id: {template_id}")
 
     filepath = os.path.join(_config_dir(config_dir), f"{template_id}.yaml")

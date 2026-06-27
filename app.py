@@ -1,25 +1,31 @@
 """Sanic application entry point."""
 
 from sanic import Sanic
+from sanic_ext import Extend
 
 from api.auth import bp as auth_bp
 from api.batch import bp as batch_bp
 from api.data import bp as data_bp
-# Routes
 from api.health import bp as health_bp
 from api.project import bp as project_bp
 from api.template import bp as template_bp
 from api.upload import bp as upload_bp
-# Logging
+
 from core.logging import setup as setup_logging
-# Database
+
 from db.bootstrap import register as register_db
+
 from middleware.cors import register as register_cors
-# Middleware
 from middleware.logging import register as register_logging
 
 app = Sanic("excel_parser")
 app.config.FALLBACK_ERROR_FORMAT = "json"
+
+# OpenAPI (Swagger) — docs at /docs, spec at /openapi.json
+app.config.API_TITLE = "Excel Parser API"
+app.config.API_VERSION = "1.0.0"
+app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
+Extend(app)
 
 setup_logging()
 

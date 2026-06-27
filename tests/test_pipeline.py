@@ -1,5 +1,5 @@
 import openpyxl
-from core.pipeline import Pipeline
+from core.pipeline import run_pipeline
 
 
 def make_test_workbook():
@@ -35,8 +35,7 @@ def test_pipeline_extracts_data():
     wb = make_test_workbook()
     ws = wb.active
     config = make_config()
-    pipeline = Pipeline(config)
-    result = pipeline.run(ws, batch_id=1)
+    result = run_pipeline(ws, batch_id=1, config=config)
 
     assert result["template_id"] == "test_labor"
     assert result["total_rows"] == 2
@@ -73,8 +72,7 @@ def test_pipeline_stops_on_comment_row():
         ],
     }
 
-    pipeline = Pipeline(config)
-    result = pipeline.run(ws, batch_id=1)
+    result = run_pipeline(ws, batch_id=1, config=config)
 
     assert result["total_rows"] == 1
     assert result["rows"][0]["person_name"] == "数据1"

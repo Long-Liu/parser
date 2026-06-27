@@ -11,9 +11,10 @@ class StopDetector:
     """Evaluate rows against configurable stop rules (cell_match, consecutive_empty)."""
 
     def __init__(self, rules: list[dict]):
-        self.rules = rules or []
+        clean_rules = rules or []
+        self.rules = clean_rules
         self.consecutive_empty = 0
-        self._compiled_rules = self._precompile(rules or [])
+        self._compiled_rules = self._precompile(clean_rules)
 
     def reset(self):
         """Reset internal state so this detector can be reused across sheets."""

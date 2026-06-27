@@ -7,14 +7,9 @@ import bcrypt
 import jwt
 from sanic.response import json
 
-from db.connection import execute
-from db.tables import user_roles, role_permissions, permissions
+from repositories.user import UserRepo
 
 JWT_ALGORITHM = "HS256"
-
-
-def _get_config(request):
-    return request.app.ctx.config
 
 
 def generate_token(user_id: int, username: str, secret: str, expiry_hours: int = 24) -> str:
@@ -42,11 +37,13 @@ def require_auth(f):
         if not auth_header.startswith("Bearer "):
             return json({"error": "missing token"}, status=401)
         token = auth_header[7:]
-        cfg = _get_config(request)
+        cfg = request.app.ctx.config
         try:
             payload = verify_token(token, cfg.SECRET_KEY)
             request.ctx.user_id = payload["user_id"]
             request.ctx.username = payload["username"]
+            # Load permissions once, reuse in require_permission
+            request.ctx.permissions = await UserRepo.get_permissions(payload["user_id"])
         except jwt.ExpiredSignatureError:
             return json({"error": "token expired"}, status=401)
         except jwt.InvalidTokenError:
@@ -55,40 +52,14 @@ def require_auth(f):
     return decorated
 
 
-def _fetch_user_id(request) -> int | None:
-    user_id = getattr(request.ctx, "user_id", None)
-    if user_id is not None:
-        return user_id
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        try:
-            cfg = _get_config(request)
-            payload = verify_token(auth_header[7:], cfg.SECRET_KEY)
-            return payload.get("user_id")
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-            return None
-    return None
-
-
 def require_permission(perm_code: str):
     def decorator(f):
         @wraps(f)
         async def decorated(request, *args, **kwargs):
-            user_id = _fetch_user_id(request)
-            if not user_id:
+            permissions = getattr(request.ctx, "permissions", None)
+            if permissions is None:
                 return json({"error": "not authenticated"}, status=401)
-            result = await execute(user_roles.select()
-                .select_from(
-                    user_roles
-                    .join(role_permissions, user_roles.c.role_id == role_permissions.c.role_id)
-                    .join(permissions, role_permissions.c.permission_id == permissions.c.id)
-                )
-                .where(
-                    (user_roles.c.user_id == user_id)
-                    & (permissions.c.code == perm_code)
-                )
-                .limit(1))
-            if not await result.fetchone():
+            if perm_code not in permissions:
                 return json({"error": f"missing permission: {perm_code}"}, status=403)
             return await f(request, *args, **kwargs)
         return decorated

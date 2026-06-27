@@ -9,7 +9,7 @@ import openpyxl
 import pytest
 import sqlalchemy as sa
 
-from core.pipeline import Pipeline
+from core.pipeline import run_pipeline
 from utils.config_loader import list_configs, match_template
 
 
@@ -60,11 +60,12 @@ async def test_data_tables_created(_db):
 
     configs = list_configs()
     for cfg in configs:
-        await create_data_table(cfg["template_id"], cfg.get("columns", []))
+        await create_data_table(cfg["template_id"])
 
     for cfg in configs:
         result = await execute(
-            sa.text(f"SHOW TABLES LIKE 'data_{cfg['template_id']}'")
+            sa.text("SHOW TABLES LIKE :tbl"),
+            {"tbl": f"data_{cfg['template_id']}"}
         )
         assert await result.fetchone() is not None, \
             f"Table data_{cfg['template_id']} not found"
@@ -84,8 +85,7 @@ def test_full_parse_with_real_excel():
         ws = wb[sheet_name]
         config = match_template(sheet_name)
         if config:
-            pipeline = Pipeline(config)
-            result = pipeline.run(ws, batch_id=0)
+            result = run_pipeline(ws, batch_id=0, config=config)
             results.append(result)
             print(f"\n  {result['sheet_name']}: {result['success_rows']} rows "
                   f"({result['error_rows']} errors) [template: {result['template_id']}]")
