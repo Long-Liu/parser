@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 
-from db.connection import Transaction, exec_stmt, select_val
+from db.connection import transactional, exec_stmt, select_val
 from db.tables import users, user_roles, roles, role_permissions, permissions
 from repositories.base import BaseRepo, select_all
 
@@ -17,6 +17,7 @@ class UserRepo(BaseRepo):
         return await cls.get(users.c.id == user_id)
 
     @classmethod
+    @transactional
     async def register(cls, username: str, password: str,
                        real_name: str | None = None, email: str | None = None,
                        phone: str | None = None) -> tuple[int, str]:
@@ -24,14 +25,13 @@ class UserRepo(BaseRepo):
 
         Returns (user_id, role_code). First user becomes admin; all others viewer.
         """
-        async with Transaction():
-            uid = await cls.insert(
-                username=username, password=password,
-                real_name=real_name, email=email, phone=phone,
-            )
-            user_count = await cls._count_for_update()
-            role_code = "admin" if user_count == 1 else "viewer"
-            await UserRoleRepo.grant(uid, role_code)
+        uid = await cls.insert(
+            username=username, password=password,
+            real_name=real_name, email=email, phone=phone,
+        )
+        user_count = await cls._count_for_update()
+        role_code = "admin" if user_count == 1 else "viewer"
+        await UserRoleRepo.grant(uid, role_code)
         return uid, role_code
 
     @classmethod

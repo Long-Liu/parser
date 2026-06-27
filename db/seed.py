@@ -1,4 +1,4 @@
-from db.connection import Transaction
+from db.connection import transactional
 from middleware.auth import hash_password
 from repositories.user import (UserRepo, RoleRepo, PermissionRepo,
                                 UserRoleRepo, RolePermissionRepo)
@@ -6,15 +6,8 @@ from repositories.user import (UserRepo, RoleRepo, PermissionRepo,
 
 async def seed_defaults():
     """Seed default permissions, roles, and admin user on first startup."""
-    import logging
     import os
-    logger = logging.getLogger("parser.seed")
-
     admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
-    if admin_password == "admin123":
-        logger.warning(
-            "DEFAULT_ADMIN_PASSWORD not set, using insecure default; change immediately"
-        )
 
     PERMISSIONS = [
         ("project:create", "创建项目"),
@@ -32,17 +25,21 @@ async def seed_defaults():
         "viewer": ["project:view", "data:view"],
     }
 
+    await _do_seed(admin_password, PERMISSIONS, ROLES)
+
+
+@transactional
+async def _do_seed(admin_password: str, PERMISSIONS: list, ROLES: dict):
     for code, name in PERMISSIONS:
         await PermissionRepo.insert_ignore(code=code, name=name)
     for code in ROLES:
         await RoleRepo.insert_ignore(code=code, name=code)
 
-    async with Transaction():
-        for role_code, perm_codes in ROLES.items():
-            for pc in perm_codes:
-                await RolePermissionRepo.grant(role_code, pc)
-        await UserRepo.insert_ignore(
-            username="admin", password=hash_password(admin_password),
-            real_name="系统管理员",
-        )
-        await UserRoleRepo.grant_to_user("admin", "admin")
+    for role_code, perm_codes in ROLES.items():
+        for pc in perm_codes:
+            await RolePermissionRepo.grant(role_code, pc)
+    await UserRepo.insert_ignore(
+        username="admin", password=hash_password(admin_password),
+        real_name="系统管理员",
+    )
+    await UserRoleRepo.grant_to_user("admin", "admin")

@@ -1,7 +1,13 @@
 """Database connection — typed CRUD primitives with implicit-transaction support."""
 
 import contextvars
+import functools
 import logging
+import warnings
+
+# aiomysql emits MySQL warnings via Python's warnings module on
+# IF NOT EXISTS / INSERT IGNORE duplicates — suppress them
+warnings.filterwarnings("ignore", module="aiomysql")
 
 import aiomysql.sa as aiosa
 import sqlalchemy as sa
@@ -123,13 +129,13 @@ async def exec_ddl(
 
 # ── transaction ──────────────────────────────────────────────────────────────
 
-class Transaction:
+class _Transaction:
     """Context manager for multi-statement transactions.
 
     All primitives inside the block automatically share this connection.
 
     Usage:
-        async with Transaction():
+        async with _Transaction():
             await UserRepo.insert(username="alice", ...)
             await RoleRepo.insert_ignore(code="admin", ...)
     """
@@ -153,3 +159,20 @@ class Transaction:
             await self._tx.__aexit__(*args)
         if self._conn:
             await self._conn.__aexit__(*args)
+
+
+def transactional(func):
+    """Decorator: wrap an async function in a Transaction block.
+
+    Usage:
+        @transactional
+        async def register_user(username, password, ...):
+            uid = await UserRepo.insert(...)
+            await UserRoleRepo.grant(uid, "admin")
+            return uid, role_code
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        async with _Transaction():
+            return await func(*args, **kwargs)
+    return wrapper
