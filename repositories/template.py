@@ -1,6 +1,6 @@
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 
-from db.connection import execute
+from db.connection import insert_row
 from db.tables import template_configs
 from repositories.base import BaseRepo
 
@@ -21,8 +21,8 @@ class TemplateRepo(BaseRepo):
             data_table=stmt.inserted.data_table,
             description=stmt.inserted.description,
         )
-        result = await execute(stmt)
-        if result.lastrowid:
-            return result.lastrowid
+        result = await insert_row(stmt)
+        if result:
+            return result
         row = await cls.get(template_configs.c.template_id == template_id)
         return row["id"] if row else 0

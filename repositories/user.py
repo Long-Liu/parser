@@ -1,8 +1,8 @@
 import sqlalchemy as sa
 
-from db.connection import execute, fetch_all, Transaction
+from db.connection import Transaction, exec_stmt, select_val
 from db.tables import users, user_roles, roles, role_permissions, permissions
-from repositories.base import BaseRepo
+from repositories.base import BaseRepo, select_all
 
 
 class UserRepo(BaseRepo):
@@ -37,7 +37,7 @@ class UserRepo(BaseRepo):
     @classmethod
     async def get_permissions(cls, user_id: int) -> frozenset[str]:
         """Return the set of permission codes for a user (3-table JOIN)."""
-        rows = await fetch_all(
+        rows = await select_all(
             sa.select(permissions.c.code)
             .select_from(
                 user_roles
@@ -51,10 +51,8 @@ class UserRepo(BaseRepo):
     @classmethod
     async def _count_for_update(cls) -> int:
         """Count all users with FOR UPDATE lock — internal, use inside Transaction."""
-        row = await (await execute(
-            sa.select(sa.func.count().label("cnt")).select_from(users).with_for_update()
-        )).fetchone()
-        return row[0] if row else 0
+        stmt = sa.select(sa.func.count().label("cnt")).select_from(users).with_for_update()
+        return (await select_val(stmt)) or 0
 
 
 class RoleRepo(BaseRepo):
@@ -74,7 +72,7 @@ class UserRoleRepo(BaseRepo):
         sel = sa.select(
             sa.literal(user_id).label("user_id"), roles.c.id.label("role_id")
         ).where(roles.c.code == role_code)
-        await execute(
+        await exec_stmt(
             user_roles.insert().prefix_with("IGNORE").from_select(
                 ["user_id", "role_id"], sel
             )
@@ -86,7 +84,7 @@ class UserRoleRepo(BaseRepo):
         sel = sa.select(users.c.id, roles.c.id).where(
             sa.and_(users.c.username == username, roles.c.code == role_code)
         )
-        await execute(
+        await exec_stmt(
             user_roles.insert().prefix_with("IGNORE").from_select(
                 ["user_id", "role_id"], sel
             )
@@ -102,7 +100,7 @@ class RolePermissionRepo(BaseRepo):
         sel = sa.select(roles.c.id, permissions.c.id).where(
             sa.and_(roles.c.code == role_code, permissions.c.code == perm_code)
         )
-        await execute(
+        await exec_stmt(
             role_permissions.insert().prefix_with("IGNORE").from_select(
                 ["role_id", "permission_id"], sel
             )

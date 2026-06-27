@@ -2,7 +2,7 @@
 
 import sqlalchemy as sa
 
-from db.connection import execute, fetch_one, fetch_all, fetch_val
+from db.connection import select_one, select_all, select_val, insert_row, exec_stmt
 
 
 class BaseRepo:
@@ -13,7 +13,7 @@ class BaseRepo:
             table = users
 
         user = await UserRepo.get(users.c.id == 1)
-        rows  = await UserRepo.list()               # all rows
+        rows  = await UserRepo.list()
         rows  = await UserRepo.list(users.c.is_active.is_(True))
         n     = await UserRepo.insert(name="Alice")
         await UserRepo.update(users.c.id == 1, name="Bob")
@@ -34,7 +34,7 @@ class BaseRepo:
         stmt = cls._t().select()
         if where:
             stmt = stmt.where(sa.and_(*where) if len(where) > 1 else where[0])
-        return await fetch_one(stmt)
+        return await select_one(stmt)
 
     @classmethod
     async def list(cls, *where, order_by=None, limit=None, offset=None) -> list[dict]:
@@ -48,19 +48,17 @@ class BaseRepo:
             stmt = stmt.limit(limit)
         if offset is not None:
             stmt = stmt.offset(offset)
-        return await fetch_all(stmt)
+        return await select_all(stmt)
 
     @classmethod
     async def insert(cls, **values) -> int:
         """Insert a row. Returns lastrowid."""
-        result = await execute(cls._t().insert().values(**values))
-        return result.lastrowid
+        return await insert_row(cls._t().insert().values(**values))
 
     @classmethod
     async def insert_ignore(cls, **values) -> int:
         """Insert a row with INSERT IGNORE. Returns lastrowid (0 if skipped)."""
-        result = await execute(cls._t().insert().prefix_with("IGNORE").values(**values))
-        return result.lastrowid
+        return await insert_row(cls._t().insert().prefix_with("IGNORE").values(**values))
 
     @classmethod
     async def update(cls, *where, **values):
@@ -68,7 +66,7 @@ class BaseRepo:
         stmt = cls._t().update()
         if where:
             stmt = stmt.where(sa.and_(*where) if len(where) > 1 else where[0])
-        await execute(stmt.values(**values))
+        await exec_stmt(stmt.values(**values))
 
     @classmethod
     async def count(cls, *where) -> int:
@@ -76,4 +74,4 @@ class BaseRepo:
         stmt = sa.select(sa.func.count()).select_from(cls._t())
         if where:
             stmt = stmt.where(sa.and_(*where) if len(where) > 1 else where[0])
-        return (await fetch_val(stmt)) or 0
+        return (await select_val(stmt)) or 0

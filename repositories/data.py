@@ -4,7 +4,7 @@ import json as _json
 
 import sqlalchemy as sa
 
-from db.connection import execute, fetch_val, fetch_all
+from db.connection import insert_row, select_val, select_all
 from db.tables import data_table_for
 
 
@@ -22,7 +22,7 @@ class DataRepo:
              "monthly_data": _json.dumps(row.get("monthly_data", {}), ensure_ascii=False)}
             for row in rows
         ]
-        await execute(dtable.insert(), value_dicts)
+        await insert_row(dtable.insert(), value_dicts)
 
     @staticmethod
     async def query(template_id: str, batch_id: int | None = None,
@@ -42,8 +42,8 @@ class DataRepo:
             count_stmt = sa.select(sa.func.count().label("cnt")).select_from(dtable)
             data_stmt = dtable.select().limit(size).offset(offset)
 
-        total = await fetch_val(count_stmt) or 0
-        rows = await fetch_all(data_stmt)
+        total = await select_val(count_stmt) or 0
+        rows = await select_all(data_stmt)
 
         cols = list(rows[0].keys()) if rows else []
         data = []

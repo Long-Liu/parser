@@ -1,4 +1,4 @@
-"""Database connection — implicit-transaction engine via contextvars."""
+"""Database connection — typed CRUD primitives with implicit-transaction support."""
 
 import contextvars
 import logging
@@ -20,7 +20,6 @@ _POOL_RECYCLE_SECONDS = 3600
 _engine: aiosa.Engine | None = None
 
 # Tracks the active Transaction's connection per async task.
-# When set, `execute()` reuses this connection instead of acquiring its own.
 _tx_conn: contextvars.ContextVar[aiosa.SAConnection | None] = contextvars.ContextVar(
     "tx_conn", default=None
 )
@@ -51,12 +50,14 @@ async def close() -> None:
         _engine = None
 
 
-async def execute(
+# ── internal ─────────────────────────────────────────────────────────────────
+
+async def _run(
     stmt: sa.ClauseElement | sa.TextClause | str,
     params: dict | list[dict] | None = None,
 ) -> ResultProxy:
-    """Execute a statement. Inside a Transaction block, reuses its connection."""
-    assert _engine is not None, "db.init() must be called before execute()"
+    """Route to tx connection or acquire new, execute, return ResultProxy."""
+    assert _engine is not None, "db.init() must be called first"
     conn = _tx_conn.get()
     if conn is not None:
         return await conn.execute(stmt, params if params is not None else {})
@@ -65,40 +66,67 @@ async def execute(
             return await conn.execute(stmt, params if params is not None else {})
 
 
-async def fetch_one(
+# ── typed primitives ─────────────────────────────────────────────────────────
+
+async def select_one(
     stmt: sa.ClauseElement | sa.TextClause,
     params: dict | None = None,
 ) -> dict | None:
-    """Run a SELECT and return the first row as a dict, or None."""
-    result = await execute(stmt, params)
-    row = await result.fetchone()
+    """SELECT → first row as dict, or None."""
+    r = await _run(stmt, params)
+    row = await r.fetchone()
     return dict(row) if row else None
 
 
-async def fetch_all(
+async def select_all(
     stmt: sa.ClauseElement | sa.TextClause,
     params: dict | None = None,
 ) -> list[dict]:
-    """Run a SELECT and return all rows as a list of dicts."""
-    result = await execute(stmt, params)
-    return [dict(r) for r in await result.fetchall()]
+    """SELECT → all rows as list[dict]."""
+    r = await _run(stmt, params)
+    return [dict(row) for row in await r.fetchall()]
 
 
-async def fetch_val(
+async def select_val(
     stmt: sa.ClauseElement | sa.TextClause,
     params: dict | None = None,
 ):
-    """Run a SELECT and return the first column of the first row (e.g. COUNT)."""
-    result = await execute(stmt, params)
-    row = await result.fetchone()
+    """SELECT → first column of first row (e.g. COUNT)."""
+    r = await _run(stmt, params)
+    row = await r.fetchone()
     return row[0] if row else None
 
+
+async def insert_row(
+    stmt: sa.ClauseElement,
+    values: dict | list[dict] | None = None,
+) -> int:
+    """INSERT → lastrowid."""
+    r = await _run(stmt, values)
+    return r.lastrowid
+
+
+async def exec_stmt(
+    stmt: sa.ClauseElement | sa.TextClause,
+    params: dict | None = None,
+):
+    """UPDATE / DELETE / INSERT...SELECT — no return value."""
+    await _run(stmt, params)
+
+
+async def exec_ddl(
+    stmt: sa.ClauseElement | sa.TextClause | str,
+):
+    """CREATE TABLE / DDL — no return value."""
+    await _run(stmt)
+
+
+# ── transaction ──────────────────────────────────────────────────────────────
 
 class Transaction:
     """Context manager for multi-statement transactions.
 
-    All `execute()` / `fetch_*()` / Repo calls inside the block automatically
-    share this connection — no need for `conn.execute()`.
+    All primitives inside the block automatically share this connection.
 
     Usage:
         async with Transaction():
@@ -112,7 +140,7 @@ class Transaction:
         self._token: contextvars.Token | None = None
 
     async def __aenter__(self) -> "Transaction":
-        assert _engine is not None, "db.init() must be called before Transaction()"
+        assert _engine is not None, "db.init() must be called first"
         self._conn = await _engine.acquire().__aenter__()
         self._tx = await self._conn.begin().__aenter__()
         self._token = _tx_conn.set(self._conn)
