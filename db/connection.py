@@ -145,7 +145,7 @@ class _Transaction:
         self._tx = None
         self._token: contextvars.Token | None = None
 
-    async def __aenter__(self) -> "Transaction":
+    async def __aenter__(self) -> "_Transaction":
         assert _engine is not None, "db.init() must be called first"
         self._conn = await _engine.acquire().__aenter__()
         self._tx = await self._conn.begin().__aenter__()
