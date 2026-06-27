@@ -14,8 +14,6 @@ stop_rules:
   - type: cell_match
     patterns: ["^注：", "^注 :", "^说明："]
     columns: ["A"]
-  - type: consecutive_empty_rows
-    count: 5
 
 columns:
   - db_field: project_category

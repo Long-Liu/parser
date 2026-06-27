@@ -70,10 +70,19 @@ def extract_rows(grid: list[list], flat_headers: list[str], config: dict) -> lis
     for row_idx in range(data_start - 1, len(grid)):
         row = grid[row_idx]
 
-        if detector.check(row, col_index):
+        action = detector.check(row, col_index)
+
+        if action == "stop":
             break
+
+        # Skip empty rows
+        if all(v is None or str(v).strip() == "" for v in row):
+            continue
 
         record = _extract_row(row, col_index, columns, dynamic_matches, hierarchy_col_name)
         results.append(record)
+
+        if action == "last":
+            break
 
     return results

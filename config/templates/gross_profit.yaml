@@ -17,8 +17,6 @@ stop_rules:
   - type: cell_match
     patterns: ["^金额单位"]
     columns: ["A"]
-  - type: consecutive_empty_rows
-    count: 3
 
 columns:
   - db_field: item_name

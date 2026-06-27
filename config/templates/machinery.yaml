@@ -17,8 +17,9 @@ stop_rules:
   - type: cell_match
     patterns: ["^金额单位"]
     columns: ["A"]
-  - type: consecutive_empty_rows
-    count: 5
+  - type: cell_match
+    patterns: ["^小计"]
+    action: "last"
 
 columns:
   - db_field: machine_name
