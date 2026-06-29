@@ -9,12 +9,12 @@ import warnings
 # IF NOT EXISTS / INSERT IGNORE duplicates — suppress them
 warnings.filterwarnings("ignore", module="aiomysql")
 
-import aiomysql.sa as aiosa
-import sqlalchemy as sa
-from aiomysql.sa.result import ResultProxy
-from sqlalchemy.dialects.mysql import pymysql as _mysql_dialect
+import aiomysql.sa as aiosa  # noqa: E402
+import sqlalchemy as sa  # noqa: E402
+from aiomysql.sa.result import ResultProxy  # noqa: E402
+from sqlalchemy.dialects.mysql import pymysql as _mysql_dialect  # noqa: E402
 
-from db.config import Config
+from db.config import Config  # noqa: E402
 
 # Fix aiomysql.sa + SQLAlchemy 2.0 incompatibility
 _mysql_dialect.MySQLDialect_pymysql.case_sensitive = True
@@ -63,7 +63,8 @@ async def _run(
     params: dict | list[dict] | None = None,
 ) -> ResultProxy:
     """Route to tx connection or acquire new, execute, return ResultProxy."""
-    assert _engine is not None, "db.init() must be called first"
+    if _engine is None:
+        raise RuntimeError("db.init() must be called first")
     conn = _tx_conn.get()
     if conn is not None:
         return await conn.execute(stmt, params if params is not None else {})
@@ -146,7 +147,8 @@ class _Transaction:
         self._token: contextvars.Token | None = None
 
     async def __aenter__(self) -> "_Transaction":
-        assert _engine is not None, "db.init() must be called first"
+        if _engine is None:
+            raise RuntimeError("db.init() must be called first")
         self._conn = await _engine.acquire().__aenter__()
         self._tx = await self._conn.begin().__aenter__()
         self._token = _tx_conn.set(self._conn)

@@ -13,10 +13,6 @@ class UserRepo(BaseRepo):
         return await cls.get(users.c.username == username)
 
     @classmethod
-    async def get_by_id(cls, user_id: int) -> dict | None:
-        return await cls.get(users.c.id == user_id)
-
-    @classmethod
     @transactional
     async def register(cls, username: str, password: str,
                        real_name: str | None = None, email: str | None = None,

@@ -12,9 +12,3 @@ class ConflictError(ServiceError):
     """409 — duplicate resource."""
     def __init__(self, message: str = "resource already exists"):
         super().__init__(message, http_status=409)
-
-
-class ForbiddenError(ServiceError):
-    """403 — action not allowed."""
-    def __init__(self, message: str = "action not allowed"):
-        super().__init__(message, http_status=403)

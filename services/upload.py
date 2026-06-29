@@ -1,7 +1,6 @@
 """Upload service — file processing orchestration."""
 
 import asyncio
-import json as _json
 import logging
 import os
 import uuid

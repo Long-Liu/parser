@@ -1,4 +1,3 @@
-import sqlalchemy as sa
 
 from db.tables import upload_batches, upload_logs
 from repositories.base import BaseRepo
