@@ -71,6 +71,69 @@ async def test_data_tables_created(_db):
             f"Table data_{cfg['template_id']} not found"
 
 
+@pytest.mark.asyncio
+async def test_each_sheet_inserts_to_correct_table(_db):
+    """Multi-sheet insert → each sheet's row count + data verified in the right table."""
+    import os as _os
+
+    from db.schema import init_db, create_data_table
+    from services.data import insert_rows
+    from repositories.batch import BatchRepo
+    from repositories.data import DataRepo
+    from repositories.project import ProjectRepo
+
+    await init_db()
+    for tid in ("labor_cost", "machinery"):
+        await create_data_table(tid)
+
+    proj = await ProjectRepo.get()
+    if not proj:
+        pid = await ProjectRepo.insert(code="TEST", name="test", created_by=1)
+    else:
+        pid = proj["id"]
+
+    batch_id = await BatchRepo.insert(
+        batch_no=f"TEST-{_os.urandom(4).hex()}", project_id=pid,
+        ym="2025-06", uploaded_by=1, file_name="test.xlsx", file_size=100,
+    )
+
+    # Simulate 2 sheets: labor_cost (3 rows) + machinery (2 rows)
+    sheets = {
+        "labor_cost": [
+            {"hierarchy_code": "1", "person_name": "Alice", "batch_id": batch_id},
+            {"hierarchy_code": "2", "person_name": "Bob", "batch_id": batch_id},
+            {"hierarchy_code": "3", "person_name": "Carol", "batch_id": batch_id},
+        ],
+        "machinery": [
+            {"hierarchy_code": "A", "machine_name": "Crane", "batch_id": batch_id},
+            {"hierarchy_code": "B", "machine_name": "Bulldozer", "batch_id": batch_id},
+        ],
+    }
+
+    for template_id, rows in sheets.items():
+        await insert_rows(template_id, rows)
+
+    # Verify each sheet: count matches + data lands in correct table
+    for template_id, expected_rows in sheets.items():
+        result = await DataRepo.query(template_id, batch_id=batch_id)
+        expected_count = len(expected_rows)
+        assert result["total"] == expected_count, (
+            f"[{template_id}] row count mismatch: "
+            f"inserted {expected_count}, found {result['total']} in DB"
+        )
+        # Verify no cross-contamination: at least one value from each row is present
+        for i, row in enumerate(expected_rows):
+            db_row = result["rows"][i]
+            for k, v in row.items():
+                if k == "batch_id":
+                    continue
+                assert db_row.get(k) == v, (
+                    f"[{template_id}] row {i}: expected {k}={v}, got {db_row.get(k)}"
+                )
+
+    # ponytail: no cleanup — test DB is disposable
+
+
 def test_full_parse_with_real_excel():
     """15-sheet full parse test."""
     excel_path = "excel/xxx项目主体施工动态成本表-样式 - 副本.xlsx"

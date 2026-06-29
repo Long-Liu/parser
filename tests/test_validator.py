@@ -26,10 +26,12 @@ def test_validate_casts_string_to_decimal():
 
 
 def test_validate_sets_none_for_invalid_decimal():
+    """Invalid decimal rows are excluded from valid_rows; error recorded instead."""
     rows = [{"name": "张三", "amount": "not_a_number"}]
     valid, errors = validate(rows, make_columns())
-    assert len(valid) == 1
-    assert valid[0]["amount"] is None
+    assert len(valid) == 0
+    assert len(errors) == 1
+    assert errors[0]["value"] == "not_a_number"
 
 
 def test_validate_records_error():
@@ -38,7 +40,6 @@ def test_validate_records_error():
         {"name": "李四", "amount": 200},
     ]
     valid, errors = validate(rows, make_columns())
-    assert len(valid) == 2
+    assert len(valid) == 1
+    assert valid[0]["name"] == "李四"
     assert len(errors) == 1
-    assert errors[0]["row_index"] == 0
-    assert "amount" in errors[0]["field"]

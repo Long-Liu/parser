@@ -31,8 +31,9 @@ def validate(rows: list[dict], columns: list[dict]) -> tuple[list[dict], list[di
                     row_errors.append({"row_index": i, "field": field, "value": value, "error": "invalid_decimal"})
                     row_copy[field] = None
 
-        valid_rows.append(row_copy)
         if row_errors:
             errors.extend(row_errors)
+        else:
+            valid_rows.append(row_copy)
 
     return valid_rows, errors

@@ -17,12 +17,13 @@ class DataRepo:
         if not rows:
             return
         dtable = data_table_for(template_id)
-        value_dicts = [
-            {**{c: row.get(c) for c in row if c != "monthly_data"},
-             "monthly_data": _json.dumps(row.get("monthly_data", {}), ensure_ascii=False)}
-            for row in rows
-        ]
-        await insert_row(dtable.insert(), value_dicts)
+        for row in rows:
+            value_dict = {
+                **{c: row.get(c) for c in row if c != "monthly_data"},
+                "monthly_data": _json.dumps(row.get("monthly_data", {}), ensure_ascii=False),
+            }
+            # ponytail: per-row insert — batch executemany when proven necessary
+            await insert_row(dtable.insert().values(**value_dict))
 
     @staticmethod
     async def query(template_id: str, batch_id: int | None = None,
