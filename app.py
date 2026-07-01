@@ -3,13 +3,15 @@
 from sanic import Sanic
 from sanic_ext import Extend
 
-from api.auth_api import bp as auth_bp
-from api.batch_api import bp as batch_bp
-from api.data_api import bp as data_bp
 from api.health_api import bp as health_bp
-from api.project_api import bp as project_bp
-from api.template_api import bp as template_bp
-from api.upload_api import bp as upload_bp
+from api.batch_api import bp as batch_bp
+
+# DDD context blueprints
+from contexts.auth.interface.auth_controller import bp as auth_ddd_bp
+from contexts.project.interface.project_controller import bp as project_ddd_bp
+from contexts.template.interface.template_controller import bp as template_ddd_bp
+from contexts.parsing.interface.upload_controller import bp as upload_ddd_bp
+from contexts.data.interface.data_controller import bp as data_ddd_bp
 
 from core.logging import setup as setup_logging
 
@@ -33,7 +35,9 @@ register_logging(app)
 register_cors(app)
 register_db(app)
 
-for bp in [health_bp, auth_bp, project_bp, upload_bp, data_bp, template_bp, batch_bp]:
+for bp in [health_bp, batch_bp,
+            auth_ddd_bp, project_ddd_bp, upload_ddd_bp,
+            data_ddd_bp, template_ddd_bp]:
     app.blueprint(bp)
 
 
