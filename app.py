@@ -4,7 +4,7 @@ from sanic import Sanic
 from sanic_ext import Extend
 
 from api.health_api import bp as health_bp
-from api.batch_api import bp as batch_bp
+from contexts.parsing.interface.batch_controller import bp as batch_bp
 
 # DDD context blueprints
 from contexts.auth.interface.auth_controller import bp as auth_ddd_bp

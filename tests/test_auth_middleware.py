@@ -1,6 +1,6 @@
 import pytest
 
-from middleware.auth import generate_token, verify_token, hash_password, check_password
+from contexts.auth.interface.auth_middleware import generate_token, verify_token, hash_password, check_password
 
 TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
 
