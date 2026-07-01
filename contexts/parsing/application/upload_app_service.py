@@ -66,12 +66,14 @@ class UploadApplicationService:
                     )
                     sheet_results.append(r)
                 job.complete()
+                await self._repo.save(job)
                 status = job.overall_status
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("upload failed for %s", batch_no)
             job.fail("processing error")
+            await self._repo.save(job)
             status = "failed"
             sheet_results = []
         finally:
