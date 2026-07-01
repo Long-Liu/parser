@@ -4,8 +4,8 @@ import asyncio
 import logging
 
 from middleware.auth import generate_token, hash_password, check_password
-from repositories.user import UserRepo
-from services.errors import ServiceError, ConflictError
+from repositories.user_repository import UserRepo
+from services.errors_service import ServiceError, ConflictError
 
 logger = logging.getLogger("parser.auth")
 

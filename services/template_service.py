@@ -1,11 +1,11 @@
 """Template service — registration + DDL creation."""
 
 from db.schema import create_data_table
-from repositories.template import TemplateRepo
+from repositories.template_repository import TemplateRepo
 
 
 async def list_templates() -> list[dict]:
-    return await TemplateRepo.list(TemplateRepo._t().c.is_active.is_(True))
+    return await TemplateRepo.list_active()
 
 
 async def register_template(template_id: str, config_yaml: str,

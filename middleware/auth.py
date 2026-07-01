@@ -7,7 +7,7 @@ import bcrypt
 import jwt
 from sanic.response import json
 
-from repositories.user import UserRepo
+from repositories.user_repository import UserRepo
 
 JWT_ALGORITHM = "HS256"
 

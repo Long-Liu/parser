@@ -13,8 +13,8 @@ from sanic.request import File
 
 from core.pipeline import run_pipeline
 from db.primitives import transactional
-from repositories.batch import BatchRepo, LogRepo
-from services.data import insert_rows
+from repositories.batch_repository import BatchRepo, LogRepo
+from services.data_service import insert_rows
 from utils.config_loader import match_template
 
 logger = logging.getLogger("parser.upload")
@@ -86,9 +86,7 @@ async def _process_workbook(wb, batch_no: str, project_id: int, ym: str,
             any_success = True
 
     status = _determine_status(all_success, any_success)
-    await BatchRepo.update(
-        BatchRepo._t().c.id == batch_id, status=status
-    )
+    await BatchRepo.update_status(batch_id, status)
 
     return {"batch_id": batch_id, "status": status, "sheets": sheet_results}
 

@@ -3,7 +3,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from middleware.auth import require_auth, require_permission
-from services.batch import list_batches, get_batch
+from services.batch_service import list_batches, get_batch
 from utils.validators import get_query_int
 
 bp = Blueprint("batches", url_prefix="/api/batches")

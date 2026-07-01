@@ -1,11 +1,15 @@
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from db.models import TemplateConfig
-from repositories.base import BaseRepo
+from repositories.base_repository import BaseRepo
 
 
 class TemplateRepo(BaseRepo):
     model = TemplateConfig
+
+    @classmethod
+    async def list_active(cls) -> list[dict]:
+        return await cls.list(cls._t().c.is_active.is_(True))
 
     @classmethod
     async def upsert(cls, template_id: str, description: str,
@@ -23,5 +27,5 @@ class TemplateRepo(BaseRepo):
         result = await cls._write(stmt)
         if result:
             return result
-        row = await cls.get(cls.model.__table__.c.template_id == template_id)
+        row = await cls.get(cls._t().c.template_id == template_id)
         return row["id"] if row else 0

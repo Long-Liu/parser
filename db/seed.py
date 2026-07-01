@@ -1,7 +1,7 @@
 from db.primitives import transactional
 from middleware.auth import hash_password
-from repositories.user import (UserRepo, RoleRepo, PermissionRepo,
-                                UserRoleRepo, RolePermissionRepo)
+from repositories.user_repository import (UserRepo, RoleRepo, PermissionRepo,
+                                          UserRoleRepo, RolePermissionRepo)
 
 
 async def seed_defaults():

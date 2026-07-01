@@ -3,13 +3,13 @@
 from sanic import Sanic
 from sanic_ext import Extend
 
-from api.auth import bp as auth_bp
-from api.batch import bp as batch_bp
-from api.data import bp as data_bp
-from api.health import bp as health_bp
-from api.project import bp as project_bp
-from api.template import bp as template_bp
-from api.upload import bp as upload_bp
+from api.auth_api import bp as auth_bp
+from api.batch_api import bp as batch_bp
+from api.data_api import bp as data_bp
+from api.health_api import bp as health_bp
+from api.project_api import bp as project_bp
+from api.template_api import bp as template_bp
+from api.upload_api import bp as upload_bp
 
 from core.logging import setup as setup_logging
 

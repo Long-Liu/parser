@@ -5,7 +5,7 @@ from db.engine import get_sessionmaker
 from db.models import Permission, Role, RolePermission, User, UserRole
 from db.primitives import current_session, transactional
 from db.tables import users, user_roles, roles, role_permissions, permissions
-from repositories.base import BaseRepo
+from repositories.base_repository import BaseRepo
 
 
 class UserRepo(BaseRepo):

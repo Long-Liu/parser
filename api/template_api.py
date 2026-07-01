@@ -3,7 +3,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from middleware.auth import require_auth, require_permission
-from services.template import list_templates, register_template
+from services.template_service import list_templates, register_template
 from utils.validators import is_valid_template_id, require_json_field
 
 bp = Blueprint("templates", url_prefix="/api/templates")

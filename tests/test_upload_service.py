@@ -1,4 +1,4 @@
-from services.upload import _determine_status
+from services.upload_service import _determine_status
 from utils.validators import ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES
 
 

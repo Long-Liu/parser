@@ -81,10 +81,10 @@ async def test_each_sheet_inserts_to_correct_table(_db):
     import os as _os
 
     from db.schema import init_db, create_data_table
-    from services.data import insert_rows
-    from repositories.data import DataRepo
-    from repositories.batch import BatchRepo
-    from repositories.project import ProjectRepo
+    from services.data_service import insert_rows
+    from repositories.data_repository import DataRepo
+    from repositories.batch_repository import BatchRepo
+    from repositories.project_repository import ProjectRepo
 
     await init_db()
     for tid in ("labor_cost", "machinery"):
@@ -138,7 +138,7 @@ async def test_each_sheet_inserts_to_correct_table(_db):
     finally:
         for template_id in sheets:
             await DataRepo.delete(template_id, batch_id=batch_id)
-        await BatchRepo.delete(BatchRepo._t().c.id == batch_id)
+        await BatchRepo.delete_by_id(batch_id)
 
 
 @pytest.mark.asyncio
@@ -147,10 +147,10 @@ async def test_real_excel_each_sheet_valid_rows_match_inserted_rows(_db):
     import uuid
 
     from db.schema import init_db, create_data_table
-    from repositories.batch import BatchRepo
-    from repositories.project import ProjectRepo
-    from repositories.data import DataRepo
-    from services.data import insert_rows
+    from repositories.batch_repository import BatchRepo
+    from repositories.project_repository import ProjectRepo
+    from repositories.data_repository import DataRepo
+    from services.data_service import insert_rows
 
     excel_files = [
         os.path.join("excel", name)
@@ -205,7 +205,7 @@ async def test_real_excel_each_sheet_valid_rows_match_inserted_rows(_db):
     finally:
         for template_id in inserted_templates:
             await DataRepo.delete(template_id, batch_id=batch_id)
-        await BatchRepo.delete(BatchRepo._t().c.id == batch_id)
+        await BatchRepo.delete_by_id(batch_id)
 
 
 def test_full_parse_with_real_excel():

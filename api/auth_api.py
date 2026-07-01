@@ -2,8 +2,8 @@ from sanic import Blueprint
 from sanic.response import json
 from sanic_ext import openapi
 
-from services.auth import login as login_svc, register as register_svc
-from services.errors import ServiceError
+from services.auth_service import login as login_svc, register as register_svc
+from services.errors_service import ServiceError
 
 bp = Blueprint("auth", url_prefix="/api/auth")
 

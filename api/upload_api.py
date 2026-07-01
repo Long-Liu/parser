@@ -8,7 +8,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from middleware.auth import require_auth, require_permission
-from services.upload import process_upload
+from services.upload_service import process_upload
 from utils.validators import (get_query_int, ALLOWED_MIME_TYPES,
                                ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE)
 
