@@ -1,36 +1,11 @@
-"""JWT auth + permission decorators for Sanic routes.
-Migrated from middleware/auth.py — now fully owned by Auth context."""
+"""JWT auth + permission decorators for Sanic routes."""
 
-from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-import bcrypt
 import jwt
 from sanic.response import json
 
 from contexts.container import container
-
-JWT_ALGORITHM = "HS256"
-
-
-def generate_token(user_id: int, username: str, secret: str,
-                   expiry_hours: int = 24) -> str:
-    exp = datetime.now(tz=timezone.utc) + timedelta(hours=expiry_hours)
-    payload = {"user_id": user_id, "username": username, "exp": exp}
-    return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
-
-
-def verify_token(token: str, secret: str) -> dict:
-    return jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
-
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def check_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
-
 
 def require_auth(f):
     @wraps(f)
@@ -40,7 +15,7 @@ def require_auth(f):
             return json({"error": "missing token"}, status=401)
         token = auth_header[7:]
         cfg = request.app.ctx.config
-        auth = container.authorization_service(cfg.SECRET_KEY)
+        auth = container.request_authorization_service(cfg.SECRET_KEY)
         try:
             ctx = await auth.authenticate(token)
             request.ctx.user_id = ctx.user_id

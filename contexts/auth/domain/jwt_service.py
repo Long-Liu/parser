@@ -25,7 +25,7 @@ class JwtService:
 
 def _demo():
     svc = JwtService("test-secret")
-    token = svc.generate(1, "alice")
+    token = svc.generate(UserId(1), "alice")
     payload = svc.verify(token)
     assert payload["user_id"] == 1
     print("jwt_service: OK")

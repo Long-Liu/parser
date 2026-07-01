@@ -82,7 +82,9 @@ def transactional(func):
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
-        async with SqlAlchemyUnitOfWork():
-            return await func(*args, **kwargs)
+        async with SqlAlchemyUnitOfWork() as uow:
+            result = await func(*args, **kwargs)
+            await uow.commit()
+            return result
 
     return wrapper

@@ -17,7 +17,7 @@ bp = Blueprint("auth_ddd", url_prefix="/api")
 @openapi.summary("Login")
 async def login(request):
     data = request.json or {}
-    svc = container.auth_service(request.app.ctx.config.SECRET_KEY)
+    svc = container.authentication_service(request.app.ctx.config.SECRET_KEY)
     try:
         result = await svc.login(LoginCommand(
             username=data.get("username", ""),
@@ -34,7 +34,7 @@ async def login(request):
 @openapi.summary("Register")
 async def register(request):
     data = request.json or {}
-    svc = container.auth_service(request.app.ctx.config.SECRET_KEY)
+    svc = container.authentication_service(request.app.ctx.config.SECRET_KEY)
     try:
         result = await svc.register(RegisterCommand(
             username=data.get("username", ""),

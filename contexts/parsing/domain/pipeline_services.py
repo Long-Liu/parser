@@ -4,9 +4,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 import re
 
 from contexts.parsing.domain.parse_job import ParsedRow, RowError
+
+
+class ParsingStopRuleType(str, Enum):
+    CELL_MATCH = "cell_match"
+    CONSECUTIVE_EMPTY = "consecutive_empty_rows"
 
 
 @dataclass(frozen=True)
@@ -19,7 +25,7 @@ class MergedCellRange:
 
 @dataclass(frozen=True)
 class ParsingStopRule:
-    rule_type: str
+    rule_type: ParsingStopRuleType
     patterns: list[str]
     columns: list[str]
     empty_row_count: int | None = None
@@ -109,12 +115,12 @@ class StopDetector:
         self, row_index: int, grid: list[list], template: ParsingTemplateSpec
     ) -> bool:
         for rule in template.stop_rules:
-            if rule.rule_type == "cell_match":
+            if rule.rule_type == ParsingStopRuleType.CELL_MATCH:
                 if self._check_cell_match(
                     grid, row_index, rule.patterns, rule.columns
                 ):
                     return True
-            elif rule.rule_type == "consecutive_empty_rows":
+            elif rule.rule_type == ParsingStopRuleType.CONSECUTIVE_EMPTY:
                 if self._check_consecutive_empty(
                     grid, row_index, rule.empty_row_count or 5
                 ):

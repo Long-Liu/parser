@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlalchemy as sa
+import sys
 
 from contexts.shared.infrastructure.database.engine import get_sessionmaker
 from contexts.shared.infrastructure.database.models import User as OrmUser
@@ -41,10 +42,20 @@ def _get_session():
     return get_sessionmaker()(), True
 
 
+def _get_transaction_session():
+    s = current_session()
+    if s is not None:
+        return None, s, False
+    ctx = get_sessionmaker().begin()
+    return ctx, None, True
+
+
 class UserRepositoryImpl(UserRepository):
     async def save(self, user: User) -> None:
-        session, owns = _get_session()
+        ctx, session, owns = _get_transaction_session()
         try:
+            if session is None:
+                session = await ctx.__aenter__()
             values = {
                 "username": user.username,
                 "password": user.password_hash,
@@ -72,8 +83,8 @@ class UserRepositoryImpl(UserRepository):
                 )
             await session.flush()
         finally:
-            if owns:
-                await session.close()
+            if owns and ctx is not None:
+                await ctx.__aexit__(*sys.exc_info())
 
     async def find_by_id(self, user_id: UserId) -> User | None:
         session, owns = _get_session()

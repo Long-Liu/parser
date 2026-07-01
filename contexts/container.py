@@ -22,7 +22,7 @@ from contexts.template.infrastructure.repositories import TemplateRepositoryImpl
 
 
 class Container:
-    def auth_service(self, secret_key: str) -> AuthApplicationService:
+    def authentication_service(self, secret_key: str) -> AuthApplicationService:
         return AuthApplicationService(
             user_repo=UserRepositoryImpl(),
             auth_service=AuthenticationService(),
@@ -30,7 +30,9 @@ class Container:
             uow_factory=SqlAlchemyUnitOfWork,
         )
 
-    def authorization_service(self, secret_key: str) -> AuthorizationApplicationService:
+    def request_authorization_service(
+        self, secret_key: str
+    ) -> AuthorizationApplicationService:
         return AuthorizationApplicationService(
             user_repo=UserRepositoryImpl(),
             jwt_service=JwtService(secret_key),

@@ -27,6 +27,7 @@ from contexts.parsing.domain.pipeline_services import (
     ParsingColumnSpec,
     ParsingDynamicColumnSpec,
     ParsingStopRule,
+    ParsingStopRuleType,
     ParsingTemplateSpec,
 )
 from contexts.parsing.domain.repositories import ParseJobRepository
@@ -168,7 +169,7 @@ class UploadApplicationService:
             data_start_row=template.header_spec.data_start_row,
             stop_rules=[
                 ParsingStopRule(
-                    rule_type=rule.rule_type.value,
+                    rule_type=ParsingStopRuleType(rule.rule_type.value),
                     patterns=rule.patterns,
                     columns=rule.columns,
                     empty_row_count=rule.empty_row_count,

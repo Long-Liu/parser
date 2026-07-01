@@ -5,7 +5,7 @@ from enum import Enum
 
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
-from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId
+from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.parsing.domain.events import (
     ParseJobSubmitted, ParseJobCompleted, ParseJobFailed,
