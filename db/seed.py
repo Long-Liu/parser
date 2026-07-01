@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 
 from contexts.auth.interface.auth_middleware import hash_password
-from db.primitives import transactional
+from contexts.shared.infrastructure.unit_of_work import transactional
 
 
 PERMISSIONS = [
@@ -39,7 +39,7 @@ async def _do_seed(admin_password: str):
     from db.tables import (
         users, roles, permissions, user_roles, role_permissions,
     )
-    from db.primitives import current_session
+    from contexts.shared.infrastructure.unit_of_work import current_session
 
     def _s():
         return current_session()
