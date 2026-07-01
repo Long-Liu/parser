@@ -1,5 +1,4 @@
 import sqlalchemy as sa
-from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from db.engine import get_sessionmaker
 from db.models import Permission, Role, RolePermission, User, UserRole
@@ -89,7 +88,7 @@ class UserRoleRepo(BaseRepo):
             sa.literal(user_id).label("user_id"), roles.c.id.label("role_id")
         ).where(roles.c.code == role_code)
         await cls._write(
-            mysql_insert(user_roles).prefix_with("IGNORE").from_select(
+            sa.insert(user_roles).prefix_with("IGNORE").from_select(
                 ["user_id", "role_id"], sel
             )
         )
@@ -101,7 +100,7 @@ class UserRoleRepo(BaseRepo):
             sa.and_(users.c.username == username, roles.c.code == role_code)
         )
         await cls._write(
-            mysql_insert(user_roles).prefix_with("IGNORE").from_select(
+            sa.insert(user_roles).prefix_with("IGNORE").from_select(
                 ["user_id", "role_id"], sel
             )
         )
@@ -117,7 +116,7 @@ class RolePermissionRepo(BaseRepo):
             sa.and_(roles.c.code == role_code, permissions.c.code == perm_code)
         )
         await cls._write(
-            mysql_insert(role_permissions).prefix_with("IGNORE").from_select(
+            sa.insert(role_permissions).prefix_with("IGNORE").from_select(
                 ["role_id", "permission_id"], sel
             )
         )

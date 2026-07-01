@@ -1,7 +1,6 @@
 """Base repository — ORM-driven CRUD via classmethods."""
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from db.engine import get_sessionmaker
 from db.primitives import current_session, model_to_dict
@@ -36,7 +35,7 @@ class BaseRepo:
 
     @classmethod
     def _insert_ignore_stmt(cls, **values):
-        stmt = mysql_insert(cls._t())
+        stmt = sa.insert(cls._t())
         stmt = stmt.prefix_with("IGNORE")
         return stmt.values(**values)
 

@@ -3,7 +3,6 @@
 import json as _json
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from db.engine import get_sessionmaker
 from db.models import data_model_for
@@ -64,7 +63,7 @@ class DataRepo:
             })
         fields = sorted({key for row in values for key in row})
         values = [{field: row.get(field) for field in fields} for row in values]
-        stmt = mysql_insert(model.__table__).values({field: sa.bindparam(field) for field in fields})
+        stmt = sa.insert(model.__table__).values({field: sa.bindparam(field) for field in fields})
         await DataRepo._write(stmt, values)
 
     @staticmethod
