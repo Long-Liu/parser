@@ -31,6 +31,11 @@ def load_config(env: str | None = None) -> Config:
 
     db_password = os.getenv("DB_PASSWORD") or data["db"].get("password", "")
     jwt_secret = os.getenv("JWT_SECRET") or data["jwt"].get("secret", "")
+    if env != "local":
+        if not db_password:
+            raise ValueError("DB_PASSWORD is required outside local environment")
+        if len(jwt_secret) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 characters outside local environment")
 
     return Config(
         DEBUG=data.get("debug", False),

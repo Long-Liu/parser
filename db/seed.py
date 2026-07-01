@@ -1,4 +1,4 @@
-from db.connection import transactional
+from db.primitives import transactional
 from middleware.auth import hash_password
 from repositories.user import (UserRepo, RoleRepo, PermissionRepo,
                                 UserRoleRepo, RolePermissionRepo)
@@ -7,7 +7,11 @@ from repositories.user import (UserRepo, RoleRepo, PermissionRepo,
 async def seed_defaults():
     """Seed default permissions, roles, and admin user on first startup."""
     import os
-    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+    env = os.getenv("APP_ENV", "local")
+    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    if env != "local" and not admin_password:
+        raise ValueError("DEFAULT_ADMIN_PASSWORD is required outside local environment")
+    admin_password = admin_password or "admin123"
 
     PERMISSIONS = [
         ("project:create", "创建项目"),

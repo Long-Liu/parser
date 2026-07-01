@@ -4,7 +4,7 @@ import logging
 import os
 
 from db.config import load_config
-from db.connection import init as db_init, close as db_close
+from db.engine import init as db_init, close as db_close
 from db.schema import init_db, create_data_table
 from db.seed import seed_defaults
 from utils.config_loader import list_configs

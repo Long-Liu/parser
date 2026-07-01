@@ -1,11 +1,11 @@
 
-from db.tables import upload_batches, upload_logs
+from db.models import UploadBatch, UploadLog
 from repositories.base import BaseRepo
 
 
 class BatchRepo(BaseRepo):
-    table = upload_batches
+    model = UploadBatch
 
 
 class LogRepo(BaseRepo):
-    table = upload_logs
+    model = UploadLog

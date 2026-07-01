@@ -1,6 +1,6 @@
-from db.tables import projects
+from db.models import Project
 from repositories.base import BaseRepo
 
 
 class ProjectRepo(BaseRepo):
-    table = projects
+    model = Project

@@ -9,3 +9,5 @@ uploads/
 # Local dev config with secrets (template in config/local.example.yaml)
 config/local.yaml
 config/prod.yaml
+AGENTS.md
+note.txt

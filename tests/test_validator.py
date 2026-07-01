@@ -1,4 +1,5 @@
 from core.validator import validate
+from decimal import Decimal
 
 
 def make_columns():
@@ -22,7 +23,22 @@ def test_validate_casts_string_to_decimal():
     rows = [{"name": "张三", "amount": "150.75"}]
     valid, errors = validate(rows, make_columns())
     assert len(valid) == 1
-    assert valid[0]["amount"] == 150.75
+    assert valid[0]["amount"] == Decimal("150.75")
+
+
+def test_validate_rounds_decimal_scale():
+    rows = [{"name": "张三", "amount": "150.755"}]
+    valid, errors = validate(rows, make_columns())
+    assert len(errors) == 0
+    assert valid[0]["amount"] == Decimal("150.76")
+
+
+def test_validate_rejects_decimal_precision_overflow():
+    rows = [{"name": "张三", "amount": "123456789.01"}]
+    valid, errors = validate(rows, make_columns())
+    assert len(valid) == 0
+    assert len(errors) == 1
+    assert errors[0]["field"] == "amount"
 
 
 def test_validate_sets_none_for_invalid_decimal():

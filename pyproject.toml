@@ -1,2 +1,9 @@
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_mode = "auto"
+markers = [
+    "asyncio: run async tests with pytest-asyncio",
+]
+filterwarnings = [
+    "ignore:Table .* already exists:Warning",
+]

@@ -2,7 +2,7 @@ import pytest
 
 from middleware.auth import generate_token, verify_token, hash_password, check_password
 
-TEST_SECRET = "test-secret-key-for-pytest"
+TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
 
 
 def test_token_roundtrip():

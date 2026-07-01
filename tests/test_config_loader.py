@@ -1,7 +1,14 @@
 import pytest
 import tempfile
 import os
+import re
+import sqlalchemy as sa
+
+from db.tables import TEMPLATE_DATA_TABLES
 from utils.config_loader import load_config, list_configs, match_template
+
+
+DECIMAL_RE = re.compile(r"^decimal\((\d+),\s*(\d+)\)$", re.IGNORECASE)
 
 
 @pytest.fixture
@@ -50,3 +57,27 @@ def test_match_template(config_dir):
 def test_match_template_no_match(config_dir):
     config = match_template("不存在的Sheet名", config_dir=config_dir)
     assert config is None
+
+
+def test_all_template_configs_match_data_tables():
+    configs = list_configs()
+    assert configs
+
+    for cfg in configs:
+        template_id = cfg.get("template_id")
+        assert template_id in TEMPLATE_DATA_TABLES
+        assert cfg.get("sheet_pattern")
+        assert cfg.get("headers", {}).get("data_start_row")
+
+        table = TEMPLATE_DATA_TABLES[template_id]
+        table_cols = set(table.c.keys())
+        for col in cfg.get("columns", []):
+            db_field = col.get("db_field")
+            assert db_field in table_cols, f"{template_id}.{db_field} missing from {table.name}"
+
+            match = DECIMAL_RE.match(col.get("type", ""))
+            if match:
+                table_type = table.c[db_field].type
+                assert isinstance(table_type, sa.Numeric)
+                assert table_type.precision == int(match.group(1))
+                assert table_type.scale == int(match.group(2))

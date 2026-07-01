@@ -15,7 +15,7 @@ stop_rules:
     patterns: ["^注：", "^注 :", "^说明：", "^金额单位"]
     columns: ["A"]
   - type: cell_match
-    patterns: ["^合计（含税）", "^合计\(含税\)"]
+    patterns: ["^合计（含税）", '^合计\(含税\)']
     action: "last"
 
 columns:

@@ -1,12 +1,31 @@
 import sqlalchemy as sa
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 
-from db.connection import transactional, exec_stmt, select_val
+from db.engine import get_sessionmaker
+from db.models import Permission, Role, RolePermission, User, UserRole
+from db.primitives import current_session, transactional
 from db.tables import users, user_roles, roles, role_permissions, permissions
-from repositories.base import BaseRepo, select_all
+from repositories.base import BaseRepo
 
 
 class UserRepo(BaseRepo):
-    table = users
+    model = User
+
+    @staticmethod
+    async def _read(stmt):
+        session = current_session()
+        if session is not None:
+            return await session.execute(stmt)
+        async with get_sessionmaker()() as session:
+            return await session.execute(stmt)
+
+    @staticmethod
+    async def _write(stmt, params=None):
+        session = current_session()
+        if session is not None:
+            return await session.execute(stmt, params if params is not None else {})
+        async with get_sessionmaker().begin() as session:
+            return await session.execute(stmt, params if params is not None else {})
 
     @classmethod
     async def get_by_username(cls, username: str) -> dict | None:
@@ -33,7 +52,7 @@ class UserRepo(BaseRepo):
     @classmethod
     async def get_permissions(cls, user_id: int) -> frozenset[str]:
         """Return the set of permission codes for a user (3-table JOIN)."""
-        rows = await select_all(
+        result = await cls._read(
             sa.select(permissions.c.code)
             .select_from(
                 user_roles
@@ -42,25 +61,26 @@ class UserRepo(BaseRepo):
             )
             .where(user_roles.c.user_id == user_id)
         )
-        return frozenset(r["code"] for r in rows)
+        return frozenset(result.scalars().all())
 
     @classmethod
     async def _count_for_update(cls) -> int:
         """Count all users with FOR UPDATE lock — internal, use inside Transaction."""
         stmt = sa.select(sa.func.count().label("cnt")).select_from(users).with_for_update()
-        return (await select_val(stmt)) or 0
+        result = await cls._read(stmt)
+        return result.scalar() or 0
 
 
 class RoleRepo(BaseRepo):
-    table = roles
+    model = Role
 
 
 class PermissionRepo(BaseRepo):
-    table = permissions
+    model = Permission
 
 
 class UserRoleRepo(BaseRepo):
-    table = user_roles
+    model = UserRole
 
     @classmethod
     async def grant(cls, user_id: int, role_code: str):
@@ -68,8 +88,8 @@ class UserRoleRepo(BaseRepo):
         sel = sa.select(
             sa.literal(user_id).label("user_id"), roles.c.id.label("role_id")
         ).where(roles.c.code == role_code)
-        await exec_stmt(
-            user_roles.insert().prefix_with("IGNORE").from_select(
+        await cls._write(
+            mysql_insert(user_roles).prefix_with("IGNORE").from_select(
                 ["user_id", "role_id"], sel
             )
         )
@@ -80,15 +100,15 @@ class UserRoleRepo(BaseRepo):
         sel = sa.select(users.c.id, roles.c.id).where(
             sa.and_(users.c.username == username, roles.c.code == role_code)
         )
-        await exec_stmt(
-            user_roles.insert().prefix_with("IGNORE").from_select(
+        await cls._write(
+            mysql_insert(user_roles).prefix_with("IGNORE").from_select(
                 ["user_id", "role_id"], sel
             )
         )
 
 
 class RolePermissionRepo(BaseRepo):
-    table = role_permissions
+    model = RolePermission
 
     @classmethod
     async def grant(cls, role_code: str, perm_code: str):
@@ -96,8 +116,8 @@ class RolePermissionRepo(BaseRepo):
         sel = sa.select(roles.c.id, permissions.c.id).where(
             sa.and_(roles.c.code == role_code, permissions.c.code == perm_code)
         )
-        await exec_stmt(
-            role_permissions.insert().prefix_with("IGNORE").from_select(
+        await cls._write(
+            mysql_insert(role_permissions).prefix_with("IGNORE").from_select(
                 ["role_id", "permission_id"], sel
             )
         )

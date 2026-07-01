@@ -3,53 +3,84 @@
 import json as _json
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 
-from db.connection import insert_row, select_val, select_all
-from db.tables import data_table_for
+from db.engine import get_sessionmaker
+from db.models import data_model_for
+from db.primitives import current_session, model_to_dict
 
 
 class DataRepo:
     """CRUD for dynamic data_{template_id} tables — no fixed table attribute."""
 
     @staticmethod
+    async def _read(stmt):
+        session = current_session()
+        if session is not None:
+            return await session.execute(stmt)
+        async with get_sessionmaker()() as session:
+            return await session.execute(stmt)
+
+    @staticmethod
+    async def _write(stmt, params=None):
+        session = current_session()
+        if session is not None:
+            return await session.execute(stmt, params if params is not None else {})
+        async with get_sessionmaker().begin() as session:
+            return await session.execute(stmt, params if params is not None else {})
+
+    @staticmethod
     async def insert_rows(template_id: str, rows: list[dict]):
         """Insert extracted rows into data_{template_id}."""
         if not rows:
             return
-        dtable = data_table_for(template_id)
+        model = data_model_for(template_id)
+        values = []
         for row in rows:
-            value_dict = {
+            values.append({
                 **{c: row.get(c) for c in row if c != "monthly_data"},
                 "monthly_data": _json.dumps(row.get("monthly_data", {}), ensure_ascii=False),
-            }
-            # ponytail: per-row insert — batch executemany when proven necessary
-            await insert_row(dtable.insert().values(**value_dict))
+            })
+        fields = sorted({key for row in values for key in row})
+        values = [{field: row.get(field) for field in fields} for row in values]
+        stmt = mysql_insert(model.__table__).values({field: sa.bindparam(field) for field in fields})
+        await DataRepo._write(stmt, values)
+
+    @staticmethod
+    async def delete(template_id: str, batch_id: int | None = None):
+        """Delete rows from data_{template_id}, optionally scoped to a batch."""
+        model = data_model_for(template_id)
+        stmt = sa.delete(model)
+        if batch_id is not None:
+            stmt = stmt.where(model.__table__.c.batch_id == batch_id)
+        await DataRepo._write(stmt)
 
     @staticmethod
     async def query(template_id: str, batch_id: int | None = None,
                     page: int = 1, size: int = 200) -> dict:
         """Paginated query of data_{template_id}."""
-        dtable = data_table_for(template_id)
+        model = data_model_for(template_id)
         offset = (page - 1) * size
 
         if batch_id:
             count_stmt = (sa.select(sa.func.count().label("cnt"))
-                           .select_from(dtable)
-                           .where(dtable.c.batch_id == batch_id))
-            data_stmt = (dtable.select()
-                          .where(dtable.c.batch_id == batch_id)
+                           .select_from(model.__table__)
+                           .where(model.__table__.c.batch_id == batch_id))
+            data_stmt = (sa.select(model)
+                          .where(model.__table__.c.batch_id == batch_id)
                           .limit(size).offset(offset))
         else:
-            count_stmt = sa.select(sa.func.count().label("cnt")).select_from(dtable)
-            data_stmt = dtable.select().limit(size).offset(offset)
+            count_stmt = sa.select(sa.func.count().label("cnt")).select_from(model.__table__)
+            data_stmt = sa.select(model).limit(size).offset(offset)
 
-        total = await select_val(count_stmt) or 0
-        rows = await select_all(data_stmt)
+        total = (await DataRepo._read(count_stmt)).scalar() or 0
+        result = await DataRepo._read(data_stmt)
+        rows = result.scalars().all()
 
-        cols = list(rows[0].keys()) if rows else []
+        cols = list(rows[0].__table__.columns.keys()) if rows else []
         data = []
         for row in rows:
-            d = dict(row)
+            d = model_to_dict(row)
             if d.get("monthly_data") and isinstance(d["monthly_data"], str):
                 d["monthly_data"] = _json.loads(d["monthly_data"])
             if d.get("created_at"):

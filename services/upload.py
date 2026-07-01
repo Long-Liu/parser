@@ -12,6 +12,7 @@ import openpyxl
 from sanic.request import File
 
 from core.pipeline import run_pipeline
+from db.primitives import transactional
 from repositories.batch import BatchRepo, LogRepo
 from services.data import insert_rows
 from utils.config_loader import match_template
@@ -63,6 +64,35 @@ async def _process_sheet(ws, sheet_name: str, batch_id: int) -> dict:
     }
 
 
+@transactional
+async def _process_workbook(wb, batch_no: str, project_id: int, ym: str,
+                            user_id: int, file_name: str, file_size: int) -> dict:
+    batch_id = await BatchRepo.insert(
+        batch_no=batch_no, project_id=project_id, ym=ym,
+        uploaded_by=user_id, file_name=file_name,
+        file_size=file_size,
+    )
+
+    sheet_results = []
+    all_success = True
+    any_success = False
+
+    for sheet_name in wb.sheetnames:
+        r = await _process_sheet(wb[sheet_name], sheet_name, batch_id)
+        sheet_results.append(r)
+        if r["status"] != "success":
+            all_success = False
+        if r["rows"] > 0:
+            any_success = True
+
+    status = _determine_status(all_success, any_success)
+    await BatchRepo.update(
+        BatchRepo._t().c.id == batch_id, status=status
+    )
+
+    return {"batch_id": batch_id, "status": status, "sheets": sheet_results}
+
+
 async def process_upload(file: File, project_id: int, ym: str, user_id: int) -> dict:
     """Process an uploaded Excel file. Returns {batch_id, batch_no, status, sheets}."""
     batch_no = _make_batch_no()
@@ -72,39 +102,26 @@ async def process_upload(file: File, project_id: int, ym: str, user_id: int) -> 
 
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(file.body)
-
-    batch_id = await BatchRepo.insert(
-        batch_no=batch_no, project_id=project_id, ym=ym,
-        uploaded_by=user_id, file_name=file.name,
-        file_size=os.path.getsize(filepath),
-    )
+    file_size = os.path.getsize(filepath)
 
     try:
         wb = await asyncio.to_thread(openpyxl.load_workbook, filepath, data_only=True)
         with closing(wb):
-            sheet_results = []
-            all_success = True
-            any_success = False
-
-            for sheet_name in wb.sheetnames:
-                r = await _process_sheet(wb[sheet_name], sheet_name, batch_id)
-                sheet_results.append(r)
-                if r["status"] == "partial":
-                    all_success = False
-                if r["rows"] > 0:
-                    any_success = True
-
-            status = _determine_status(all_success, any_success)
-            await BatchRepo.update(
-                BatchRepo.table.c.id == batch_id, status=status
+            processed = await _process_workbook(
+                wb, batch_no, project_id, ym, user_id, file.name, file_size
             )
+            batch_id = processed["batch_id"]
+            status = processed["status"]
+            sheet_results = processed["sheets"]
 
     except asyncio.CancelledError:
         raise
     except Exception:
         logger.exception("upload failed for batch %s", batch_no)
-        await BatchRepo.update(
-            BatchRepo.table.c.id == batch_id, status="failed"
+        batch_id = await BatchRepo.insert(
+            batch_no=batch_no, project_id=project_id, ym=ym,
+            uploaded_by=user_id, file_name=file.name,
+            file_size=file_size, status="failed",
         )
         status = "failed"
         sheet_results = []

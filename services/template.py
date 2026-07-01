@@ -5,7 +5,7 @@ from repositories.template import TemplateRepo
 
 
 async def list_templates() -> list[dict]:
-    return await TemplateRepo.list(TemplateRepo.table.c.is_active.is_(True))
+    return await TemplateRepo.list(TemplateRepo._t().c.is_active.is_(True))
 
 
 async def register_template(template_id: str, config_yaml: str,
