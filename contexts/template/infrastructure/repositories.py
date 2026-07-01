@@ -3,7 +3,7 @@ from __future__ import annotations
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.template.domain.template import Template
 from contexts.template.domain.repositories import TemplateRepository
-from contexts.template.domain.yaml_loader import YamlTemplateLoader
+from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 
 class TemplateRepositoryImpl(TemplateRepository):

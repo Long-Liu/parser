@@ -1,6 +1,6 @@
 import pytest
 
-from db.config import load_config
+from contexts.shared.infrastructure.database.config import load_config
 
 
 def test_prod_config_requires_strong_jwt_secret(monkeypatch):

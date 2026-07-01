@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from db.engine import get_sessionmaker
-from db.models import User as OrmUser
-from db.models import Role as OrmRole
-from db.models import UserRole, RolePermission, Permission as OrmPermission
+from contexts.shared.infrastructure.database.engine import get_sessionmaker
+from contexts.shared.infrastructure.database.models import User as OrmUser
+from contexts.shared.infrastructure.database.models import Role as OrmRole
+from contexts.shared.infrastructure.database.models import (
+    UserRole,
+    RolePermission,
+    Permission as OrmPermission,
+)
 from contexts.shared.domain.identifiers import UserId, RoleId
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.auth.domain.user import User, RoleRef
@@ -38,23 +42,35 @@ def _get_session():
 
 
 class UserRepositoryImpl(UserRepository):
-    async def next_id(self) -> UserId:
-        return UserId(0)
-
     async def save(self, user: User) -> None:
         session, owns = _get_session()
         try:
-            orm = OrmUser(
-                id=user.id.value if user.id.value > 0 else None,
-                username=user.username, password=user.password_hash,
-                real_name=user.real_name, phone=user.phone,
-                is_active=1 if user.is_active else 0,
-            )
-            session.add(orm)
-            await session.flush()
-            if user.id.value == 0:
-                # ponytail: setattr works because User is not a frozen dataclass
+            values = {
+                "username": user.username,
+                "password": user.password_hash,
+                "real_name": user.real_name,
+                "email": user.email,
+                "phone": user.phone,
+                "is_active": 1 if user.is_active else 0,
+            }
+            if user.id is None:
+                orm = OrmUser(**values)
+                session.add(orm)
+                await session.flush()
                 user.id = UserId(orm.id)
+                return
+            existing = await session.execute(
+                sa.select(OrmUser.id).where(OrmUser.id == user.id.value)
+            )
+            if existing.first() is None:
+                session.add(OrmUser(id=user.id.value, **values))
+            else:
+                await session.execute(
+                    sa.update(OrmUser)
+                    .where(OrmUser.id == user.id.value)
+                    .values(**values)
+                )
+            await session.flush()
         finally:
             if owns:
                 await session.close()

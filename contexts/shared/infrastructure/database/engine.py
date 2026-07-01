@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from db.config import Config
+from contexts.shared.infrastructure.database.config import Config
 
 logger = logging.getLogger("parser.db")
 

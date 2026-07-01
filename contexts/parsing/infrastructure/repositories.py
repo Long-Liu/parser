@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from db.engine import get_sessionmaker
-from db.models import UploadBatch as OrmBatch
-from db.models import UploadLog as OrmLog
-from db.models import TEMPLATE_DATA_MODELS
-from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId
+from contexts.shared.infrastructure.database.engine import get_sessionmaker
+from contexts.shared.infrastructure.database.models import UploadBatch as OrmBatch
+from contexts.shared.infrastructure.database.models import UploadLog as OrmLog
+from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.parsing.domain.parse_job import (
@@ -17,8 +16,10 @@ from contexts.parsing.domain.repositories import ParseJobRepository
 
 def _job_to_batch_values(job: ParseJob) -> dict:
     return {
+        "batch_no": job.batch_no,
         "project_id": job.project_id.value,
         "ym": str(job.year_month),
+        "uploaded_by": job.uploaded_by.value if job.uploaded_by else None,
         "file_name": job.file_info.filename,
         "file_size": job.file_info.size,
         "status": job.overall_status,
@@ -42,7 +43,18 @@ def _sheet_to_log_values(sheet: SheetResult, batch_id: int) -> dict:
 
 
 def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
-    job = ParseJob.submit(
+    sheets = []
+    for log in orm_logs:
+        tid = TemplateId(log.template_id) if log.template_id else None
+        ms = MatchStatus.MATCHED if log.action == "matched" else MatchStatus.SKIPPED
+        sr = SheetResult(log.sheet_name, template_id=tid, match_status=ms)
+        sr.total_rows = log.total_rows or 0
+        sr.success_rows = log.success_rows or 0
+        sr.error_rows = log.error_rows or 0
+        sheets.append(sr)
+
+    status = JobStatus.FAILED if orm_batch.status == "failed" else JobStatus.DONE
+    return ParseJob.rehydrate(
         job_id=JobId(orm_batch.id),
         project_id=ProjectId(orm_batch.project_id),
         year_month=YearMonth.parse(orm_batch.ym),
@@ -50,34 +62,30 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
             filename=orm_batch.file_name or "",
             size=orm_batch.file_size or 0,
         ),
+        batch_no=orm_batch.batch_no or "",
+        uploaded_by=UserId(orm_batch.uploaded_by) if orm_batch.uploaded_by else None,
+        status=status,
+        sheets=sheets,
     )
-    for log in orm_logs:
-        tid = TemplateId(log.template_id) if log.template_id else None
-        ms = MatchStatus.SKIPPED
-        if log.action == "matched":
-            ms = MatchStatus.MATCHED
-        sr = SheetResult(log.sheet_name, template_id=tid, match_status=ms)
-        sr.total_rows = log.total_rows or 0
-        sr.success_rows = log.success_rows or 0
-        sr.error_rows = log.error_rows or 0
-        job._sheets[log.sheet_name] = sr  # ponytail: direct dict access for reconstruction
-
-    if orm_batch.status == "success":
-        job.status = JobStatus.DONE
-    elif orm_batch.status == "failed":
-        job.status = JobStatus.FAILED
-    return job
 
 
 class ParseJobRepositoryImpl(ParseJobRepository):
-    async def next_id(self) -> JobId:
-        return JobId(0)
-
     async def save(self, job: ParseJob) -> None:
         batch_values = _job_to_batch_values(job)
 
         async def _save(session):
-            if job.id.value > 0:
+            if job.id is None:
+                result = await session.execute(
+                    sa.insert(OrmBatch.__table__).values(**batch_values)
+                )
+                job.id = JobId(result.lastrowid)
+                return
+            exists = await session.execute(
+                sa.select(OrmBatch.__table__.c.id).where(
+                    OrmBatch.__table__.c.id == job.id.value
+                )
+            )
+            if exists.first() is not None:
                 # Update existing
                 await session.execute(
                     sa.update(OrmBatch.__table__)
@@ -90,11 +98,11 @@ class ParseJobRepositoryImpl(ParseJobRepository):
                     )
                 )
             else:
-                # Insert new
-                result = await session.execute(
-                    sa.insert(OrmBatch.__table__).values(**batch_values)
+                await session.execute(
+                    sa.insert(OrmBatch.__table__).values(
+                        id=job.id.value, **batch_values
+                    )
                 )
-                job.id = JobId(result.lastrowid)
 
             batch_id = job.id.value
             for sheet in job.sheets:
@@ -158,30 +166,28 @@ class ParseJobRepositoryImpl(ParseJobRepository):
         async with get_sessionmaker()() as s:
             return await _find(s)
 
-    async def insert_data_rows(
-        self, template_id: str, rows: list[ParsedRow]
-    ) -> None:
-        model = TEMPLATE_DATA_MODELS.get(template_id)
-        if model is None:
-            return
-        data = []
-        for row in rows:
-            d = dict(row.fields)
-            if row.hierarchy_code:
-                d["hierarchy_code"] = row.hierarchy_code
-            if row.monthly_data:
-                d["monthly_data"] = row.monthly_data
-            data.append(d)
-        if not data:
-            return
-
-        async def _insert(session):
-            session.add_all([model()(**row) for row in data])
-            await session.flush()
+    async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]:
+        async def _find(s):
+            result = await s.execute(
+                sa.select(OrmBatch)
+                .order_by(OrmBatch.__table__.c.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            jobs = []
+            for batch in result.scalars().all():
+                logs_result = await s.execute(
+                    sa.select(OrmLog).where(
+                        OrmLog.__table__.c.batch_id == batch.id
+                    )
+                )
+                jobs.append(
+                    _orm_to_job(batch, list(logs_result.scalars().all()))
+                )
+            return jobs
 
         session = current_session()
         if session is not None:
-            await _insert(session)
-        else:
-            async with get_sessionmaker().begin() as s:
-                await _insert(s)
+            return await _find(session)
+        async with get_sessionmaker()() as s:
+            return await _find(s)

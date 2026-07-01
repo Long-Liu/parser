@@ -8,8 +8,7 @@ import bcrypt
 import jwt
 from sanic.response import json
 
-from contexts.auth.infrastructure.repositories import UserRepositoryImpl
-from contexts.shared.domain.identifiers import UserId
+from contexts.container import container
 
 JWT_ALGORITHM = "HS256"
 
@@ -41,14 +40,12 @@ def require_auth(f):
             return json({"error": "missing token"}, status=401)
         token = auth_header[7:]
         cfg = request.app.ctx.config
+        auth = container.authorization_service(cfg.SECRET_KEY)
         try:
-            payload = verify_token(token, cfg.SECRET_KEY)
-            request.ctx.user_id = payload["user_id"]
-            request.ctx.username = payload["username"]
-            repo = UserRepositoryImpl()
-            request.ctx.permissions = await repo.get_permissions(
-                UserId(payload["user_id"])
-            )
+            ctx = await auth.authenticate(token)
+            request.ctx.user_id = ctx.user_id
+            request.ctx.username = ctx.username
+            request.ctx.permissions = ctx.permissions
         except jwt.ExpiredSignatureError:
             return json({"error": "token expired"}, status=401)
         except jwt.InvalidTokenError:

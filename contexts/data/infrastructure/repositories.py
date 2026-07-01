@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from db.engine import get_sessionmaker
-from db.models import TEMPLATE_DATA_MODELS
+from contexts.shared.infrastructure.database.engine import get_sessionmaker
+from contexts.shared.infrastructure.database.models import TEMPLATE_DATA_MODELS
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.data.domain.data_query import DataRow, Pagination, FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
@@ -11,8 +11,8 @@ from contexts.data.domain.repositories import DataQueryRepository
 
 class DataQueryRepositoryImpl(DataQueryRepository):
     async def query(
-        self, template_id: str, batch_id: int | None,
-        filters: list[FilterCriterion], pagination: Pagination,
+            self, template_id: str, batch_id: int | None,
+            filters: list[FilterCriterion], pagination: Pagination,
     ) -> tuple[list[DataRow], int]:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:

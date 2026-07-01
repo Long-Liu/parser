@@ -5,9 +5,11 @@ import os
 
 import yaml
 
-from utils.validators import TEMPLATE_ID_RE
+from contexts.template.infrastructure.validators import TEMPLATE_ID_RE
 
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "config", "templates")
+DEFAULT_CONFIG_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "templates")
+)
 
 _config_cache: dict[str, tuple[float, dict]] = {}
 

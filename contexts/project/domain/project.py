@@ -6,7 +6,7 @@ from contexts.shared.domain.exceptions import ValidationError
 
 
 class Project(AggregateRoot):
-    def __init__(self, project_id: ProjectId, code: str, name: str,
+    def __init__(self, project_id: ProjectId | None, code: str, name: str,
                  created_by: UserId | None = None) -> None:
         super().__init__()
         self.id = project_id
@@ -28,7 +28,7 @@ class Project(AggregateRoot):
         self._name = new_name.strip()
 
     @classmethod
-    def create(cls, project_id: ProjectId, code: str, name: str,
+    def create(cls, project_id: ProjectId | None, code: str, name: str,
                created_by: UserId | None = None) -> "Project":
         if not code.strip():
             raise ValidationError("project code must not be empty")

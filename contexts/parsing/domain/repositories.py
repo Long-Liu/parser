@@ -4,13 +4,10 @@ from abc import abstractmethod
 
 from contexts.shared.domain.base_repository import Repository
 from contexts.shared.domain.identifiers import JobId, ProjectId
-from contexts.parsing.domain.parse_job import ParseJob, ParsedRow
+from contexts.parsing.domain.parse_job import ParseJob
 
 
 class ParseJobRepository(Repository):
-    @abstractmethod
-    async def next_id(self) -> JobId: ...
-
     @abstractmethod
     async def save(self, job: ParseJob) -> None: ...
 
@@ -23,6 +20,4 @@ class ParseJobRepository(Repository):
     ) -> list[ParseJob]: ...
 
     @abstractmethod
-    async def insert_data_rows(
-        self, template_id: str, rows: list[ParsedRow]
-    ) -> None: ...
+    async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]: ...

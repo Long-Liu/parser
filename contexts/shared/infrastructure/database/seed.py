@@ -1,8 +1,8 @@
 """Seed default permissions, roles, and admin user on first startup."""
 
 import sqlalchemy as sa
+from collections.abc import Callable
 
-from contexts.auth.interface.auth_middleware import hash_password
 from contexts.shared.infrastructure.unit_of_work import transactional
 
 
@@ -24,19 +24,19 @@ ROLES = {
 }
 
 
-async def seed_defaults():
+async def seed_defaults(password_hasher: Callable[[str], str]):
     import os
     env = os.getenv("APP_ENV", "local")
     admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
     if env != "local" and not admin_password:
         raise ValueError("DEFAULT_ADMIN_PASSWORD is required outside local environment")
     admin_password = admin_password or "admin123"
-    await _do_seed(admin_password)
+    await _do_seed(admin_password, password_hasher)
 
 
 @transactional
-async def _do_seed(admin_password: str):
-    from db.tables import (
+async def _do_seed(admin_password: str, password_hasher: Callable[[str], str]):
+    from contexts.shared.infrastructure.database.tables import (
         users, roles, permissions, user_roles, role_permissions,
     )
     from contexts.shared.infrastructure.unit_of_work import current_session
@@ -76,7 +76,7 @@ async def _do_seed(admin_password: str):
     await _s().execute(
         sa.insert(users).prefix_with("IGNORE").values(
             username="admin",
-            password=hash_password(admin_password),
+            password=password_hasher(admin_password),
             real_name="系统管理员",
         )
     )

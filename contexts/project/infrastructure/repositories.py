@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from db.engine import get_sessionmaker
-from db.models import Project as OrmProject
+from contexts.shared.infrastructure.database.engine import get_sessionmaker
+from contexts.shared.infrastructure.database.models import Project as OrmProject
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.project.domain.project import Project
@@ -16,18 +16,31 @@ def _to_entity(orm: OrmProject) -> Project:
 
 
 class ProjectRepositoryImpl(ProjectRepository):
-    async def next_id(self) -> ProjectId:
-        return ProjectId(0)
-
     async def save(self, project: Project) -> None:
         async def _save(session):
-            orm = OrmProject(id=project.id.value if project.id.value > 0 else None,
-                             code=project.code, name=project.name,
-                             created_by=project.created_by.value if project.created_by else None)
-            session.add(orm)
-            await session.flush()
-            if project.id.value == 0:
+            values = {
+                "code": project.code,
+                "name": project.name,
+                "created_by": project.created_by.value if project.created_by else None,
+            }
+            if project.id is None:
+                orm = OrmProject(**values)
+                session.add(orm)
+                await session.flush()
                 project.id = ProjectId(orm.id)
+                return
+            existing = await session.execute(
+                sa.select(OrmProject.id).where(OrmProject.id == project.id.value)
+            )
+            if existing.first() is None:
+                session.add(OrmProject(id=project.id.value, **values))
+            else:
+                await session.execute(
+                    sa.update(OrmProject)
+                    .where(OrmProject.id == project.id.value)
+                    .values(**values)
+                )
+            await session.flush()
 
         session = current_session()
         if session is not None:

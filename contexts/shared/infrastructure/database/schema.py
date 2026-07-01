@@ -4,10 +4,12 @@ from sqlalchemy import schema as sa_schema
 from sqlalchemy.dialects.mysql import dialect as mysql_dialect
 from sqlalchemy import text
 
-from db.engine import get_sessionmaker
-from db.tables import (users, roles, permissions, user_roles, role_permissions,
-                        projects, upload_batches, upload_logs, template_configs,
-                        TEMPLATE_DATA_TABLES)
+from contexts.shared.infrastructure.database.engine import get_sessionmaker
+from contexts.shared.infrastructure.database.tables import (
+    users, roles, permissions, user_roles, role_permissions,
+    projects, upload_batches, upload_logs, template_configs,
+    TEMPLATE_DATA_TABLES,
+)
 
 ALL_TABLES = [users, roles, permissions, user_roles, role_permissions,
               projects, upload_batches, upload_logs, template_configs]

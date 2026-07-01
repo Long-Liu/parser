@@ -1,6 +1,3 @@
-# ponytail: migrated from api/batch_api.py + services/batch_service.py.
-# Batch = ParseJob — query through ParseJobRepositoryImpl.
-
 from __future__ import annotations
 
 from sanic import Blueprint
@@ -8,9 +5,9 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
-from contexts.parsing.infrastructure.repositories import ParseJobRepositoryImpl
 from contexts.shared.domain.identifiers import ProjectId, JobId
 from contexts.shared.domain.exceptions import DomainError
+from contexts.container import container
 from contexts.shared.interface.base_controller import error_to_response
 
 bp = Blueprint("batches", url_prefix="/api/batches")
@@ -44,13 +41,13 @@ def _job_to_dict(job) -> dict:
 @openapi.tag("Batches")
 @openapi.summary("List upload batches")
 async def get_batches(request):
-    repo = ParseJobRepositoryImpl()
+    repo = container.parse_job_repository()
     try:
         project_id_raw = request.args.get("project_id")
         if project_id_raw:
             jobs = await repo.find_by_project(ProjectId(int(project_id_raw)))
         else:
-            jobs = await repo.find_by_project(ProjectId(0), limit=100)
+            jobs = await repo.list_recent(limit=100)
         return json({"batches": [_job_to_dict(j) for j in jobs]})
     except DomainError as e:
         return error_to_response(e)
@@ -61,7 +58,7 @@ async def get_batches(request):
 @openapi.tag("Batches")
 @openapi.summary("Get batch detail with sheet results")
 async def get_batch_detail(request, batch_id: int):
-    repo = ParseJobRepositoryImpl()
+    repo = container.parse_job_repository()
     try:
         job = await repo.find_by_id(JobId(batch_id))
         if job is None:

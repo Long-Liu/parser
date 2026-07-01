@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
+from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
 
 
@@ -14,7 +15,7 @@ class RoleRef(ValueObject):
 
 
 class User(AggregateRoot):
-    def __init__(self, user_id: UserId, username: str, password_hash: str,
+    def __init__(self, user_id: UserId | None, username: str, password_hash: str,
                  real_name: str = "", email: str = "", phone: str = "",
                  roles: list[RoleRef] | None = None, is_active: bool = True) -> None:
         super().__init__()
@@ -35,6 +36,10 @@ class User(AggregateRoot):
     def password_hash(self) -> str:
         return self._password_hash
 
+    @property
+    def email(self) -> str:
+        return self._email
+
     def disable(self) -> None:
         self.is_active = False
 
@@ -45,10 +50,19 @@ class User(AggregateRoot):
         self.roles = roles
 
     @classmethod
-    def create(cls, user_id: UserId, username: str, password_hash: str,
+    def create(cls, user_id: UserId | None, username: str, password_hash: str,
                real_name: str = "", email: str = "", phone: str = "") -> "User":
+        username = username.strip()
+        email = email.strip()
+        if not username:
+            raise ValidationError("username must not be empty")
+        if not password_hash:
+            raise ValidationError("password hash must not be empty")
+        if email and "@" not in email:
+            raise ValidationError("email must be valid")
         return cls(user_id=user_id, username=username, password_hash=password_hash,
-                   real_name=real_name, email=email, phone=phone, roles=[], is_active=True)
+                   real_name=real_name.strip(), email=email, phone=phone.strip(),
+                   roles=[], is_active=True)
 
 
 def _demo():

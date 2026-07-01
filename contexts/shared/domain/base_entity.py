@@ -11,11 +11,15 @@ class Entity(ABC):
             return NotImplemented
         if not hasattr(self, "id") or not hasattr(other, "id"):
             raise NotImplementedError("Entity subclass must define an 'id' field")
+        if self.id is None or other.id is None:  # type: ignore[attr-defined]
+            return self is other
         return self.id == other.id  # type: ignore[attr-defined]
 
     def __hash__(self) -> int:
         if not hasattr(self, "id"):
             raise NotImplementedError("Entity subclass must define an 'id' field")
+        if self.id is None:  # type: ignore[attr-defined]
+            return object.__hash__(self)
         return hash(self.id)  # type: ignore[attr-defined]
 
 

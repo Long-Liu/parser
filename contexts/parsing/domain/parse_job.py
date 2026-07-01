@@ -73,16 +73,20 @@ class ParseJob(AggregateRoot):
 
     def __init__(
         self,
-        job_id: JobId,
+        job_id: JobId | None,
         project_id: ProjectId,
         year_month: YearMonth,
         file_info: FileInfo,
+        batch_no: str = "",
+        uploaded_by: UserId | None = None,
     ) -> None:
         super().__init__()
         self.id = job_id
         self.project_id = project_id
         self.year_month = year_month
         self.file_info = file_info
+        self.batch_no = batch_no
+        self.uploaded_by = uploaded_by
         self.status = JobStatus.SUBMITTED
         self._sheets: dict[str, SheetResult] = {}
 
@@ -93,17 +97,36 @@ class ParseJob(AggregateRoot):
     @classmethod
     def submit(
         cls,
+        job_id: JobId | None,
+        project_id: ProjectId,
+        year_month: YearMonth,
+        file_info: FileInfo,
+        batch_no: str = "",
+        uploaded_by: UserId | None = None,
+    ) -> "ParseJob":
+        job = cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
+        job.record(ParseJobSubmitted(
+            aggregate_id=job_id.value if job_id else None,
+            project_id=project_id.value,
+            file_name=file_info.filename,
+        ))
+        return job
+
+    @classmethod
+    def rehydrate(
+        cls,
         job_id: JobId,
         project_id: ProjectId,
         year_month: YearMonth,
         file_info: FileInfo,
+        batch_no: str,
+        uploaded_by: UserId | None,
+        status: JobStatus,
+        sheets: list[SheetResult],
     ) -> "ParseJob":
-        job = cls(job_id, project_id, year_month, file_info)
-        job.record(ParseJobSubmitted(
-            aggregate_id=job_id.value,
-            project_id=project_id.value,
-            file_name=file_info.filename,
-        ))
+        job = cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
+        job.status = status
+        job._sheets = {sheet.sheet_name: sheet for sheet in sheets}
         return job
 
     def add_sheet_result(self, sheet_name: str) -> SheetResult:
@@ -112,6 +135,8 @@ class ParseJob(AggregateRoot):
         return sr
 
     def match_sheet(self, sheet_name: str, template_id: str | None) -> SheetResult:
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before processing sheets")
         sr = self._sheets.get(sheet_name)
         if sr is None:
             sr = self.add_sheet_result(sheet_name)
@@ -132,6 +157,8 @@ class ParseJob(AggregateRoot):
         return sr
 
     def set_extracted(self, sheet_name: str, rows: list[ParsedRow]) -> None:
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before recording extraction")
         sr = self._sheets[sheet_name]
         sr.extracted_rows = rows
         sr.total_rows = len(rows)
@@ -144,6 +171,8 @@ class ParseJob(AggregateRoot):
     def set_validated(
         self, sheet_name: str, valid_rows: list[ParsedRow], errors: list[RowError]
     ) -> None:
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before recording validation")
         sr = self._sheets[sheet_name]
         sr.extracted_rows = valid_rows
         sr.errors = errors
@@ -157,6 +186,8 @@ class ParseJob(AggregateRoot):
         ))
 
     def complete(self) -> None:
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before completion")
         self.status = JobStatus.DONE
         total_sheets = len(self._sheets)
         matched = sum(
@@ -173,9 +204,10 @@ class ParseJob(AggregateRoot):
         ))
 
     def fail(self, reason: str) -> None:
+        aggregate_id = self.id.value if self.id else None
         self.status = JobStatus.FAILED
         self.record(ParseJobFailed(
-            aggregate_id=self.id.value,
+            aggregate_id=aggregate_id,
             reason=reason,
         ))
 

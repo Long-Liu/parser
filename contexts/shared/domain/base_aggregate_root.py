@@ -18,6 +18,11 @@ class AggregateRoot(Entity):
         self._events = []
         return events
 
+    def stamp_events(self, aggregate_id: object) -> None:
+        """Update aggregate_id on all pending events after persistence assigns the real id."""
+        for event in self._events:
+            object.__setattr__(event, "aggregate_id", aggregate_id)
+
 
 class _DemoRegistered(DomainEvent):
     pass
@@ -38,6 +43,12 @@ def _demo():
     assert len(events) == 1, "should have recorded one event"
     assert events[0].aggregate_id == 42, "event should reference aggregate"
     assert len(ar.pull_events()) == 0, "pull_events should drain"
+
+    # stamp_events
+    ar2 = _DemoAR(0)
+    ar2.activate()
+    ar2.stamp_events(99)
+    assert ar2.pull_events()[0].aggregate_id == 99, "stamp_events should update id"
     print("base_aggregate_root: OK")
 
 

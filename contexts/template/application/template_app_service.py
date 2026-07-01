@@ -15,8 +15,8 @@ class TemplateApplicationService:
                  "sheet_pattern": t.sheet_pattern, "data_table": t.data_table}
                 for t in templates]
 
-    async def get_by_id(self, template_id: str) -> dict:
-        t = await self._repo.find_by_id(TemplateId(template_id))
+    async def get_by_id(self, template_id: TemplateId) -> dict:
+        t = await self._repo.find_by_id(template_id)
         if not t:
             raise NotFoundError(f"template {template_id} not found")
         return {"template_id": str(t.id), "description": t.description,

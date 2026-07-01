@@ -21,7 +21,10 @@ class Config:
 def load_config(env: str | None = None) -> Config:
     """Load YAML config for *env*, with secrets preferentially from environment variables."""
     env = env or os.getenv("APP_ENV", "local")
-    path = os.path.join(os.path.dirname(__file__), "..", "config", f"{env}.yaml")
+    project_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+    )
+    path = os.path.join(project_root, "config", f"{env}.yaml")
 
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config not found: {path}")

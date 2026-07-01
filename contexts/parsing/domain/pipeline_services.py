@@ -3,20 +3,75 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 
 from contexts.parsing.domain.parse_job import ParsedRow, RowError
-from contexts.template.domain.template import Template, StopRuleType
+
+
+@dataclass(frozen=True)
+class MergedCellRange:
+    min_col: int
+    max_col: int
+    min_row: int
+    max_row: int
+
+
+@dataclass(frozen=True)
+class ParsingStopRule:
+    rule_type: str
+    patterns: list[str]
+    columns: list[str]
+    empty_row_count: int | None = None
+
+
+@dataclass(frozen=True)
+class ParsingColumnSpec:
+    db_field: str
+    match_headers: list[str]
+    db_type: str = "varchar(255)"
+
+
+@dataclass(frozen=True)
+class ParsingDynamicColumnSpec:
+    db_prefix: str
+    match_headers: list[str]
+    db_type: str = "decimal(15,2)"
+
+
+@dataclass(frozen=True)
+class ParsingTemplateSpec:
+    template_id: str
+    header_rows: list[int]
+    data_start_row: int
+    stop_rules: list[ParsingStopRule]
+    fixed_columns: list[ParsingColumnSpec]
+    dynamic_columns: list[ParsingDynamicColumnSpec]
+
+    def find_column(self, flat_header: str) -> ParsingColumnSpec | None:
+        for col in self.fixed_columns:
+            if all(kw in flat_header for kw in col.match_headers):
+                return col
+        return None
+
+    def find_dynamic_column(
+        self, flat_header: str
+    ) -> ParsingDynamicColumnSpec | None:
+        for col in self.dynamic_columns:
+            if all(kw in flat_header for kw in col.match_headers):
+                return col
+        return None
 
 
 class CellUnmerger:
-    def unmerge(self, ws) -> list[list]:
-        grid = [[cell.value for cell in row] for row in ws.iter_rows()]
-        for merged_range in ws.merged_cells.ranges:
-            min_col = merged_range.min_col - 1
-            max_col = merged_range.max_col - 1
-            min_row = merged_range.min_row - 1
-            max_row = merged_range.max_row - 1
+    def unmerge(
+        self, grid: list[list], merged_ranges: list[MergedCellRange]
+    ) -> list[list]:
+        for merged_range in merged_ranges:
+            min_col = merged_range.min_col
+            max_col = merged_range.max_col
+            min_row = merged_range.min_row
+            max_row = merged_range.max_row
             value = (
                 grid[min_row][min_col]
                 if min_row < len(grid) and min_col < len(grid[min_row])
@@ -51,15 +106,15 @@ class HeaderFlattener:
 
 class StopDetector:
     def should_stop(
-        self, row_index: int, grid: list[list], template: Template
+        self, row_index: int, grid: list[list], template: ParsingTemplateSpec
     ) -> bool:
         for rule in template.stop_rules:
-            if rule.rule_type == StopRuleType.CELL_MATCH:
+            if rule.rule_type == "cell_match":
                 if self._check_cell_match(
                     grid, row_index, rule.patterns, rule.columns
                 ):
                     return True
-            elif rule.rule_type == StopRuleType.CONSECUTIVE_EMPTY:
+            elif rule.rule_type == "consecutive_empty_rows":
                 if self._check_consecutive_empty(
                     grid, row_index, rule.empty_row_count or 5
                 ):
@@ -91,9 +146,9 @@ class StopDetector:
 
 class DataRowExtractor:
     def extract(
-        self, grid: list[list], flat_headers: list[str], template: Template
+        self, grid: list[list], flat_headers: list[str], template: ParsingTemplateSpec
     ) -> list[ParsedRow]:
-        data_start = template.header_spec.data_start_row - 1
+        data_start = template.data_start_row - 1
         stop_detector = StopDetector()
         rows = []
         for ri in range(data_start, len(grid)):
@@ -101,11 +156,17 @@ class DataRowExtractor:
                 break
             row_data = self._extract_row(grid[ri], flat_headers, template)
             if row_data is not None:
+                row_data = ParsedRow(
+                    row_index=ri + 1,
+                    fields=row_data.fields,
+                    hierarchy_code=row_data.hierarchy_code,
+                    monthly_data=row_data.monthly_data,
+                )
                 rows.append(row_data)
         return rows
 
     def _extract_row(
-        self, row: list, flat_headers: list[str], template: Template
+        self, row: list, flat_headers: list[str], template: ParsingTemplateSpec
     ) -> ParsedRow | None:
         fields: dict = {}
         monthly_data: dict = {}
@@ -132,7 +193,7 @@ class DataRowExtractor:
 
 class DataValidator:
     def validate(
-        self, rows: list[ParsedRow], template: Template
+        self, rows: list[ParsedRow], template: ParsingTemplateSpec
     ) -> tuple[list[ParsedRow], list[RowError]]:
         valid: list[ParsedRow] = []
         errors: list[RowError] = []
@@ -144,7 +205,9 @@ class DataValidator:
                 valid.append(row)
         return valid, errors
 
-    def _validate_row(self, row: ParsedRow, template: Template) -> list[RowError]:
+    def _validate_row(
+        self, row: ParsedRow, template: ParsingTemplateSpec
+    ) -> list[RowError]:
         errs: list[RowError] = []
         for col in template.fixed_columns:
             if col.db_field in row.fields:

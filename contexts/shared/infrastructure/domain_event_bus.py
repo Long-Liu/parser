@@ -6,12 +6,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from contexts.shared.domain.base_domain_event import DomainEvent
+from contexts.shared.domain.event_publisher import EventPublisher
 
 logger = logging.getLogger("parser.event_bus")
 EventHandler = Callable[[DomainEvent], Awaitable[None]]
 
 
-class DomainEventBus:
+class DomainEventBus(EventPublisher):
     def __init__(self) -> None:
         self._handlers: dict[type[DomainEvent], list[EventHandler]] = defaultdict(list)
 
@@ -26,6 +27,10 @@ class DomainEventBus:
                     await handler(event)
                 except Exception:
                     logger.exception("Event handler failed for %s", type(event).__name__)
+
+
+# ponytail: module-level singleton — good enough until multiple buses are needed
+domain_event_bus = DomainEventBus()
 
 
 @dataclass(frozen=True)

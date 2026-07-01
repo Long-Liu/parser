@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import contextvars
 import functools
-from abc import ABC, abstractmethod
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.engine import get_sessionmaker
+from contexts.shared.infrastructure.database.engine import get_sessionmaker
+from contexts.shared.domain.unit_of_work import UnitOfWork
 
 _tx_session: contextvars.ContextVar[AsyncSession | None] = contextvars.ContextVar(
     "uow_session", default=None
@@ -25,20 +25,6 @@ _tx_session: contextvars.ContextVar[AsyncSession | None] = contextvars.ContextVa
 def current_session() -> AsyncSession | None:
     """Return the active transaction session for this task, if any."""
     return _tx_session.get()
-
-
-class UnitOfWork(ABC):
-    @abstractmethod
-    async def __aenter__(self) -> "UnitOfWork": ...
-
-    @abstractmethod
-    async def __aexit__(self, *args) -> None: ...
-
-    @abstractmethod
-    async def commit(self) -> None: ...
-
-    @abstractmethod
-    async def rollback(self) -> None: ...
 
 
 class SqlAlchemyUnitOfWork(UnitOfWork):

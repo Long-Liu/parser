@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import registry
 
-from db import tables
+from contexts.shared.infrastructure.database import tables
 
 mapper_registry = registry(metadata=tables.metadata)
 

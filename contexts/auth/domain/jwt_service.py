@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 
+from contexts.shared.domain.identifiers import UserId
+
 JWT_ALGORITHM = "HS256"
 
 
@@ -12,9 +14,9 @@ class JwtService:
         self.secret = secret
         self.expiry_hours = expiry_hours
 
-    def generate(self, user_id: int, username: str) -> str:
+    def generate(self, user_id: UserId, username: str) -> str:
         exp = datetime.now(tz=timezone.utc) + timedelta(hours=self.expiry_hours)
-        payload = {"user_id": user_id, "username": username, "exp": exp}
+        payload = {"user_id": user_id.value, "username": username, "exp": exp}
         return jwt.encode(payload, self.secret, algorithm=JWT_ALGORITHM)
 
     def verify(self, token: str) -> dict:

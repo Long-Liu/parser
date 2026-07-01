@@ -4,8 +4,12 @@ import os
 import re
 import sqlalchemy as sa
 
-from db.tables import TEMPLATE_DATA_TABLES
-from utils.config_loader import load_config, list_configs, match_template
+from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_TABLES
+from contexts.template.infrastructure.config_loader import (
+    load_config,
+    list_configs,
+    match_template,
+)
 
 
 DECIMAL_RE = re.compile(r"^decimal\((\d+),\s*(\d+)\)$", re.IGNORECASE)

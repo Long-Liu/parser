@@ -1,5 +1,3 @@
-# ponytail: adapted from api/upload_api.py.
-
 from __future__ import annotations
 
 import os
@@ -10,8 +8,10 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
-from contexts.parsing.application.upload_app_service import UploadApplicationService
+from contexts.shared.domain.identifiers import ProjectId, UserId
+from contexts.shared.domain.year_month import YearMonth
 from contexts.shared.domain.exceptions import DomainError
+from contexts.container import container
 from contexts.shared.interface.base_controller import error_to_response
 
 bp = Blueprint("upload_ddd", url_prefix="/api")
@@ -47,20 +47,27 @@ async def upload(request):
         return json({"error": "file exceeds 50MB limit"}, status=400)
 
     try:
-        project_id = int(request.form.get("project_id", "0"))
+        project_id_raw = int(request.form.get("project_id", "0"))
     except (ValueError, TypeError):
         return json({"error": "invalid project_id"}, status=400)
-    if project_id <= 0:
+    if project_id_raw <= 0:
         return json({"error": "invalid project_id"}, status=400)
 
-    ym = request.form.get("ym", datetime.now().strftime("%Y-%m"))
-    user_id = getattr(request.ctx, "user_id", None)
-    if user_id is None:
+    ym_str = request.form.get("ym", datetime.now().strftime("%Y-%m"))
+    try:
+        ym = YearMonth.parse(ym_str)
+    except DomainError:
+        return json({"error": f"invalid ym format: {ym_str}"}, status=400)
+
+    user_id_raw = getattr(request.ctx, "user_id", None)
+    if user_id_raw is None:
         return json({"error": "not authenticated"}, status=401)
 
-    svc = UploadApplicationService()
+    svc = container.upload_service()
     try:
-        result = await svc.process(file, project_id, ym, user_id)
+        result = await svc.process(
+            file, ProjectId(project_id_raw), ym, UserId(user_id_raw)
+        )
         if result["status"] == "failed":
             return json(
                 dict(result, error="upload processing failed"), status=500
