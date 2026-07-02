@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
 from contexts.shared.domain.unit_of_work import UnitOfWork
+from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.auth.domain.user import User
 from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.domain.auth_service import AuthenticationService
@@ -18,12 +19,14 @@ class AuthApplicationService:
     def __init__(self, user_repo: UserRepository, auth_service: AuthenticationService,
                  jwt_service: TokenService,
                  password_hasher: PasswordHasher,
-                 uow_factory: Callable[[], UnitOfWork]) -> None:
+                 uow_factory: Callable[[], UnitOfWork],
+                 event_publisher: EventPublisher | None = None) -> None:
         self._users = user_repo
         self._auth = auth_service
         self._jwt = jwt_service
         self._password_hasher = password_hasher
         self._uow_factory = uow_factory
+        self._event_publisher = event_publisher
 
     async def login(self, cmd: LoginCommand) -> LoginResult:
         if not cmd.username or not cmd.password:
@@ -54,4 +57,6 @@ class AuthApplicationService:
             await uow.commit()
         if user.id is None:
             raise RuntimeError("user repository did not assign an id")
+        if self._event_publisher:
+            await self._event_publisher.publish(user.pull_events())
         return {"id": user.id.value, "username": cmd.username}

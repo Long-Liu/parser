@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import sqlalchemy as sa
-from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.tables import User as OrmUser
-from contexts.shared.infrastructure.database.tables import Role as OrmRole
-from contexts.shared.infrastructure.database.tables import (
+from contexts.auth.infrastructure.tables import User as OrmUser
+from contexts.auth.infrastructure.tables import Role as OrmRole
+from contexts.auth.infrastructure.tables import (
     UserRole,
     RolePermission,
     Permission as OrmPermission,
 )
 from contexts.shared.domain.identifiers import RoleId, UserId
-from contexts.shared.infrastructure.unit_of_work import current_session
+from contexts.shared.infrastructure.unit_of_work import current_session, session_scope
 from contexts.auth.domain.user import User, RoleRef
 from contexts.auth.domain.role import PermissionRef, Role
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
@@ -23,14 +22,6 @@ def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
         roles=[RoleRef(role_id=r["id"], code=r["code"]) for r in roles],
         is_active=bool(orm.is_active),
     )
-
-
-def _get_session():
-    """Return active session or create a new one."""
-    s = current_session()
-    if s is not None:
-        return s, False
-    return get_sessionmaker()(), True
 
 
 async def _load_roles(session, user_id: int) -> list[dict]:
@@ -78,8 +69,7 @@ class UserRepositoryImpl(UserRepository):
         await session.flush()
 
     async def find_by_id(self, user_id: UserId) -> User | None:
-        session, owns = _get_session()
-        try:
+        async with session_scope() as session:
             result = await session.execute(
                 sa.select(OrmUser).where(OrmUser.id == user_id.value))
             orm = result.scalars().first()
@@ -87,13 +77,9 @@ class UserRepositoryImpl(UserRepository):
                 return None
             roles = await _load_roles(session, orm.id)
             return _user_to_entity(orm, roles)
-        finally:
-            if owns:
-                await session.close()
 
     async def find_by_username(self, username: str) -> User | None:
-        session, owns = _get_session()
-        try:
+        async with session_scope() as session:
             result = await session.execute(
                 sa.select(OrmUser).where(OrmUser.username == username))
             orm = result.scalars().first()
@@ -101,13 +87,9 @@ class UserRepositoryImpl(UserRepository):
                 return None
             roles = await _load_roles(session, orm.id)
             return _user_to_entity(orm, roles)
-        finally:
-            if owns:
-                await session.close()
 
     async def get_permissions(self, user_id: UserId) -> set[str]:
-        session, owns = _get_session()
-        try:
+        async with session_scope() as session:
             result = await session.execute(
                 sa.select(OrmPermission.code)
                 .select_from(OrmUser)
@@ -117,9 +99,6 @@ class UserRepositoryImpl(UserRepository):
                 .where(OrmUser.id == user_id.value)
             )
             return {row[0] for row in result.all()}
-        finally:
-            if owns:
-                await session.close()
 
 
 # ── Role repository ──────────────────────────────────────────────────
@@ -156,8 +135,7 @@ class RoleRepositoryImpl(RoleRepository):
             )
 
     async def find_by_id(self, role_id: RoleId) -> Role | None:
-        session, owns = _get_session()
-        try:
+        async with session_scope() as session:
             result = await session.execute(
                 sa.select(OrmRole).where(OrmRole.id == role_id.value)
             )
@@ -170,13 +148,9 @@ class RoleRepositoryImpl(RoleRepository):
                 description=orm.description or "",
                 permissions=[PermissionRef(code=p.code, name=p.name) for p in perms],
             )
-        finally:
-            if owns:
-                await session.close()
 
     async def find_all(self) -> list[Role]:
-        session, owns = _get_session()
-        try:
+        async with session_scope() as session:
             result = await session.execute(sa.select(OrmRole))
             roles = []
             for orm in result.scalars().all():
@@ -189,9 +163,6 @@ class RoleRepositoryImpl(RoleRepository):
                     ],
                 ))
             return roles
-        finally:
-            if owns:
-                await session.close()
 
     async def delete(self, role_id: RoleId) -> None:
         session = current_session()

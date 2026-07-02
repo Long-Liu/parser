@@ -6,6 +6,7 @@ from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
+from contexts.auth.domain.events import UserRegistered, UserStatusChanged
 
 
 @dataclass(frozen=True)
@@ -14,7 +15,7 @@ class RoleRef(ValueObject):
     code: str
 
 
-class User(AggregateRoot):
+class User(AggregateRoot[UserId]):
     def __init__(self, user_id: UserId | None, username: str, password_hash: str,
                  real_name: str = "", email: str = "", phone: str = "",
                  roles: list[RoleRef] | None = None, is_active: bool = True) -> None:
@@ -42,9 +43,17 @@ class User(AggregateRoot):
 
     def disable(self) -> None:
         self.is_active = False
+        self.record(UserStatusChanged(
+            aggregate_id=self.id.value if self.id else None,
+            username=self._username, is_active=False,
+        ))
 
     def enable(self) -> None:
         self.is_active = True
+        self.record(UserStatusChanged(
+            aggregate_id=self.id.value if self.id else None,
+            username=self._username, is_active=True,
+        ))
 
     def assign_roles(self, roles: list[RoleRef]) -> None:
         self.roles = roles
@@ -60,9 +69,14 @@ class User(AggregateRoot):
             raise ValidationError("password hash must not be empty")
         if email and "@" not in email:
             raise ValidationError("email must be valid")
-        return cls(user_id=user_id, username=username, password_hash=password_hash,
+        user = cls(user_id=user_id, username=username, password_hash=password_hash,
                    real_name=real_name.strip(), email=email, phone=phone.strip(),
                    roles=[], is_active=True)
+        user.record(UserRegistered(
+            aggregate_id=user_id.value if user_id else None,
+            username=username, real_name=real_name.strip(),
+        ))
+        return user
 
 
 def _demo():
@@ -70,8 +84,11 @@ def _demo():
     user = User.create(uid, "alice", "hash123", real_name="Alice")
     assert user.username == "alice"
     assert user.is_active is True
+    assert len(user.pull_events()) == 1  # UserRegistered
     user.disable()
     assert user.is_active is False
+    assert len(user.pull_events()) == 1  # UserStatusChanged
+    assert len(user.pull_events()) == 0  # drained
     print("user: OK")
 
 

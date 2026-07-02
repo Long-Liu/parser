@@ -5,6 +5,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth
+from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.exceptions import DomainError
 from contexts.container import container
@@ -18,7 +19,7 @@ bp = Blueprint("project_ddd", url_prefix="/api")
 @openapi.tag("Project")
 @openapi.summary("List projects")
 async def list_projects(request):
-    svc = container.project_service()
+    svc = container.get(ProjectApplicationService)
     result = await svc.list_all()
     return json(result)
 
@@ -29,7 +30,7 @@ async def list_projects(request):
 @openapi.summary("Create project")
 async def create_project(request):
     data = request.json or {}
-    svc = container.project_service()
+    svc = container.get(ProjectApplicationService)
     try:
         raw_user_id = getattr(request.ctx, "user_id", None)
         created_by = UserId(raw_user_id) if raw_user_id else None

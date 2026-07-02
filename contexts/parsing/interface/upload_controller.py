@@ -8,6 +8,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
+from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.application.dto import UploadedFile
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.year_month import YearMonth
@@ -62,7 +63,7 @@ async def upload(request):
     if user_id_raw is None:
         return json({"error": "not authenticated"}, status=401)
 
-    svc = container.upload_service()
+    svc = container.get(UploadApplicationService)
     try:
         result = await svc.process(
             UploadedFile(

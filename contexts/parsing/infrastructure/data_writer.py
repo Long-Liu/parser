@@ -4,7 +4,7 @@ import logging
 
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.shared.infrastructure.unit_of_work import current_session
-from contexts.parsing.domain.data_writer import ParsedDataSink
+from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.parse_job import ParsedRow
 
 logger = logging.getLogger("parser.data_writer")

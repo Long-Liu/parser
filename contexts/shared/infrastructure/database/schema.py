@@ -7,9 +7,13 @@ from sqlalchemy.dialects.mysql import dialect as mysql_dialect
 from sqlalchemy import text
 
 from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.tables import (
+from contexts.auth.infrastructure.tables import (
     users, roles, permissions, user_roles, role_permissions,
-    projects, upload_batches, upload_logs, template_configs,
+)
+from contexts.project.infrastructure.tables import projects
+from contexts.parsing.infrastructure.tables import upload_batches, upload_logs
+from contexts.template.infrastructure.tables import template_configs
+from contexts.shared.infrastructure.database.tables import (
     TEMPLATE_DATA_TABLES,
 )
 

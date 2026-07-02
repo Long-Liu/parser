@@ -1,114 +1,19 @@
-"""SQLAlchemy Core table definitions — used with aiomysql for type-safe SQL generation."""
+"""Data tables — one per template, generated from config/templates/*.yaml.
+
+Application tables (users, roles, projects, upload_batches, etc.) live in
+their respective bounded contexts:
+
+* ``contexts.auth.infrastructure.tables``
+* ``contexts.project.infrastructure.tables``
+* ``contexts.parsing.infrastructure.tables``
+* ``contexts.template.infrastructure.tables``
+"""
 
 import sqlalchemy as sa
 
-metadata = sa.MetaData()
+from contexts.shared.infrastructure.database.metadata import metadata, mapper_registry, _OrmBase
 
-# ── Fixed application tables ─────────────────────────────────────────────────
-
-users = sa.Table(
-    "users",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("username", sa.String(50), nullable=False, unique=True),
-    sa.Column("password", sa.String(255), nullable=False),
-    sa.Column("real_name", sa.String(100)),
-    sa.Column("email", sa.String(200)),
-    sa.Column("phone", sa.String(20)),
-    sa.Column("is_active", sa.Boolean, default=True),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-roles = sa.Table(
-    "roles",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("code", sa.String(50), nullable=False, unique=True),
-    sa.Column("name", sa.String(100), nullable=False),
-    sa.Column("description", sa.String(500)),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-permissions = sa.Table(
-    "permissions",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("code", sa.String(100), nullable=False, unique=True),
-    sa.Column("name", sa.String(200), nullable=False),
-    sa.Column("description", sa.String(500)),
-)
-
-user_roles = sa.Table(
-    "user_roles",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=False),
-    sa.Column("role_id", sa.Integer, sa.ForeignKey("roles.id"), nullable=False),
-    sa.UniqueConstraint("user_id", "role_id"),
-)
-
-role_permissions = sa.Table(
-    "role_permissions",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("role_id", sa.Integer, sa.ForeignKey("roles.id"), nullable=False),
-    sa.Column("permission_id", sa.Integer, sa.ForeignKey("permissions.id"), nullable=False),
-    sa.UniqueConstraint("role_id", "permission_id"),
-)
-
-projects = sa.Table(
-    "projects",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("code", sa.String(50), nullable=False, unique=True),
-    sa.Column("name", sa.String(200), nullable=False),
-    sa.Column("created_by", sa.Integer, sa.ForeignKey("users.id")),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-upload_batches = sa.Table(
-    "upload_batches",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_no", sa.String(50), nullable=False, unique=True),
-    sa.Column("project_id", sa.Integer, sa.ForeignKey("projects.id"), nullable=False),
-    sa.Column("ym", sa.String(7), nullable=False),
-    sa.Column("uploaded_by", sa.Integer, sa.ForeignKey("users.id")),
-    sa.Column("file_name", sa.String(500)),
-    sa.Column("file_size", sa.BigInteger),
-    sa.Column("status", sa.String(20), default="processing"),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-upload_logs = sa.Table(
-    "upload_logs",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("sheet_name", sa.String(200)),
-    sa.Column("template_id", sa.String(100)),
-    sa.Column("action", sa.String(20), default="matched"),
-    sa.Column("total_rows", sa.Integer, default=0),
-    sa.Column("success_rows", sa.Integer, default=0),
-    sa.Column("error_rows", sa.Integer, default=0),
-    sa.Column("error_msg", sa.Text),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-)
-
-template_configs = sa.Table(
-    "template_configs",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("template_id", sa.String(100), nullable=False, unique=True),
-    sa.Column("description", sa.String(500)),
-    sa.Column("config_yaml", sa.Text, nullable=False),
-    sa.Column("data_table", sa.String(100), nullable=False),
-    sa.Column("is_active", sa.Boolean, default=True),
-    sa.Column("updated_at", sa.DateTime, server_default=sa.func.now(), onupdate=sa.func.now()),
-)
-
-# ── Data tables — one per template, generated from config/templates/*.yaml ──
+# ── Data tables — one per template ───────────────────────────────────────────
 
 data_social_insurance = sa.Table(
     "data_social_insurance", metadata,
@@ -529,62 +434,7 @@ def data_table_for(template_id: str) -> sa.Table:
     return TEMPLATE_DATA_TABLES[template_id]
 
 
-# ── ORM model mappings (thin wrappers over the Core tables above) ──────────
-
-from sqlalchemy.orm import registry  # noqa: E402
-
-mapper_registry = registry(metadata=metadata)
-
-
-class _OrmBase:
-    """Imperative-mapped base. SA 2.0 mapping is via __table__, not annotations."""
-    __allow_unmapped__ = True
-
-
-@mapper_registry.mapped
-class User(_OrmBase):
-    __table__ = users
-
-
-@mapper_registry.mapped
-class Role(_OrmBase):
-    __table__ = roles
-
-
-@mapper_registry.mapped
-class Permission(_OrmBase):
-    __table__ = permissions
-
-
-@mapper_registry.mapped
-class UserRole(_OrmBase):
-    __table__ = user_roles
-
-
-@mapper_registry.mapped
-class RolePermission(_OrmBase):
-    __table__ = role_permissions
-
-
-@mapper_registry.mapped
-class Project(_OrmBase):
-    __table__ = projects
-
-
-@mapper_registry.mapped
-class UploadBatch(_OrmBase):
-    __table__ = upload_batches
-
-
-@mapper_registry.mapped
-class UploadLog(_OrmBase):
-    __table__ = upload_logs
-
-
-@mapper_registry.mapped
-class TemplateConfig(_OrmBase):
-    __table__ = template_configs
-
+# ── ORM model mappings (thin wrappers over the Core tables above) ────────────
 
 @mapper_registry.mapped
 class DataSocialInsurance(_OrmBase):

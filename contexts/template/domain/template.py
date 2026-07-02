@@ -48,7 +48,7 @@ class DynamicColumnMapping(ValueObject):
     db_type: str = "decimal(15,2)"
 
 
-class Template(AggregateRoot):
+class Template(AggregateRoot[TemplateId]):
     def __init__(self, template_id: TemplateId, description: str = "",
                  sheet_pattern: str = "", header_spec: HeaderSpec | None = None,
                  hierarchy_config: HierarchyConfig | None = None,

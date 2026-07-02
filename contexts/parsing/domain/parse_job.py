@@ -50,7 +50,7 @@ class ParsedRow(ValueObject):
     monthly_data: dict | None = None
 
 
-class SheetResult(Entity):
+class SheetResult(Entity[str]):
     """Entity within ParseJob aggregate — tracks one sheet's processing outcome."""
 
     def __init__(
@@ -58,13 +58,16 @@ class SheetResult(Entity):
         sheet_name: str,
         template_id: TemplateId | None = None,
         match_status: MatchStatus = MatchStatus.SKIPPED,
+        total_rows: int = 0,
+        success_rows: int = 0,
+        error_rows: int = 0,
     ) -> None:
         self.id = sheet_name  # Natural key within the aggregate
         self._template_id = template_id
         self._match_status = match_status
-        self._total_rows: int = 0
-        self._success_rows: int = 0
-        self._error_rows: int = 0
+        self._total_rows: int = total_rows
+        self._success_rows: int = success_rows
+        self._error_rows: int = error_rows
         self._errors: list[RowError] = []
         self._extracted_rows: list[ParsedRow] = []
 
@@ -102,12 +105,6 @@ class SheetResult(Entity):
     def extracted_rows(self) -> list[ParsedRow]:
         return list(self._extracted_rows)
 
-    def _set_counts(self, total: int, success: int, error: int) -> None:
-        """Set row counts during rehydration (called by infrastructure layer)."""
-        self._total_rows = total
-        self._success_rows = success
-        self._error_rows = error
-
     # -- mutations (called by ParseJob aggregate root) --
 
     def mark_matched(self, template_id: TemplateId) -> None:
@@ -130,7 +127,7 @@ class SheetResult(Entity):
         self._error_rows = len(errors)
 
 
-class ParseJob(AggregateRoot):
+class ParseJob(AggregateRoot[JobId]):
     """Root aggregate for an Excel file parsing operation."""
 
     def __init__(
@@ -156,7 +153,7 @@ class ParseJob(AggregateRoot):
     def sheets(self) -> list[SheetResult]:
         return list(self._sheets.values())
 
-    # -- factory / rehydration --
+    # -- factory --
 
     @classmethod
     def submit(
@@ -170,23 +167,6 @@ class ParseJob(AggregateRoot):
     ) -> "ParseJob":
         """Create a new ParseJob (no events recorded yet — call confirm_submitted after persistence)."""
         return cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
-
-    @classmethod
-    def rehydrate(
-        cls,
-        job_id: JobId,
-        project_id: ProjectId,
-        year_month: YearMonth,
-        file_info: FileInfo,
-        batch_no: str,
-        uploaded_by: UserId | None,
-        status: JobStatus,
-        sheets: list[SheetResult],
-    ) -> "ParseJob":
-        job = cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
-        job.status = status
-        job._sheets = {sheet.sheet_name: sheet for sheet in sheets}
-        return job
 
     def confirm_submitted(self) -> None:
         """Record ParseJobSubmitted after persistence has assigned an id."""

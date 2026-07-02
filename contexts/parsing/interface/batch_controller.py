@@ -5,6 +5,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
+from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.shared.domain.identifiers import ProjectId, JobId
 from contexts.shared.domain.exceptions import DomainError
 from contexts.container import container
@@ -42,7 +43,7 @@ def _job_to_dict(job) -> dict:
 @openapi.tag("Batches")
 @openapi.summary("List upload batches")
 async def get_batches(request):
-    repo = container.parse_job_repository()
+    repo = container.get(ParseJobRepository)
     try:
         project_id_raw = request.args.get("project_id")
         if project_id_raw:
@@ -59,7 +60,7 @@ async def get_batches(request):
 @openapi.tag("Batches")
 @openapi.summary("Get batch detail with sheet results")
 async def get_batch_detail(request, batch_id: int):
-    repo = container.parse_job_repository()
+    repo = container.get(ParseJobRepository)
     try:
         job = await repo.find_by_id(JobId(batch_id))
         if job is None:

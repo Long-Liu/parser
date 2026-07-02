@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from contexts.auth.domain.repositories import RoleRepository
 from contexts.auth.domain.role import PermissionRef, Role
+from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import (
     ConflictError,
     NotFoundError,
@@ -15,9 +16,11 @@ from contexts.shared.domain.unit_of_work import UnitOfWork
 class RoleApplicationService:
     def __init__(
         self, repo: RoleRepository, uow_factory: Callable[[], UnitOfWork],
+        event_publisher: EventPublisher | None = None,
     ) -> None:
         self._repo = repo
         self._uow_factory = uow_factory
+        self._event_publisher = event_publisher
 
     # ── role CRUD ─────────────────────────────────────────────────
 
@@ -38,6 +41,8 @@ class RoleApplicationService:
             await uow.commit()
         if role.id is None:
             raise RuntimeError("role repository did not assign an id")
+        if self._event_publisher:
+            await self._event_publisher.publish(role.pull_events())
         return self._to_dict(role)
 
     async def update(
@@ -55,6 +60,8 @@ class RoleApplicationService:
         async with self._uow_factory() as uow:
             await self._repo.save(role)
             await uow.commit()
+        if self._event_publisher:
+            await self._event_publisher.publish(role.pull_events())
         return self._to_dict(role)
 
     async def delete(self, role_id: int) -> None:

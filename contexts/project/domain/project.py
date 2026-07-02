@@ -5,7 +5,7 @@ from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.exceptions import ValidationError
 
 
-class Project(AggregateRoot):
+class Project(AggregateRoot[ProjectId]):
     def __init__(self, project_id: ProjectId | None, code: str, name: str,
                  created_by: UserId | None = None) -> None:
         super().__init__()

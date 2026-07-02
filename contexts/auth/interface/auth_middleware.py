@@ -4,6 +4,7 @@ from functools import wraps
 
 from sanic.response import json
 
+from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
 from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.container import container
 
@@ -15,7 +16,7 @@ def require_auth(f):
         if not auth_header.startswith("Bearer "):
             return json({"error": "missing token"}, status=401)
         token = auth_header[7:]
-        auth = container.request_authorization_service()
+        auth = container.get(AuthorizationApplicationService)
         try:
             ctx = await auth.authenticate(token)
         except AuthenticationError as e:

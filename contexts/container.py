@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import typing
+from collections.abc import Callable as AbcCallable  # noqa: E402
+from typing import Generic, TypeVar, get_origin
+
 from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
-from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.application.role_app_service import RoleApplicationService
+from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
-from contexts.auth.infrastructure.repositories import RoleRepositoryImpl, UserRepositoryImpl
+from contexts.auth.infrastructure.repositories import (
+    RoleRepositoryImpl,
+    UserRepositoryImpl,
+)
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
 from contexts.parsing.application.upload_app_service import UploadApplicationService
@@ -18,79 +25,224 @@ from contexts.parsing.infrastructure.repositories import ParseJobRepositoryImpl
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.infrastructure.repositories import ProjectRepositoryImpl
+from contexts.shared.domain.event_publisher import EventPublisher
+from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.infrastructure.domain_event_bus import domain_event_bus
 from contexts.shared.infrastructure.unit_of_work import SqlAlchemyUnitOfWork
-from contexts.template.application.template_app_service import TemplateApplicationService
+from contexts.template.application.template_app_service import (
+    TemplateApplicationService,
+)
 from contexts.template.infrastructure.repositories import YamlTemplateCatalog
+
+T = TypeVar("T")
+
+
+class CircularDependencyError(RuntimeError):
+    """Raised when auto-wire detects unresolvable dependencies."""
 
 
 class Container:
-    """Poor man's DI — stateless services are singletons; UoW factory is the class itself."""
+    """Stdlib-only DI container — Spring-style ``get(Cls)`` with auto-wiring.
+
+    Constructor params are resolved by type from the registry via
+    ``inspect.signature``.  Non-class values (module singletons, factories)
+    are pre-registered explicitly.
+
+    Usage::
+
+        # register singletons & interface bindings
+        container.register_instance(my_instance)
+        container.bind(AbstractRepo, MyRepoImpl)
+
+        # queue a class for auto-wire construction
+        container.register_factory(MyApplicationService)
+
+        # build everything at startup
+        container.wire()
+
+        # retrieve anywhere
+        svc = container.get(MyApplicationService)
+    """
 
     def __init__(self) -> None:
-        # Stateless singletons
-        self._password_hasher = BCryptPasswordHasher()
-        self._user_repo = UserRepositoryImpl()
-        self._role_repo = RoleRepositoryImpl()
-        self._project_repo = ProjectRepositoryImpl()
-        self._template_repo = YamlTemplateCatalog()
-        self._data_repo = DataQueryRepositoryImpl()
-        self._parse_job_repo = ParseJobRepositoryImpl()
-        self._data_sink = SqlAlchemyParsedDataSink()
-        self._file_storage = LocalUploadFileStorage()
-        self._workbook_reader = OpenPyxlWorkbookReader()
-        # JWT secret is set at startup
-        self._jwt_service: JwtService | None = None
+        self._registry: dict[type, object] = {}
+        self._pending: list[type] = []
+
+    # ── public API ────────────────────────────────────────────────────────
+
+    def register_instance(self, instance: object) -> None:
+        """Register *instance* under its concrete type."""
+        self._registry[type(instance)] = instance
+
+    def bind(self, abstract: type, instance: object) -> None:
+        """Register *instance* under an abstract type or interface."""
+        self._registry[abstract] = instance
+
+    def register_factory(self, cls: type) -> None:
+        """Queue *cls* for auto-wire construction during ``wire()``."""
+        self._pending.append(cls)
+
+    def wire(self) -> None:
+        """Construct all pending factories, resolving constructor deps from the registry.
+
+        Iterates until all are built or no progress is made (circular dep).
+        """
+        remaining = list(self._pending)
+        self._pending.clear()
+        while remaining:
+            progress = False
+            retry = []
+            for cls in remaining:
+                if self._try_construct(cls):
+                    progress = True
+                else:
+                    retry.append(cls)
+            if not progress:
+                names = ", ".join(c.__name__ for c in retry)
+                raise CircularDependencyError(
+                    f"Cannot resolve dependencies for: {names}"
+                )
+            remaining = retry
 
     def configure(self, secret_key: str) -> None:
-        """Called once at startup with the application secret key."""
-        self._jwt_service = JwtService(secret_key)
+        """Called once at startup — registers JWT-dependent services and wires them."""
+        jwt = JwtService(secret_key)
+        self.register_instance(jwt)
+        for cls in _container_auth:
+            self.register_factory(cls)
+        self.wire()
 
-    def _require_jwt(self) -> JwtService:
-        if self._jwt_service is None:
-            raise RuntimeError("Container.configure() must be called at startup")
-        return self._jwt_service
+    def get(self, cls: type[T]) -> T:
+        """Return the singleton registered for *cls*."""
+        try:
+            return self._registry[cls]  # type: ignore[return-value]
+        except KeyError:
+            raise KeyError(
+                f"{cls.__name__} not registered. "
+                f"Ensure container.wire() has been called."
+            ) from None
 
-    def authentication_service(self) -> AuthApplicationService:
-        return AuthApplicationService(
-            user_repo=self._user_repo,
-            auth_service=AuthenticationService(self._password_hasher),
-            jwt_service=self._require_jwt(),
-            password_hasher=self._password_hasher,
-            uow_factory=SqlAlchemyUnitOfWork,
-        )
+    # ── internal ──────────────────────────────────────────────────────────
 
-    def request_authorization_service(self) -> AuthorizationApplicationService:
-        return AuthorizationApplicationService(
-            user_repo=self._user_repo,
-            jwt_service=self._require_jwt(),
-        )
+    def _try_construct(self, cls: type) -> bool:
+        """Attempt to build *cls*; return True on success, False if deps missing."""
+        try:
+            kwargs = self._resolve_deps(cls)
+        except _Missing:
+            return False
+        self._registry[cls] = cls(**kwargs)
+        return True
 
-    def project_service(self) -> ProjectApplicationService:
-        return ProjectApplicationService(self._project_repo, SqlAlchemyUnitOfWork)
+    def _resolve_deps(self, cls: type) -> dict[str, object]:
+        """Return kwargs dict for *cls*'s ``__init__``, resolved from registry.
 
-    def template_service(self) -> TemplateApplicationService:
-        return TemplateApplicationService(self._template_repo)
+        Uses ``typing.get_type_hints`` to resolve string annotations (PEP 563).
+        """
+        kwargs: dict[str, object] = {}
+        try:
+            hints = typing.get_type_hints(cls.__init__, include_extras=True)
+        except Exception:
+            hints = {}
+        for name, ann in hints.items():
+            if name == "return":
+                continue
+            dep = self._lookup(ann)
+            if dep is None:
+                raise _Missing(ann)
+            kwargs[name] = dep
+        return kwargs
 
-    def data_service(self) -> DataApplicationService:
-        return DataApplicationService(self._data_repo, SqlAlchemyUnitOfWork)
+    def _lookup(self, ann: type) -> object | None:
+        """Resolve a type annotation to a registered instance.
 
-    def upload_service(self) -> UploadApplicationService:
-        return UploadApplicationService(
-            repo=self._parse_job_repo,
-            template_repo=self._template_repo,
-            data_sink=self._data_sink,
-            event_publisher=domain_event_bus,
-            uow_factory=SqlAlchemyUnitOfWork,
-            file_storage=self._file_storage,
-            workbook_reader=self._workbook_reader,
-        )
+        1. Exact match (e.g. ``Callable[[], UnitOfWork]`` bound explicitly).
+        2. Union ``X | None`` — take the non-None arm.
+        """
+        # 1. Exact match
+        result = self._registry.get(ann)
+        if result is not None:
+            return result
 
-    def role_service(self) -> RoleApplicationService:
-        return RoleApplicationService(self._role_repo, SqlAlchemyUnitOfWork)
+        # 2. Union X | None → try X
+        origin = get_origin(ann)
+        if origin is not None and origin is not Generic:
+            args = getattr(ann, "__args__", ())
+            for arg in args:
+                if arg is not type(None):  # noqa: E721
+                    result = self._registry.get(arg)
+                    if result is not None:
+                        return result
+        return None
 
-    def parse_job_repository(self) -> ParseJobRepositoryImpl:
-        return self._parse_job_repo
 
+class _Missing(Exception):
+    """Internal sentinel — dependency not yet available."""
+
+
+# ── module-level singleton ───────────────────────────────────────────────
 
 container = Container()
+
+
+def _reg(instance: object) -> None:
+    container.register_instance(instance)
+
+
+def _bind(abstract: type, concrete: object) -> None:
+    container.bind(abstract, concrete)
+
+
+# ── infrastructure singletons ────────────────────────────────────────────
+
+_container_pw = BCryptPasswordHasher()
+_reg(_container_pw)
+_reg(AuthenticationService(_container_pw))
+_reg(_user_repo := UserRepositoryImpl())
+_reg(_role_repo := RoleRepositoryImpl())
+_reg(_project_repo := ProjectRepositoryImpl())
+_reg(_template_catalog := YamlTemplateCatalog())
+_reg(_data_repo := DataQueryRepositoryImpl())
+_reg(_parse_job_repo := ParseJobRepositoryImpl())
+_reg(_data_sink := SqlAlchemyParsedDataSink())
+_reg(_file_storage := LocalUploadFileStorage())
+_reg(_workbook_reader := OpenPyxlWorkbookReader())
+
+# ── interface bindings (abstract → concrete) ─────────────────────────────
+
+from contexts.auth.domain.repositories import (  # noqa: E402
+    RoleRepository,
+    UserRepository,
+)
+from contexts.data.domain.repositories import DataQueryRepository  # noqa: E402
+from contexts.parsing.application.file_storage import FileStorage  # noqa: E402
+from contexts.parsing.domain.data_sink import ParsedDataSink  # noqa: E402
+from contexts.parsing.domain.repositories import ParseJobRepository  # noqa: E402
+from contexts.parsing.domain.workbook import WorkbookReader  # noqa: E402
+from contexts.project.domain.repositories import ProjectRepository  # noqa: E402
+from contexts.template.domain.repositories import TemplateCatalog  # noqa: E402
+
+_bind(UserRepository, _user_repo)
+_bind(RoleRepository, _role_repo)
+_bind(ProjectRepository, _project_repo)
+_bind(TemplateCatalog, _template_catalog)
+_bind(DataQueryRepository, _data_repo)
+_bind(ParseJobRepository, _parse_job_repo)
+_bind(ParsedDataSink, _data_sink)
+_bind(FileStorage, _file_storage)
+_bind(WorkbookReader, _workbook_reader)
+_bind(EventPublisher, domain_event_bus)
+
+_bind(AbcCallable[[], UnitOfWork], SqlAlchemyUnitOfWork)
+
+# ── application services (auto-wired via inspect) ────────────────────────
+
+container.register_factory(ProjectApplicationService)
+container.register_factory(TemplateApplicationService)
+container.register_factory(DataApplicationService)
+container.register_factory(UploadApplicationService)
+container.register_factory(RoleApplicationService)
+
+# Jwt-dependent — deferred to configure()
+_container_auth: list[type] = [AuthApplicationService, AuthorizationApplicationService]
+
+container.wire()

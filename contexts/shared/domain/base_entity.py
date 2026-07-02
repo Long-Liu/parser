@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from abc import ABC
+from typing import Generic, TypeVar
+
+IdType = TypeVar("IdType")
 
 
-class Entity(ABC):
-    """Domain entity base. Equality by identity (id), not attributes."""
-    id: object | None  # declared for type checkers; subclasses override in __init__
+class Entity(Generic[IdType], ABC):
+    """Domain entity base. Equality by identity (id), not attributes.
+
+    Type parameter IdType specifies the identity type, e.g. Entity[int], Entity[UserId].
+    """
+    id: IdType | None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Entity):
@@ -20,7 +26,7 @@ class Entity(ABC):
         return hash(self.id)
 
 
-class _DemoUser(Entity):
+class _DemoUser(Entity[int]):
     def __init__(self, user_id: int, name: str) -> None:
         self.id = user_id
         self.name = name

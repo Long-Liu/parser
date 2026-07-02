@@ -5,6 +5,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth
+from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import DomainError
 from contexts.container import container
@@ -53,7 +54,7 @@ async def query_data(request, template_id: str):
     batch_id = _parse_int_or_none(request.args.get("batch_id"))
     page = _parse_int(request.args.get("page"), 1)
     size = _parse_int(request.args.get("size"), 200)
-    svc = container.data_service()
+    svc = container.get(DataApplicationService)
     try:
         result = await svc.query(
             template_id, batch_id=batch_id, page=page, size=size,
@@ -69,7 +70,7 @@ async def query_data(request, template_id: str):
 @openapi.tag("Data")
 @openapi.summary("Get single data row")
 async def get_data_row(request, template_id: str, row_id: int):
-    svc = container.data_service()
+    svc = container.get(DataApplicationService)
     try:
         result = await svc.get_by_id(template_id, row_id)
         return json(result)
@@ -82,7 +83,7 @@ async def get_data_row(request, template_id: str, row_id: int):
 @openapi.tag("Data")
 @openapi.summary("Delete data row")
 async def delete_data_row(request, template_id: str, row_id: int):
-    svc = container.data_service()
+    svc = container.get(DataApplicationService)
     try:
         await svc.delete_by_id(template_id, row_id)
         return json({"ok": True})

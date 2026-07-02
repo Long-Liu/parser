@@ -10,7 +10,7 @@ from contexts.shared.domain.year_month import YearMonth
 from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.parsing.domain.parse_job import ParseJob, FileInfo
-from contexts.parsing.domain.data_writer import ParsedDataSink
+from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
 from contexts.parsing.domain.cell_unmerger import CellUnmerger
 from contexts.parsing.domain.header_flattener import HeaderFlattener

@@ -1,7 +1,7 @@
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
 from contexts.parsing.application.upload_app_service import UploadApplicationService
-from contexts.parsing.domain.data_writer import ParsedDataSink
+from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.parse_job import ParseJob
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet

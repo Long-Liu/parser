@@ -5,10 +5,13 @@ Provides:
 - Transaction: alias for SqlAlchemyUnitOfWork (backward compat)
 - transactional: decorator wrapping an async function in a Transaction
 - current_session: return the active async session for this task, if any
+- session_scope: context manager yielding a session — reuses an active UoW
+  session or creates a short-lived one for standalone reads
 """
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import functools
 
@@ -25,6 +28,21 @@ _tx_session: contextvars.ContextVar[AsyncSession | None] = contextvars.ContextVa
 def current_session() -> AsyncSession | None:
     """Return the active transaction session for this task, if any."""
     return _tx_session.get()
+
+
+@contextlib.asynccontextmanager
+async def session_scope() -> AsyncSession:
+    """Yield an AsyncSession for read operations.
+
+    Reuses an active UoW session when inside a transaction; otherwise creates
+    a short-lived session and closes it on exit.
+    """
+    s = current_session()
+    if s is not None:
+        yield s
+        return
+    async with get_sessionmaker()() as s:
+        yield s
 
 
 class SqlAlchemyUnitOfWork(UnitOfWork):

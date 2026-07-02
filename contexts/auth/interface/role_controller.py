@@ -4,6 +4,7 @@ from sanic import Blueprint
 from sanic.response import json
 from sanic_ext import openapi
 
+from contexts.auth.application.role_app_service import RoleApplicationService
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.container import container
 from contexts.shared.domain.exceptions import DomainError
@@ -18,7 +19,7 @@ bp = Blueprint("roles", url_prefix="/api")
 @openapi.tag("Roles")
 @openapi.summary("List all roles")
 async def list_roles(request):
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         roles = await svc.list_all()
         return json({"roles": roles})
@@ -33,7 +34,7 @@ async def list_roles(request):
 @openapi.summary("Create a role")
 async def create_role(request):
     data = request.json or {}
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         result = await svc.create(
             code=data.get("code", ""),
@@ -52,7 +53,7 @@ async def create_role(request):
 @openapi.tag("Roles")
 @openapi.summary("Get role detail")
 async def get_role(request, role_id: int):
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         return json(await svc.get(role_id))
     except DomainError as e:
@@ -66,7 +67,7 @@ async def get_role(request, role_id: int):
 @openapi.summary("Update a role")
 async def update_role(request, role_id: int):
     data = request.json or {}
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         result = await svc.update(
             role_id=role_id,
@@ -85,7 +86,7 @@ async def update_role(request, role_id: int):
 @openapi.tag("Roles")
 @openapi.summary("Delete a role")
 async def delete_role(request, role_id: int):
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         await svc.delete(role_id)
         return json({"ok": True})
@@ -99,7 +100,7 @@ async def delete_role(request, role_id: int):
 @openapi.tag("Roles")
 @openapi.summary("Assign a role to a user")
 async def assign_role(request, user_id: int, role_id: int):
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         await svc.assign_to_user(user_id, role_id)
         return json({"ok": True})
@@ -113,7 +114,7 @@ async def assign_role(request, user_id: int, role_id: int):
 @openapi.tag("Roles")
 @openapi.summary("Remove a role from a user")
 async def remove_role(request, user_id: int, role_id: int):
-    svc = container.role_service()
+    svc = container.get(RoleApplicationService)
     try:
         await svc.remove_from_user(user_id, role_id)
         return json({"ok": True})

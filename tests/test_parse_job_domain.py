@@ -203,22 +203,26 @@ def test_sheet_result_errors_are_immutable_view():
 # ── Rehydration ──────────────────────────────────────────────────────
 
 def test_rehydrate_restores_full_state():
+    """Infrastructure reconstructs a ParseJob from persisted state by
+    constructing directly and setting status + sheets."""
     job = _make_job()
     job.match_sheet("Sheet1", "t1")
     job.set_extracted("Sheet1", [ParsedRow(row_index=1, fields={"x": 1})])
     job.set_validated("Sheet1", [ParsedRow(row_index=1, fields={"x": 1})], [])
     job.complete()
 
-    rehydrated = ParseJob.rehydrate(
-        job_id=job.id,  # type: ignore[arg-type]
+    # Reconstruct the way the infrastructure layer does
+    rehydrated = ParseJob(
+        job_id=job.id,
         project_id=job.project_id,
         year_month=job.year_month,
         file_info=job.file_info,
         batch_no=job.batch_no,
         uploaded_by=job.uploaded_by,
-        status=job.status,
-        sheets=job.sheets,
     )
+    rehydrated.status = job.status
+    rehydrated._sheets = {s.sheet_name: s for s in job.sheets}
+
     assert rehydrated.status == JobStatus.DONE
     assert len(rehydrated.sheets) == 1
     assert rehydrated.sheets[0].sheet_name == "Sheet1"
@@ -229,10 +233,12 @@ def test_rehydrate_restores_full_state():
 
 def test_parse_job_equality_by_id():
     a = _make_job(1)
-    b = ParseJob.rehydrate(
+    b = ParseJob(
         JobId(1), ProjectId(9), YearMonth.parse("2025-01"),
-        FileInfo(filename="other.xlsx", size=0), "B002", None, JobStatus.DONE, []
+        FileInfo(filename="other.xlsx", size=0), "B002", None,
     )
+    b.status = JobStatus.DONE
+    b._sheets = {}
     assert a == b  # same id, different fields
 
 

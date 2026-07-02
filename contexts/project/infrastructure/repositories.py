@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.tables import Project as OrmProject
+from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.shared.domain.identifiers import ProjectId, UserId
-from contexts.shared.infrastructure.unit_of_work import current_session
+from contexts.shared.infrastructure.unit_of_work import current_session, session_scope
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import ProjectRepository
 
@@ -48,37 +47,23 @@ class ProjectRepositoryImpl(ProjectRepository):
         await _save(session)
 
     async def find_by_id(self, project_id: ProjectId) -> Project | None:
-        async def _find(s):
-            result = await s.execute(sa.select(OrmProject).where(OrmProject.id == project_id.value))
-            return result.scalars().first()
-        session = current_session()
-        if session is not None:
-            orm = await _find(session)
-        else:
-            async with get_sessionmaker()() as s:
-                orm = await _find(s)
+        async with session_scope() as session:
+            result = await session.execute(
+                sa.select(OrmProject).where(OrmProject.id == project_id.value)
+            )
+            orm = result.scalars().first()
         return _to_entity(orm) if orm else None
 
     async def find_by_code(self, code: str) -> Project | None:
-        async def _find(s):
-            result = await s.execute(sa.select(OrmProject).where(OrmProject.code == code))
-            return result.scalars().first()
-        session = current_session()
-        if session is not None:
-            orm = await _find(session)
-        else:
-            async with get_sessionmaker()() as s:
-                orm = await _find(s)
+        async with session_scope() as session:
+            result = await session.execute(
+                sa.select(OrmProject).where(OrmProject.code == code)
+            )
+            orm = result.scalars().first()
         return _to_entity(orm) if orm else None
 
     async def list_all(self) -> list[Project]:
-        async def _all(s):
-            result = await s.execute(sa.select(OrmProject))
-            return result.scalars().all()
-        session = current_session()
-        if session is not None:
-            orms = await _all(session)
-        else:
-            async with get_sessionmaker()() as s:
-                orms = await _all(s)
+        async with session_scope() as session:
+            result = await session.execute(sa.select(OrmProject))
+            orms = result.scalars().all()
         return [_to_entity(o) for o in orms]

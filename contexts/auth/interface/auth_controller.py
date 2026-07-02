@@ -4,6 +4,7 @@ from sanic import Blueprint
 from sanic.response import json
 from sanic_ext import openapi
 
+from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.dto import LoginCommand, RegisterCommand
 from contexts.container import container
 from contexts.shared.domain.exceptions import DomainError
@@ -17,7 +18,7 @@ bp = Blueprint("auth_ddd", url_prefix="/api")
 @openapi.summary("Login")
 async def login(request):
     data = request.json or {}
-    svc = container.authentication_service()
+    svc = container.get(AuthApplicationService)
     try:
         result = await svc.login(LoginCommand(
             username=data.get("username", ""),
@@ -34,7 +35,7 @@ async def login(request):
 @openapi.summary("Register")
 async def register(request):
     data = request.json or {}
-    svc = container.authentication_service()
+    svc = container.get(AuthApplicationService)
     try:
         result = await svc.register(RegisterCommand(
             username=data.get("username", ""),

@@ -39,7 +39,7 @@ async def seed_defaults(password_hasher: Callable[[str], str]):
 
 @transactional
 async def _do_seed(admin_password: str, password_hasher: Callable[[str], str]):
-    from contexts.shared.infrastructure.database.tables import (
+    from contexts.auth.infrastructure.tables import (
         users, roles, permissions, user_roles, role_permissions,
     )
     from contexts.shared.infrastructure.unit_of_work import current_session
