@@ -20,7 +20,8 @@ def _job_to_dict(job) -> dict:
         "ym": str(job.year_month),
         "file_name": job.file_info.filename,
         "file_size": job.file_info.size,
-        "status": job.status.value,
+        "status": job.result_status,
+        "job_status": job.status.value,
         "sheets": [
             {
                 "sheet_name": s.sheet_name,

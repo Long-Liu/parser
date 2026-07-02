@@ -8,6 +8,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
+from contexts.parsing.application.dto import UploadedFile
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.shared.domain.exceptions import DomainError
@@ -66,7 +67,14 @@ async def upload(request):
     svc = container.upload_service()
     try:
         result = await svc.process(
-            file, ProjectId(project_id_raw), ym, UserId(user_id_raw)
+            UploadedFile(
+                name=file.name,
+                body=file.body,
+                content_type=getattr(file, "type", ""),
+            ),
+            ProjectId(project_id_raw),
+            ym,
+            UserId(user_id_raw),
         )
         if result["status"] == "failed":
             return json(

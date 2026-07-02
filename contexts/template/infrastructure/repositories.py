@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.template.domain.template import Template
-from contexts.template.domain.repositories import TemplateRepository
+from contexts.template.domain.repositories import TemplateCatalog
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 
-class TemplateRepositoryImpl(TemplateRepository):
+class YamlTemplateCatalog(TemplateCatalog):
     def __init__(self) -> None:
         self._yaml_loader = YamlTemplateLoader()
-
-    async def save(self, template: Template) -> None:
-        pass  # ponytail: read-only YAML for now
 
     async def find_by_id(self, template_id: TemplateId) -> Template | None:
         try:

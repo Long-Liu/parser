@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import jwt
 
-from contexts.auth.domain.jwt_service import JwtService
+from contexts.auth.application.security import TokenService
 from contexts.auth.domain.repositories import UserRepository
 from contexts.shared.domain.identifiers import UserId
 
@@ -17,7 +17,7 @@ class AuthContext:
 
 
 class AuthorizationApplicationService:
-    def __init__(self, user_repo: UserRepository, jwt_service: JwtService) -> None:
+    def __init__(self, user_repo: UserRepository, jwt_service: TokenService) -> None:
         self._users = user_repo
         self._jwt = jwt_service
 

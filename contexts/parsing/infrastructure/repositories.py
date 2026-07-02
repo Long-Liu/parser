@@ -112,11 +112,9 @@ class ParseJobRepositoryImpl(ParseJobRepository):
                 )
 
         session = current_session()
-        if session is not None:
-            await _save(session)
-        else:
-            async with get_sessionmaker().begin() as s:
-                await _save(s)
+        if session is None:
+            raise RuntimeError("ParseJobRepository.save requires an active UnitOfWork")
+        await _save(session)
 
     async def find_by_id(self, job_id: JobId) -> ParseJob | None:
         async def _find(s):

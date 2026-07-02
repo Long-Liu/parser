@@ -68,8 +68,6 @@ class DataQueryRepositoryImpl(DataQueryRepository):
             await s.execute(sa.delete(t).where(t.c.id == row_id))
 
         session = current_session()
-        if session is not None:
-            await _delete(session)
-        else:
-            async with get_sessionmaker().begin() as s:
-                await _delete(s)
+        if session is None:
+            raise RuntimeError("DataQueryRepository.delete_by_id requires an active UnitOfWork")
+        await _delete(session)

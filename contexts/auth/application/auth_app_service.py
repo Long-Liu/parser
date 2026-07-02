@@ -6,8 +6,8 @@ from collections.abc import Callable
 from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
 from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.auth.domain.user import User
-from contexts.auth.domain.auth_service import AuthenticationService, hash_password
-from contexts.auth.domain.jwt_service import JwtService
+from contexts.auth.application.security import PasswordHasher, TokenService
+from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.application.dto import LoginCommand, LoginResult, RegisterCommand
 
@@ -16,11 +16,13 @@ logger = logging.getLogger("parser.auth")
 
 class AuthApplicationService:
     def __init__(self, user_repo: UserRepository, auth_service: AuthenticationService,
-                 jwt_service: JwtService,
+                 jwt_service: TokenService,
+                 password_hasher: PasswordHasher,
                  uow_factory: Callable[[], UnitOfWork]) -> None:
         self._users = user_repo
         self._auth = auth_service
         self._jwt = jwt_service
+        self._password_hasher = password_hasher
         self._uow_factory = uow_factory
 
     async def login(self, cmd: LoginCommand) -> LoginResult:
@@ -44,7 +46,7 @@ class AuthApplicationService:
         existing = await self._users.find_by_username(cmd.username)
         if existing:
             raise ConflictError("username already exists")
-        hashed = hash_password(cmd.password)
+        hashed = self._password_hasher.hash(cmd.password)
         user = User.create(user_id=None, username=cmd.username, password_hash=hashed,
                            real_name=cmd.real_name, email=cmd.email, phone=cmd.phone)
         async with self._uow_factory() as uow:

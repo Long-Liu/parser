@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import TemplateId
-from contexts.template.domain.repositories import TemplateRepository
+from contexts.template.domain.repositories import TemplateCatalog
 
 
 class TemplateApplicationService:
-    def __init__(self, repo: TemplateRepository) -> None:
+    def __init__(self, repo: TemplateCatalog) -> None:
         self._repo = repo
 
     async def list_all(self) -> list[dict]:

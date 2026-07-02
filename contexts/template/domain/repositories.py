@@ -1,13 +1,11 @@
 from __future__ import annotations
 from abc import abstractmethod
-from contexts.shared.domain.base_repository import Repository
+from abc import ABC
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.template.domain.template import Template
 
 
-class TemplateRepository(Repository):
-    @abstractmethod
-    async def save(self, template: Template) -> None: ...
+class TemplateCatalog(ABC):
     @abstractmethod
     async def find_by_id(self, template_id: TemplateId) -> Template | None: ...
     @abstractmethod

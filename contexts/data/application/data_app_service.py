@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from contexts.shared.domain.exceptions import NotFoundError
+from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.data.domain.data_query import Pagination
 from contexts.data.domain.repositories import DataQueryRepository
 
 
 class DataApplicationService:
-    def __init__(self, repo: DataQueryRepository) -> None:
+    def __init__(
+        self, repo: DataQueryRepository, uow_factory: Callable[[], UnitOfWork]
+    ) -> None:
         self._repo = repo
+        self._uow_factory = uow_factory
 
     async def query(
         self, template_id: str, batch_id: int | None = None,
@@ -29,7 +35,9 @@ class DataApplicationService:
         return row.fields
 
     async def delete_by_id(self, template_id: str, row_id: int) -> None:
-        row = await self._repo.get_by_id(template_id, row_id)
-        if row is None:
-            raise NotFoundError(f"row {row_id} not found in {template_id}")
-        await self._repo.delete_by_id(template_id, row_id)
+        async with self._uow_factory() as uow:
+            row = await self._repo.get_by_id(template_id, row_id)
+            if row is None:
+                raise NotFoundError(f"row {row_id} not found in {template_id}")
+            await self._repo.delete_by_id(template_id, row_id)
+            await uow.commit()

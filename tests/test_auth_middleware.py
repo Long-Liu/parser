@@ -1,7 +1,7 @@
 import pytest
 
-from contexts.auth.domain.auth_service import hash_password, verify_password
-from contexts.auth.domain.jwt_service import JwtService
+from contexts.auth.infrastructure.jwt_service import JwtService
+from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 from contexts.shared.domain.identifiers import UserId
 
 TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
@@ -23,6 +23,7 @@ def test_token_expiry():
 
 
 def test_hash_and_check_password():
-    hashed = hash_password("mypassword")
-    assert verify_password("mypassword", hashed) is True
-    assert verify_password("wrong", hashed) is False
+    hasher = BCryptPasswordHasher()
+    hashed = hasher.hash("mypassword")
+    assert hasher.verify("mypassword", hashed) is True
+    assert hasher.verify("wrong", hashed) is False

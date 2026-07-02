@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import sqlalchemy as sa
-import sys
-
 from contexts.shared.infrastructure.database.engine import get_sessionmaker
 from contexts.shared.infrastructure.database.models import User as OrmUser
 from contexts.shared.infrastructure.database.models import Role as OrmRole
@@ -42,49 +40,37 @@ def _get_session():
     return get_sessionmaker()(), True
 
 
-def _get_transaction_session():
-    s = current_session()
-    if s is not None:
-        return None, s, False
-    ctx = get_sessionmaker().begin()
-    return ctx, None, True
-
-
 class UserRepositoryImpl(UserRepository):
     async def save(self, user: User) -> None:
-        ctx, session, owns = _get_transaction_session()
-        try:
-            if session is None:
-                session = await ctx.__aenter__()
-            values = {
-                "username": user.username,
-                "password": user.password_hash,
-                "real_name": user.real_name,
-                "email": user.email,
-                "phone": user.phone,
-                "is_active": 1 if user.is_active else 0,
-            }
-            if user.id is None:
-                orm = OrmUser(**values)
-                session.add(orm)
-                await session.flush()
-                user.id = UserId(orm.id)
-                return
-            existing = await session.execute(
-                sa.select(OrmUser.id).where(OrmUser.id == user.id.value)
-            )
-            if existing.first() is None:
-                session.add(OrmUser(id=user.id.value, **values))
-            else:
-                await session.execute(
-                    sa.update(OrmUser)
-                    .where(OrmUser.id == user.id.value)
-                    .values(**values)
-                )
+        session = current_session()
+        if session is None:
+            raise RuntimeError("UserRepository.save requires an active UnitOfWork")
+        values = {
+            "username": user.username,
+            "password": user.password_hash,
+            "real_name": user.real_name,
+            "email": user.email,
+            "phone": user.phone,
+            "is_active": 1 if user.is_active else 0,
+        }
+        if user.id is None:
+            orm = OrmUser(**values)
+            session.add(orm)
             await session.flush()
-        finally:
-            if owns and ctx is not None:
-                await ctx.__aexit__(*sys.exc_info())
+            user.id = UserId(orm.id)
+            return
+        existing = await session.execute(
+            sa.select(OrmUser.id).where(OrmUser.id == user.id.value)
+        )
+        if existing.first() is None:
+            session.add(OrmUser(id=user.id.value, **values))
+        else:
+            await session.execute(
+                sa.update(OrmUser)
+                .where(OrmUser.id == user.id.value)
+                .values(**values)
+            )
+        await session.flush()
 
     async def find_by_id(self, user_id: UserId) -> User | None:
         session, owns = _get_session()

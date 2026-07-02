@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 import uuid
-from contextlib import closing
 from collections.abc import Callable
 from datetime import datetime
-
-import aiofiles
-import openpyxl
-from sanic.request import File
 
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.year_month import YearMonth
@@ -18,12 +11,14 @@ from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.parsing.domain.parse_job import ParseJob, FileInfo
 from contexts.parsing.domain.data_writer import ParsedDataSink
+from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
+from contexts.parsing.application.dto import UploadedFile
+from contexts.parsing.application.file_storage import FileStorage, StoredFile
 from contexts.parsing.domain.pipeline_services import (
     CellUnmerger,
     DataRowExtractor,
     DataValidator,
     HeaderFlattener,
-    MergedCellRange,
     ParsingColumnSpec,
     ParsingDynamicColumnSpec,
     ParsingStopRule,
@@ -31,75 +26,63 @@ from contexts.parsing.domain.pipeline_services import (
     ParsingTemplateSpec,
 )
 from contexts.parsing.domain.repositories import ParseJobRepository
-from contexts.template.domain.repositories import TemplateRepository
+from contexts.template.domain.repositories import TemplateCatalog
 
 logger = logging.getLogger("parser.upload")
-UPLOAD_DIR = os.path.abspath(os.environ.get("UPLOAD_DIR", "uploads"))
 
 
 class UploadApplicationService:
     def __init__(
         self,
         repo: ParseJobRepository,
-        template_repo: TemplateRepository,
+        template_repo: TemplateCatalog,
         data_sink: ParsedDataSink,
         event_publisher: EventPublisher,
         uow_factory: Callable[[], UnitOfWork],
-        worksheet_reader: Callable[[object], tuple[list[list], list[MergedCellRange]]],
+        file_storage: FileStorage,
+        workbook_reader: WorkbookReader,
     ) -> None:
         self._repo = repo
         self._template_repo = template_repo
         self._data_sink = data_sink
         self._event_publisher = event_publisher
         self._uow_factory = uow_factory
-        self._worksheet_reader = worksheet_reader
+        self._file_storage = file_storage
+        self._workbook_reader = workbook_reader
         self._unmerger = CellUnmerger()
         self._flattener = HeaderFlattener()
         self._extractor = DataRowExtractor()
         self._validator = DataValidator()
 
     async def process(
-        self, file: File, project_id: ProjectId, ym: YearMonth, user_id: UserId
+        self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId
     ) -> dict:
         batch_no = self._make_batch_no()
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        filepath = os.path.join(UPLOAD_DIR, f"{batch_no}.xlsx")
-
-        async with aiofiles.open(filepath, "wb") as f:
-            await f.write(file.body)
-        file_size = os.path.getsize(filepath)
+        stored_file = await self._file_storage.save(f"{batch_no}.xlsx", file.body)
 
         job = ParseJob.submit(
             job_id=None,
             project_id=project_id,
             year_month=ym,
-            file_info=FileInfo(filename=file.name, size=file_size),
+            file_info=FileInfo(filename=file.name, size=stored_file.size),
             batch_no=batch_no,
             uploaded_by=user_id,
         )
 
         try:
-            wb = await asyncio.to_thread(
-                openpyxl.load_workbook, filepath, data_only=True
-            )
-            with closing(wb):
-                async with self._uow_factory() as uow:
-                    await self._repo.save(job)
-                    job.stamp_events(job.id.value)
-                    sheet_results = []
-                    for sheet_name in wb.sheetnames:
-                        r = await self._process_sheet(
-                            wb[sheet_name], sheet_name, job
-                        )
-                        sheet_results.append(r)
-                    job.complete()
-                    await self._repo.save(job)
-                    await uow.commit()
-                # Publish after commit — handlers see persisted state
-                await self._event_publisher.publish(job.pull_events())
-                status = job.overall_status
-        except asyncio.CancelledError:
-            raise
+            workbook_sheets = await self._workbook_reader.read(stored_file.path)
+            async with self._uow_factory() as uow:
+                await self._repo.save(job)
+                job.stamp_events(job.id.value)
+                sheet_results = []
+                for sheet in workbook_sheets:
+                    r = await self._process_sheet(sheet, job)
+                    sheet_results.append(r)
+                job.complete()
+                await self._repo.save(job)
+                await uow.commit()
+            await self._event_publisher.publish(job.pull_events())
+            status = job.result_status
         except Exception:
             logger.exception("upload failed for %s", batch_no)
             job.fail("processing error")
@@ -112,10 +95,7 @@ class UploadApplicationService:
             status = "failed"
             sheet_results = []
         finally:
-            try:
-                os.remove(filepath)
-            except OSError:
-                logger.debug("failed to remove temp file %s", filepath, exc_info=True)
+            await self._delete_stored_file(stored_file)
 
         return {
             "batch_no": batch_no,
@@ -124,7 +104,16 @@ class UploadApplicationService:
             "sheets": sheet_results,
         }
 
-    async def _process_sheet(self, ws, sheet_name: str, job: ParseJob) -> dict:
+    async def _delete_stored_file(self, stored_file: StoredFile) -> None:
+        try:
+            await self._file_storage.delete(stored_file)
+        except Exception:
+            logger.debug(
+                "failed to remove temp file %s", stored_file.path, exc_info=True
+            )
+
+    async def _process_sheet(self, sheet: WorkbookSheet, job: ParseJob) -> dict:
+        sheet_name = sheet.name
         template = await self._template_repo.find_matching(sheet_name)
 
         if template is None:
@@ -136,12 +125,12 @@ class UploadApplicationService:
 
         template_spec = self._to_parsing_spec(template)
         job.match_sheet(sheet_name, template_spec.template_id)
-        grid, merged_ranges = self._worksheet_reader(ws)
-        grid = self._unmerger.unmerge(grid, merged_ranges)
+        grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
         flat_headers = self._flattener.flatten(
             grid, template_spec.header_rows
         )
         rows = self._extractor.extract(grid, flat_headers, template_spec)
+        job.set_extracted(sheet_name, rows)
 
         valid_rows, errors = self._validator.validate(rows, template_spec)
         job.set_validated(sheet_name, valid_rows, errors)

@@ -30,8 +30,6 @@ class SqlAlchemyParsedDataSink(ParsedDataSink):
             await session.flush()
 
         session = current_session()
-        if session is not None:
-            await _insert(session)
-        else:
-            async with get_sessionmaker().begin() as s:
-                await _insert(s)
+        if session is None:
+            raise RuntimeError("ParsedDataSink.insert_data_rows requires an active UnitOfWork")
+        await _insert(session)

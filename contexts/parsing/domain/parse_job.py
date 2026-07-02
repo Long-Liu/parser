@@ -176,6 +176,8 @@ class ParseJob(AggregateRoot):
         sr = self._sheets[sheet_name]
         sr.extracted_rows = valid_rows
         sr.errors = errors
+        if sr.total_rows == 0:
+            sr.total_rows = len(valid_rows) + len(errors)
         sr.success_rows = len(valid_rows)
         sr.error_rows = len(errors)
         self.record(SheetValidated(
@@ -213,6 +215,10 @@ class ParseJob(AggregateRoot):
 
     @property
     def overall_status(self) -> str:
+        return self.result_status
+
+    @property
+    def result_status(self) -> str:
         if self.status == JobStatus.FAILED:
             return "failed"
         successes = [

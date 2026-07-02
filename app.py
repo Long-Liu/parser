@@ -16,7 +16,7 @@ from contexts.data.interface.data_controller import bp as data_ddd_bp
 from contexts.shared.infrastructure.logging import setup as setup_logging
 
 from contexts.shared.infrastructure.database.bootstrap import register as register_db
-from contexts.auth.domain.auth_service import hash_password
+from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 from contexts.template.infrastructure.config_loader import list_configs as list_template_configs
 
 from contexts.shared.interface.middleware.cors import register as register_cors
@@ -38,7 +38,7 @@ register_cors(app)
 register_db(
     app,
     template_config_provider=list_template_configs,
-    password_hasher=hash_password,
+    password_hasher=BCryptPasswordHasher().hash,
 )
 
 for bp in [health_bp, batch_bp,
