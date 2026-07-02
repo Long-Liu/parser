@@ -1,4 +1,6 @@
-"""CORS middleware with explicit origin allowlist."""
+from __future__ import annotations
+
+# CORS middleware with explicit origin allowlist.
 
 import os
 

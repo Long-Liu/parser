@@ -1,4 +1,6 @@
-"""Application bootstrap: config → db.init → schema + seed + data tables."""
+from __future__ import annotations
+
+# Application bootstrap: config → db.init → schema + seed + data tables.
 
 import logging
 import os
@@ -20,6 +22,9 @@ def register(
     @app.listener("before_server_start")
     async def startup(app):
         app.ctx.config = load_config()
+        # Wire the JWT secret into the container once at startup
+        from contexts.container import container
+        container.configure(app.ctx.config.SECRET_KEY)
         logger.info("env=%s debug=%s", os.getenv("APP_ENV", "local"), app.ctx.config.DEBUG)
 
         await db_init(app.ctx.config)

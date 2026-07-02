@@ -6,6 +6,7 @@ import jwt
 
 from contexts.auth.application.security import TokenService
 from contexts.auth.domain.repositories import UserRepository
+from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.domain.identifiers import UserId
 
 
@@ -22,14 +23,15 @@ class AuthorizationApplicationService:
         self._jwt = jwt_service
 
     async def authenticate(self, token: str) -> AuthContext:
-        payload = self._jwt.verify(token)
+        try:
+            payload = self._jwt.verify(token)
+        except jwt.ExpiredSignatureError:
+            raise AuthenticationError("token expired")
+        except jwt.InvalidTokenError:
+            raise AuthenticationError("invalid token")
         user_id = UserId(payload["user_id"])
         return AuthContext(
             user_id=user_id.value,
             username=payload["username"],
             permissions=await self._users.get_permissions(user_id),
         )
-
-
-ExpiredSignatureError = jwt.ExpiredSignatureError
-InvalidTokenError = jwt.InvalidTokenError

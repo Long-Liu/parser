@@ -1,6 +1,6 @@
 from __future__ import annotations
-from abc import abstractmethod
-from abc import ABC
+from abc import ABC, abstractmethod
+
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.template.domain.template import Template
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from contexts.parsing.domain.parse_job import ParsedRow
 
 
-class ParsedDataSink:
+class ParsedDataSink(ABC):
     @abstractmethod
     async def insert_data_rows(
         self, template_id: str, batch_id: int, rows: list[ParsedRow]

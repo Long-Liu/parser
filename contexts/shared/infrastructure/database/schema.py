@@ -1,4 +1,6 @@
-"""DDL helpers — generate CREATE TABLE from SA Core definitions."""
+from __future__ import annotations
+
+# DDL helpers — generate CREATE TABLE from SA Core definitions.
 
 from sqlalchemy import schema as sa_schema
 from sqlalchemy.dialects.mysql import dialect as mysql_dialect

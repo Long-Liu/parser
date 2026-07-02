@@ -8,8 +8,8 @@ from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_TABLES
 from contexts.template.infrastructure.config_loader import (
     load_config,
     list_configs,
-    match_template,
 )
+from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 
 DECIMAL_RE = re.compile(r"^decimal\((\d+),\s*(\d+)\)$", re.IGNORECASE)
@@ -52,15 +52,17 @@ def test_list_configs(config_dir):
     assert configs[0]["template_id"] == "test_tpl"
 
 
-def test_match_template(config_dir):
-    config = match_template("表1 人工费-动态", config_dir=config_dir)
-    assert config is not None
-    assert config["template_id"] == "test_tpl"
+def test_yaml_loader_matches_sheet(config_dir):
+    loader = YamlTemplateLoader(config_dir=config_dir)
+    templates = loader.load_all()
+    assert len(templates) == 1
+    assert templates[0].matches_sheet("表1 人工费-动态") is True
 
 
-def test_match_template_no_match(config_dir):
-    config = match_template("不存在的Sheet名", config_dir=config_dir)
-    assert config is None
+def test_yaml_loader_no_match(config_dir):
+    loader = YamlTemplateLoader(config_dir=config_dir)
+    templates = loader.load_all()
+    assert templates[0].matches_sheet("不存在的Sheet名") is False
 
 
 def test_all_template_configs_match_data_tables():

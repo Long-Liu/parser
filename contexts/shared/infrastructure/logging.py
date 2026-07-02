@@ -1,4 +1,6 @@
-"""Application-wide logging configuration."""
+from __future__ import annotations
+
+# Application-wide logging configuration.
 
 import os
 import logging

@@ -5,7 +5,7 @@ from contextlib import closing
 
 import openpyxl
 
-from contexts.parsing.domain.pipeline_services import MergedCellRange
+from contexts.parsing.domain.cell_unmerger import MergedCellRange
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
 
 

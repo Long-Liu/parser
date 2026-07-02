@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
 
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.identifiers import TemplateId
-from contexts.shared.domain.exceptions import ValidationError
 
 
 class StopRuleType(str, Enum):
@@ -75,7 +75,6 @@ class Template(AggregateRoot):
         self.is_active = True
 
     def matches_sheet(self, sheet_name: str) -> bool:
-        import fnmatch
         return bool(self.sheet_pattern and fnmatch.fnmatch(sheet_name, self.sheet_pattern))
 
     def find_column(self, flat_header: str) -> ColumnMapping | None:

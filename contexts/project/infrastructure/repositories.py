@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.models import Project as OrmProject
+from contexts.shared.infrastructure.database.tables import Project as OrmProject
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.project.domain.project import Project

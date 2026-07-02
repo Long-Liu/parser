@@ -1,6 +1,5 @@
 """Template config loading with input validation and in-process caching."""
 
-import fnmatch
 import os
 
 import yaml
@@ -56,11 +55,3 @@ def list_configs(config_dir=None) -> list[dict]:
     return result
 
 
-def match_template(sheet_name: str, config_dir=None) -> dict | None:
-    """Match a sheet name to a template config via shell-style patterns."""
-    configs = list_configs(config_dir)
-    for cfg in configs:
-        pattern = cfg.get("sheet_pattern", "")
-        if pattern and fnmatch.fnmatch(sheet_name, pattern):
-            return cfg
-    return None

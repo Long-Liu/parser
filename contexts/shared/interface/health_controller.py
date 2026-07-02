@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sanic import Blueprint
 from sanic.response import json
 from sanic_ext import openapi

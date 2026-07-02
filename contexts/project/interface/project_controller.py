@@ -5,7 +5,7 @@ from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth
-from contexts.shared.domain.identifiers import ProjectId, UserId
+from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.exceptions import DomainError
 from contexts.container import container
 from contexts.shared.interface.base_controller import error_to_response

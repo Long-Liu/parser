@@ -3,13 +3,13 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.models import UploadBatch as OrmBatch
-from contexts.shared.infrastructure.database.models import UploadLog as OrmLog
+from contexts.shared.infrastructure.database.tables import UploadBatch as OrmBatch
+from contexts.shared.infrastructure.database.tables import UploadLog as OrmLog
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.parsing.domain.parse_job import (
-    ParseJob, SheetResult, FileInfo, ParsedRow, MatchStatus, JobStatus,
+    ParseJob, SheetResult, FileInfo, MatchStatus, JobStatus,
 )
 from contexts.parsing.domain.repositories import ParseJobRepository
 
@@ -22,7 +22,7 @@ def _job_to_batch_values(job: ParseJob) -> dict:
         "uploaded_by": job.uploaded_by.value if job.uploaded_by else None,
         "file_name": job.file_info.filename,
         "file_size": job.file_info.size,
-        "status": job.overall_status,
+        "status": job.result_status,
     }
 
 
@@ -48,9 +48,11 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
         tid = TemplateId(log.template_id) if log.template_id else None
         ms = MatchStatus.MATCHED if log.action == "matched" else MatchStatus.SKIPPED
         sr = SheetResult(log.sheet_name, template_id=tid, match_status=ms)
-        sr.total_rows = log.total_rows or 0
-        sr.success_rows = log.success_rows or 0
-        sr.error_rows = log.error_rows or 0
+        sr._set_counts(
+            total=log.total_rows or 0,
+            success=log.success_rows or 0,
+            error=log.error_rows or 0,
+        )
         sheets.append(sr)
 
     status = JobStatus.FAILED if orm_batch.status == "failed" else JobStatus.DONE

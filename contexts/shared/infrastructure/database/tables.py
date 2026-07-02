@@ -527,3 +527,154 @@ TEMPLATE_DATA_TABLES: dict[str, sa.Table] = {
 def data_table_for(template_id: str) -> sa.Table:
     """Return the SA Core Table for a data_{template_id} table."""
     return TEMPLATE_DATA_TABLES[template_id]
+
+
+# ── ORM model mappings (thin wrappers over the Core tables above) ──────────
+
+from sqlalchemy.orm import registry  # noqa: E402
+
+mapper_registry = registry(metadata=metadata)
+
+
+@mapper_registry.mapped
+class User:
+    __table__ = users
+
+
+@mapper_registry.mapped
+class Role:
+    __table__ = roles
+
+
+@mapper_registry.mapped
+class Permission:
+    __table__ = permissions
+
+
+@mapper_registry.mapped
+class UserRole:
+    __table__ = user_roles
+
+
+@mapper_registry.mapped
+class RolePermission:
+    __table__ = role_permissions
+
+
+@mapper_registry.mapped
+class Project:
+    __table__ = projects
+
+
+@mapper_registry.mapped
+class UploadBatch:
+    __table__ = upload_batches
+
+
+@mapper_registry.mapped
+class UploadLog:
+    __table__ = upload_logs
+
+
+@mapper_registry.mapped
+class TemplateConfig:
+    __table__ = template_configs
+
+
+@mapper_registry.mapped
+class DataSocialInsurance:
+    __table__ = data_social_insurance
+
+
+@mapper_registry.mapped
+class DataSiteManagement:
+    __table__ = data_site_management
+
+
+@mapper_registry.mapped
+class DataMachinery:
+    __table__ = data_machinery
+
+
+@mapper_registry.mapped
+class DataDynamicIndicator:
+    __table__ = data_dynamic_indicator
+
+
+@mapper_registry.mapped
+class DataLaborCost:
+    __table__ = data_labor_cost
+
+
+@mapper_registry.mapped
+class DataGrossProfit:
+    __table__ = data_gross_profit
+
+
+@mapper_registry.mapped
+class DataLaborCostSummary:
+    __table__ = data_labor_cost_summary
+
+
+@mapper_registry.mapped
+class DataBidComparison:
+    __table__ = data_bid_comparison
+
+
+@mapper_registry.mapped
+class DataConstructionDynamic:
+    __table__ = data_construction_dynamic
+
+
+@mapper_registry.mapped
+class DataInstallationDynamic:
+    __table__ = data_installation_dynamic
+
+
+@mapper_registry.mapped
+class DataOtherItems:
+    __table__ = data_other_items
+
+
+@mapper_registry.mapped
+class DataMaterialCost:
+    __table__ = data_material_cost
+
+
+@mapper_registry.mapped
+class DataConcreteLedger:
+    __table__ = data_concrete_ledger
+
+
+@mapper_registry.mapped
+class DataRebarLedger:
+    __table__ = data_rebar_ledger
+
+
+@mapper_registry.mapped
+class DataInstallationMaterial:
+    __table__ = data_installation_material
+
+
+TEMPLATE_DATA_MODELS: dict[str, type] = {
+    "social_insurance": DataSocialInsurance,
+    "site_management": DataSiteManagement,
+    "machinery": DataMachinery,
+    "dynamic_indicator": DataDynamicIndicator,
+    "labor_cost": DataLaborCost,
+    "gross_profit": DataGrossProfit,
+    "labor_cost_summary": DataLaborCostSummary,
+    "bid_comparison": DataBidComparison,
+    "construction_dynamic": DataConstructionDynamic,
+    "installation_dynamic": DataInstallationDynamic,
+    "other_items": DataOtherItems,
+    "material_cost": DataMaterialCost,
+    "concrete_ledger": DataConcreteLedger,
+    "rebar_ledger": DataRebarLedger,
+    "installation_material": DataInstallationMaterial,
+}
+
+
+def data_model_for(template_id: str) -> type:
+    """Return the ORM data model class for a given template_id."""
+    return TEMPLATE_DATA_MODELS[template_id]

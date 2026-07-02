@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-from contexts.shared.domain.base_repository import Repository
 from contexts.data.domain.data_query import DataRow, Pagination, FilterCriterion
 
 
-class DataQueryRepository(Repository):
+class DataQueryRepository(ABC):
     @abstractmethod
     async def query(
         self, template_id: str, batch_id: int | None,

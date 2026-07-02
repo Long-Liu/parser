@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.unit_of_work import UnitOfWork
-from contexts.data.domain.data_query import Pagination
+from contexts.data.domain.data_query import FilterCriterion, Pagination
 from contexts.data.domain.repositories import DataQueryRepository
 
 
@@ -17,11 +17,11 @@ class DataApplicationService:
 
     async def query(
         self, template_id: str, batch_id: int | None = None,
-        page: int = 1, size: int = 200,
+        page: int = 1, size: int = 200, filters: list[FilterCriterion] | None = None,
     ) -> dict:
         pagination = Pagination(page=page, size=size)
         rows, total = await self._repo.query(
-            template_id, batch_id, [], pagination,
+            template_id, batch_id, filters or [], pagination,
         )
         return {
             "data": [r.fields for r in rows],

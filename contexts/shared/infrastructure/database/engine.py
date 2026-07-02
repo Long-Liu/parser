@@ -1,4 +1,6 @@
-"""Async SQLAlchemy engine lifecycle."""
+from __future__ import annotations
+
+# Async SQLAlchemy engine lifecycle.
 
 import logging
 

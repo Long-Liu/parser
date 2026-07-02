@@ -1,4 +1,6 @@
-"""Seed default permissions, roles, and admin user on first startup."""
+from __future__ import annotations
+
+# Seed default permissions, roles, and admin user on first startup.
 
 import sqlalchemy as sa
 from collections.abc import Callable
@@ -14,11 +16,12 @@ PERMISSIONS = [
     ("data:export", "数据导出"),
     ("template:manage", "模板管理"),
     ("user:manage", "用户管理"),
+    ("admin:roles", "角色权限管理"),
 ]
 
 ROLES = {
     "admin": ["project:create", "project:view", "data:upload", "data:view",
-              "data:export", "template:manage", "user:manage"],
+              "data:export", "template:manage", "user:manage", "admin:roles"],
     "manager": ["project:view", "data:upload", "data:view", "data:export"],
     "viewer": ["project:view", "data:view"],
 }

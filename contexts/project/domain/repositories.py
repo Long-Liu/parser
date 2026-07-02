@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-from contexts.shared.domain.base_repository import Repository
 from contexts.shared.domain.identifiers import ProjectId
 from contexts.project.domain.project import Project
 
 
-class ProjectRepository(Repository):
+class ProjectRepository(ABC):
     @abstractmethod
     async def save(self, project: Project) -> None: ...
     @abstractmethod

@@ -2,10 +2,11 @@
 
 from functools import wraps
 
-import jwt
 from sanic.response import json
 
+from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.container import container
+
 
 def require_auth(f):
     @wraps(f)
@@ -14,17 +15,14 @@ def require_auth(f):
         if not auth_header.startswith("Bearer "):
             return json({"error": "missing token"}, status=401)
         token = auth_header[7:]
-        cfg = request.app.ctx.config
-        auth = container.request_authorization_service(cfg.SECRET_KEY)
+        auth = container.request_authorization_service()
         try:
             ctx = await auth.authenticate(token)
-            request.ctx.user_id = ctx.user_id
-            request.ctx.username = ctx.username
-            request.ctx.permissions = ctx.permissions
-        except jwt.ExpiredSignatureError:
-            return json({"error": "token expired"}, status=401)
-        except jwt.InvalidTokenError:
-            return json({"error": "invalid token"}, status=401)
+        except AuthenticationError as e:
+            return json({"error": str(e)}, status=401)
+        request.ctx.user_id = ctx.user_id
+        request.ctx.username = ctx.username
+        request.ctx.permissions = ctx.permissions
         return await f(request, *args, **kwargs)
     return decorated
 

@@ -15,13 +15,11 @@ from contexts.shared.domain.exceptions import DomainError
 from contexts.container import container
 from contexts.shared.interface.base_controller import error_to_response
 
-bp = Blueprint("upload_ddd", url_prefix="/api")
+from contexts.template.infrastructure.validators import (
+    ALLOWED_MIME_TYPES, ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE,
+)
 
-ALLOWED_MIME_TYPES = frozenset({
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-})
-ALLOWED_EXTENSIONS = frozenset({".xlsx"})
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+bp = Blueprint("upload_ddd", url_prefix="/api")
 
 
 @bp.post("/upload")

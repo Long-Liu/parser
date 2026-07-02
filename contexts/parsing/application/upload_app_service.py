@@ -12,19 +12,13 @@ from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.parsing.domain.parse_job import ParseJob, FileInfo
 from contexts.parsing.domain.data_writer import ParsedDataSink
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
+from contexts.parsing.domain.cell_unmerger import CellUnmerger
+from contexts.parsing.domain.header_flattener import HeaderFlattener
+from contexts.parsing.domain.stop_detector import StopDetector
+from contexts.parsing.domain.data_extractor import DataRowExtractor
+from contexts.parsing.domain.data_validator import DataValidator
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
-from contexts.parsing.domain.pipeline_services import (
-    CellUnmerger,
-    DataRowExtractor,
-    DataValidator,
-    HeaderFlattener,
-    ParsingColumnSpec,
-    ParsingDynamicColumnSpec,
-    ParsingStopRule,
-    ParsingStopRuleType,
-    ParsingTemplateSpec,
-)
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.template.domain.repositories import TemplateCatalog
 
@@ -51,7 +45,8 @@ class UploadApplicationService:
         self._workbook_reader = workbook_reader
         self._unmerger = CellUnmerger()
         self._flattener = HeaderFlattener()
-        self._extractor = DataRowExtractor()
+        self._stop_detector = StopDetector()
+        self._extractor = DataRowExtractor(self._stop_detector)
         self._validator = DataValidator()
 
     async def process(
@@ -71,10 +66,10 @@ class UploadApplicationService:
 
         try:
             workbook_sheets = await self._workbook_reader.read(stored_file.path)
+            sheet_results = []
             async with self._uow_factory() as uow:
                 await self._repo.save(job)
-                job.stamp_events(job.id.value)
-                sheet_results = []
+                job.confirm_submitted()
                 for sheet in workbook_sheets:
                     r = await self._process_sheet(sheet, job)
                     sheet_results.append(r)
@@ -86,12 +81,13 @@ class UploadApplicationService:
         except Exception:
             logger.exception("upload failed for %s", batch_no)
             job.fail("processing error")
-            async with self._uow_factory() as uow:
-                await self._repo.save(job)
-                if job.id is not None:
-                    job.stamp_events(job.id.value)
-                await uow.commit()
-            await self._event_publisher.publish(job.pull_events())
+            try:
+                async with self._uow_factory() as uow:
+                    await self._repo.save(job)
+                    await uow.commit()
+                await self._event_publisher.publish(job.pull_events())
+            except Exception:
+                logger.exception("failed to persist error status for %s", batch_no)
             status = "failed"
             sheet_results = []
         finally:
@@ -123,62 +119,27 @@ class UploadApplicationService:
                 "rows": 0, "status": "skipped",
             }
 
-        template_spec = self._to_parsing_spec(template)
-        job.match_sheet(sheet_name, template_spec.template_id)
+        job.match_sheet(sheet_name, template.id.value)
         grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
-        flat_headers = self._flattener.flatten(
-            grid, template_spec.header_rows
-        )
-        rows = self._extractor.extract(grid, flat_headers, template_spec)
+        flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
+        rows = self._extractor.extract(grid, flat_headers, template)
         job.set_extracted(sheet_name, rows)
 
-        valid_rows, errors = self._validator.validate(rows, template_spec)
+        valid_rows, errors = self._validator.validate(rows, template)
         job.set_validated(sheet_name, valid_rows, errors)
 
         if valid_rows:
             if job.id is None:
                 raise RuntimeError("ParseJob repository did not assign an id")
             await self._data_sink.insert_data_rows(
-                template_spec.template_id, job.id.value, valid_rows
+                template.id.value, job.id.value, valid_rows
             )
 
         return {
-            "name": sheet_name, "template": template_spec.template_id,
+            "name": sheet_name, "template": template.id.value,
             "rows": len(valid_rows),
             "status": "success" if not errors else "partial",
         }
 
     def _make_batch_no(self) -> str:
         return f"B{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
-
-    def _to_parsing_spec(self, template) -> ParsingTemplateSpec:
-        return ParsingTemplateSpec(
-            template_id=str(template.id),
-            header_rows=template.header_spec.header_rows,
-            data_start_row=template.header_spec.data_start_row,
-            stop_rules=[
-                ParsingStopRule(
-                    rule_type=ParsingStopRuleType(rule.rule_type.value),
-                    patterns=rule.patterns,
-                    columns=rule.columns,
-                    empty_row_count=rule.empty_row_count,
-                )
-                for rule in template.stop_rules
-            ],
-            fixed_columns=[
-                ParsingColumnSpec(
-                    db_field=column.db_field,
-                    match_headers=column.match_headers,
-                    db_type=column.db_type,
-                )
-                for column in template.fixed_columns
-            ],
-            dynamic_columns=[
-                ParsingDynamicColumnSpec(
-                    db_prefix=column.db_prefix,
-                    match_headers=column.match_headers,
-                    db_type=column.db_type,
-                )
-                for column in template.dynamic_columns
-            ],
-        )

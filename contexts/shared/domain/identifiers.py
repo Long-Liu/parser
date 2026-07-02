@@ -20,11 +20,17 @@ class _IntId(ValueObject):
 
 
 # ponytail: explicit types for type safety at boundaries; thin wrappers over _IntId
-class UserId(_IntId): pass
-class ProjectId(_IntId): pass
-class JobId(_IntId): pass
-class BatchId(_IntId): pass
-class RoleId(_IntId): pass
+class UserId(_IntId):
+    pass
+
+class ProjectId(_IntId):
+    pass
+
+class JobId(_IntId):
+    pass
+
+class RoleId(_IntId):
+    pass
 
 
 @dataclass(frozen=True)

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.models import TEMPLATE_DATA_MODELS
+import logging
+
+from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.parsing.domain.data_writer import ParsedDataSink
 from contexts.parsing.domain.parse_job import ParsedRow
+
+logger = logging.getLogger("parser.data_writer")
 
 
 class SqlAlchemyParsedDataSink(ParsedDataSink):
@@ -13,6 +16,10 @@ class SqlAlchemyParsedDataSink(ParsedDataSink):
     ) -> None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
+            logger.warning(
+                "No data table model for template_id=%r — %d rows dropped (batch=%d)",
+                template_id, len(rows), batch_id,
+            )
             return
         data = []
         for row in rows:

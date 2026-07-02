@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-from contexts.shared.domain.base_repository import Repository
 from contexts.shared.domain.identifiers import JobId, ProjectId
 from contexts.parsing.domain.parse_job import ParseJob
 
 
-class ParseJobRepository(Repository):
+class ParseJobRepository(ABC):
     @abstractmethod
     async def save(self, job: ParseJob) -> None: ...
 

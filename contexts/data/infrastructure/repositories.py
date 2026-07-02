@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.shared.infrastructure.database.models import TEMPLATE_DATA_MODELS
+from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.shared.infrastructure.unit_of_work import current_session
 from contexts.data.domain.data_query import DataRow, Pagination, FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository

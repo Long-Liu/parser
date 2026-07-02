@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from contexts.shared.domain.exceptions import ConflictError, NotFoundError, ValidationError
+from contexts.shared.domain.exceptions import ConflictError, NotFoundError
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.project.domain.project import Project
@@ -15,8 +15,6 @@ class ProjectApplicationService:
         self._uow_factory = uow_factory
 
     async def create(self, code: str, name: str, created_by: UserId | None = None) -> dict:
-        if not code or not name:
-            raise ValidationError("code and name are required")
         existing = await self._repo.find_by_code(code)
         if existing:
             raise ConflictError("project code already exists")
