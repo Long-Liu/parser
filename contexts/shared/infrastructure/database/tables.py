@@ -536,124 +536,230 @@ from sqlalchemy.orm import registry  # noqa: E402
 mapper_registry = registry(metadata=metadata)
 
 
+class _OrmBase:
+    """Mixin: tells SA 2.0 to ignore bare type annotations (mapping is via __table__)."""
+    __allow_unmapped__ = True
+
+
 @mapper_registry.mapped
-class User:
+class User(_OrmBase):
     __table__ = users
+    id: int
+    username: str
+    password: str
+    real_name: str | None
+    email: str | None
+    phone: str | None
+    is_active: bool
+    created_at: object
 
 
 @mapper_registry.mapped
-class Role:
+class Role(_OrmBase):
     __table__ = roles
+    id: int
+    code: str
+    name: str
+    description: str | None
+    created_at: object
 
 
 @mapper_registry.mapped
-class Permission:
+class Permission(_OrmBase):
     __table__ = permissions
+    id: int
+    code: str
+    name: str
+    description: str | None
 
 
 @mapper_registry.mapped
-class UserRole:
+class UserRole(_OrmBase):
     __table__ = user_roles
+    id: int
+    user_id: int
+    role_id: int
 
 
 @mapper_registry.mapped
-class RolePermission:
+class RolePermission(_OrmBase):
     __table__ = role_permissions
+    id: int
+    role_id: int
+    permission_id: int
 
 
 @mapper_registry.mapped
-class Project:
+class Project(_OrmBase):
     __table__ = projects
+    id: int
+    code: str
+    name: str
+    created_by: int | None
+    created_at: object
 
 
 @mapper_registry.mapped
-class UploadBatch:
+class UploadBatch(_OrmBase):
     __table__ = upload_batches
+    id: int
+    batch_no: str
+    project_id: int
+    ym: str
+    uploaded_by: int | None
+    file_name: str | None
+    file_size: int | None
+    status: str
+    created_at: object
 
 
 @mapper_registry.mapped
-class UploadLog:
+class UploadLog(_OrmBase):
     __table__ = upload_logs
+    id: int
+    batch_id: int
+    sheet_name: str | None
+    template_id: str | None
+    action: str
+    total_rows: int
+    success_rows: int
+    error_rows: int
+    error_msg: str | None
+    created_at: object
 
 
 @mapper_registry.mapped
-class TemplateConfig:
+class TemplateConfig(_OrmBase):
     __table__ = template_configs
+    id: int
+    template_id: str
+    description: str | None
+    config_yaml: str
+    data_table: str
+    is_active: bool
+    updated_at: object
 
+
+# ── Data table models (columns vary per template; common ones annotated) ──
 
 @mapper_registry.mapped
-class DataSocialInsurance:
+class DataSocialInsurance(_OrmBase):
     __table__ = data_social_insurance
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataSiteManagement:
+class DataSiteManagement(_OrmBase):
     __table__ = data_site_management
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataMachinery:
+class DataMachinery(_OrmBase):
     __table__ = data_machinery
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataDynamicIndicator:
+class DataDynamicIndicator(_OrmBase):
     __table__ = data_dynamic_indicator
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataLaborCost:
+class DataLaborCost(_OrmBase):
     __table__ = data_labor_cost
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataGrossProfit:
+class DataGrossProfit(_OrmBase):
     __table__ = data_gross_profit
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataLaborCostSummary:
+class DataLaborCostSummary(_OrmBase):
     __table__ = data_labor_cost_summary
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataBidComparison:
+class DataBidComparison(_OrmBase):
     __table__ = data_bid_comparison
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataConstructionDynamic:
+class DataConstructionDynamic(_OrmBase):
     __table__ = data_construction_dynamic
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataInstallationDynamic:
+class DataInstallationDynamic(_OrmBase):
     __table__ = data_installation_dynamic
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataOtherItems:
+class DataOtherItems(_OrmBase):
     __table__ = data_other_items
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataMaterialCost:
+class DataMaterialCost(_OrmBase):
     __table__ = data_material_cost
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataConcreteLedger:
+class DataConcreteLedger(_OrmBase):
     __table__ = data_concrete_ledger
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataRebarLedger:
+class DataRebarLedger(_OrmBase):
     __table__ = data_rebar_ledger
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 @mapper_registry.mapped
-class DataInstallationMaterial:
+class DataInstallationMaterial(_OrmBase):
     __table__ = data_installation_material
+    id: int
+    batch_id: int
+    hierarchy_code: str | None
 
 
 TEMPLATE_DATA_MODELS: dict[str, type] = {
