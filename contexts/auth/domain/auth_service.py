@@ -14,7 +14,8 @@ class AuthenticationService:
         self._password_hasher = password_hasher
 
     def verify_credentials(self, user: User, password: str) -> None:
-        if not user.is_active:
-            raise AuthenticationError("account disabled")
+        # Verify password FIRST to prevent account-state probing via timing.
         if not self._password_hasher.verify(password, user.password_hash):
             raise AuthenticationError("invalid credentials")
+        if not user.is_active:
+            raise AuthenticationError("account disabled")

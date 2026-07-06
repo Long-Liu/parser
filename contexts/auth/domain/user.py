@@ -23,11 +23,11 @@ class User(AggregateRoot[UserId]):
         self.id = user_id
         self._username = username
         self._password_hash = password_hash
-        self.real_name = real_name
+        self._real_name = real_name
         self._email = email
-        self.phone = phone
-        self.roles: list[RoleRef] = roles or []
-        self.is_active = is_active
+        self._phone = phone
+        self._roles: list[RoleRef] = roles or []
+        self._is_active = is_active
 
     @property
     def username(self) -> str:
@@ -41,22 +41,38 @@ class User(AggregateRoot[UserId]):
     def email(self) -> str:
         return self._email
 
+    @property
+    def real_name(self) -> str:
+        return self._real_name
+
+    @property
+    def phone(self) -> str:
+        return self._phone
+
+    @property
+    def is_active(self) -> bool:
+        return self._is_active
+
+    @property
+    def roles(self) -> list[RoleRef]:
+        return list(self._roles)
+
     def disable(self) -> None:
-        self.is_active = False
+        self._is_active = False
         self.record(UserStatusChanged(
             aggregate_id=self.id.value if self.id else None,
             username=self._username, is_active=False,
         ))
 
     def enable(self) -> None:
-        self.is_active = True
+        self._is_active = True
         self.record(UserStatusChanged(
             aggregate_id=self.id.value if self.id else None,
             username=self._username, is_active=True,
         ))
 
     def assign_roles(self, roles: list[RoleRef]) -> None:
-        self.roles = roles
+        self._roles = list(roles)
 
     @classmethod
     def create(cls, user_id: UserId | None, username: str, password_hash: str,

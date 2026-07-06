@@ -32,9 +32,17 @@ class AuthApplicationService:
         if not cmd.username or not cmd.password:
             raise AuthenticationError("username and password are required")
         user = await self._users.find_by_username(cmd.username)
-        if not user:
+        # Always run password verify to prevent username enumeration via timing.
+        # When user doesn't exist, verify against a dummy hash so the bcrypt cost
+        # is identical to the "user exists, wrong password" path.
+        if user is not None:
+            self._auth.verify_credentials(user, cmd.password)
+        else:
+            self._password_hasher.verify(
+                cmd.password,
+                "$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
             raise AuthenticationError("invalid credentials")
-        self._auth.verify_credentials(user, cmd.password)
         if user.id is None:
             raise AuthenticationError("invalid credentials")
         token = self._jwt.generate(user.id, user.username)
