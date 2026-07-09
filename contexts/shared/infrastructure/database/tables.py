@@ -1,517 +1,420 @@
-"""Data tables — one per template, generated from config/templates/*.yaml.
+"""Tortoise models for parsed template data tables."""
 
-Application tables (users, roles, projects, upload_batches, etc.) live in
-their respective bounded contexts:
+from __future__ import annotations
 
-* ``contexts.auth.infrastructure.tables``
-* ``contexts.project.infrastructure.tables``
-* ``contexts.parsing.infrastructure.tables``
-* ``contexts.template.infrastructure.tables``
-"""
-
-import sqlalchemy as sa
-
-from contexts.shared.infrastructure.database.metadata import metadata, mapper_registry, _OrmBase
-
-# ── Data tables — one per template ───────────────────────────────────────────
-
-data_social_insurance = sa.Table(
-    "data_social_insurance", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("person_name", sa.String(100)),
-    sa.Column("department", sa.String(100)),
-    sa.Column("position", sa.String(100)),
-    sa.Column("contract_relation", sa.String(100)),
-    sa.Column("actual_person_months", sa.Numeric(10, 2)),
-    sa.Column("actual_total_cost", sa.Numeric(15, 2)),
-    sa.Column("subsequent_person_months", sa.Numeric(10, 2)),
-    sa.Column("subsequent_cost", sa.Numeric(15, 2)),
-    sa.Column("estimated_person_months", sa.Numeric(10, 2)),
-    sa.Column("estimated_total_cost", sa.Numeric(15, 2)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_site_management = sa.Table(
-    "data_site_management", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("fee_name", sa.String(200)),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("quantity", sa.Numeric(10, 2)),
-    sa.Column("unit_price_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("tax_rate", sa.Numeric(5, 4)),
-    sa.Column("unit_price_with_tax", sa.Numeric(15, 2)),
-    sa.Column("total_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("tax_amount", sa.Numeric(15, 2)),
-    sa.Column("total_with_tax", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("current_amount", sa.Numeric(15, 2)),
-    sa.Column("subsequent_amount", sa.Numeric(15, 2)),
-    sa.Column("estimated_amount", sa.Numeric(15, 2)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_machinery = sa.Table(
-    "data_machinery", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("machine_name", sa.String(200)),
-    sa.Column("model_spec", sa.String(100)),
-    sa.Column("quantity", sa.Integer),
-    sa.Column("planned_start", sa.String(50)),
-    sa.Column("planned_end", sa.String(50)),
-    sa.Column("source", sa.String(50)),
-    sa.Column("usage_desc", sa.Text),
-    sa.Column("billing_method", sa.String(50)),
-    sa.Column("planned_period", sa.Numeric(10, 2)),
-    sa.Column("planned_monthly_rate", sa.Numeric(15, 2)),
-    sa.Column("planned_entry_exit_fee", sa.Numeric(15, 2)),
-    sa.Column("planned_mgmt_fee", sa.Numeric(15, 2)),
-    sa.Column("planned_total", sa.Numeric(15, 2)),
-    sa.Column("contract_period", sa.Numeric(10, 2)),
-    sa.Column("contract_monthly_rate", sa.Numeric(15, 2)),
-    sa.Column("contract_entry_exit_fee", sa.Numeric(15, 2)),
-    sa.Column("contract_mgmt_fee", sa.Numeric(15, 2)),
-    sa.Column("contract_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("contract_tax", sa.Numeric(15, 2)),
-    sa.Column("contract_total", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_dynamic_indicator = sa.Table(
-    "data_dynamic_indicator", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("item_name", sa.String(300)),
-    sa.Column("indicator_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("indicator_tax_rate", sa.Numeric(5, 4)),
-    sa.Column("indicator_tax", sa.Numeric(15, 2)),
-    sa.Column("indicator_with_tax", sa.Numeric(15, 2)),
-    sa.Column("indicator_ratio", sa.Numeric(15, 10)),
-    sa.Column("estimated_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("estimated_tax_rate", sa.Numeric(5, 4)),
-    sa.Column("estimated_tax", sa.Numeric(15, 2)),
-    sa.Column("estimated_with_tax", sa.Numeric(15, 2)),
-    sa.Column("estimated_ratio", sa.Numeric(15, 10)),
-    sa.Column("qty_change", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("transfer_in", sa.Numeric(15, 2)),
-    sa.Column("transfer_in_desc", sa.Text),
-    sa.Column("transfer_out", sa.Numeric(15, 2)),
-    sa.Column("transfer_out_desc", sa.Text),
-    sa.Column("adjusted_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("adjusted_with_tax", sa.Numeric(15, 2)),
-    sa.Column("current_budget", sa.Numeric(15, 2)),
-    sa.Column("incurred_cost", sa.Numeric(15, 2)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_labor_cost = sa.Table(
-    "data_labor_cost", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("person_name", sa.String(100)),
-    sa.Column("department", sa.String(100)),
-    sa.Column("position", sa.String(100)),
-    sa.Column("contract_relation", sa.String(100)),
-    sa.Column("actual_person_months", sa.Numeric(10, 2)),
-    sa.Column("actual_total_cost", sa.Numeric(15, 2)),
-    sa.Column("subsequent_person_months", sa.Numeric(10, 2)),
-    sa.Column("subsequent_cost", sa.Numeric(15, 2)),
-    sa.Column("estimated_person_months", sa.Numeric(10, 2)),
-    sa.Column("estimated_total_cost", sa.Numeric(15, 2)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_gross_profit = sa.Table(
-    "data_gross_profit", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("item_name", sa.String(200)),
-    sa.Column("contract_price", sa.Numeric(15, 2)),
-    sa.Column("estimated_completion_price", sa.Numeric(15, 2)),
-    sa.Column("economic_assessment", sa.Numeric(15, 2)),
-    sa.Column("estimated_quantity", sa.Numeric(15, 2)),
-    sa.Column("gross_profit_total", sa.Numeric(15, 2)),
-    sa.Column("gross_profit_mgmt_fee", sa.Numeric(15, 2)),
-    sa.Column("gross_profit_net", sa.Numeric(15, 2)),
-    sa.Column("gross_profit_rate", sa.Numeric(15, 10)),
-    sa.Column("estimated_gross_profit_total", sa.Numeric(15, 2)),
-    sa.Column("estimated_gross_profit_mgmt_fee", sa.Numeric(15, 2)),
-    sa.Column("estimated_gross_profit_net", sa.Numeric(15, 2)),
-    sa.Column("estimated_gross_profit_rate", sa.Numeric(15, 10)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_labor_cost_summary = sa.Table(
-    "data_labor_cost_summary", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("total_labor", sa.Numeric(15, 2)),
-    sa.Column("planned_progress", sa.Numeric(10, 4)),
-    sa.Column("planned_labor", sa.Numeric(15, 2)),
-    sa.Column("actual_progress", sa.Numeric(10, 4)),
-    sa.Column("actual_labor", sa.Numeric(15, 2)),
-    sa.Column("planned_person_months", sa.Numeric(10, 2)),
-    sa.Column("planned_labor_indicator", sa.Numeric(15, 2)),
-    sa.Column("actual_person_months", sa.Numeric(10, 2)),
-    sa.Column("actual_labor_indicator", sa.Numeric(15, 2)),
-    sa.Column("indicator_person_months", sa.Numeric(10, 2)),
-    sa.Column("indicator_labor", sa.Numeric(15, 2)),
-    sa.Column("completed_person_months", sa.Numeric(10, 2)),
-    sa.Column("completed_labor", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_bid_comparison = sa.Table(
-    "data_bid_comparison", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("item_name", sa.String(300)),
-    sa.Column("subcontract_budget", sa.Numeric(15, 2)),
-    sa.Column("subcontract_price", sa.Numeric(15, 2)),
-    sa.Column("deviation", sa.Numeric(15, 2)),
-    sa.Column("process_settlement", sa.Numeric(15, 2)),
-    sa.Column("estimated_in_scope", sa.Numeric(15, 2)),
-    sa.Column("estimated_out_scope_active", sa.Numeric(15, 2)),
-    sa.Column("estimated_out_scope_passive", sa.Numeric(15, 2)),
-    sa.Column("estimated_total", sa.Numeric(15, 2)),
-    sa.Column("estimated_indicator", sa.Numeric(15, 2)),
-    sa.Column("indicator_deviation", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_construction_dynamic = sa.Table(
-    "data_construction_dynamic", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("work_content", sa.String(300)),
-    sa.Column("quota_code", sa.String(50)),
-    sa.Column("project_name", sa.String(300)),
-    sa.Column("project_feature", sa.Text),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("remark", sa.Text),
-    sa.Column("bill_qty", sa.Numeric(15, 2)),
-    sa.Column("subcontract_category", sa.String(200)),
-    sa.Column("contract_unit_price", sa.Numeric(15, 2)),
-    sa.Column("contract_total_price", sa.Numeric(15, 2)),
-    sa.Column("device_ex_tax", sa.Numeric(15, 2)),
-    sa.Column("material_concrete", sa.Numeric(15, 2)),
-    sa.Column("material_rebar", sa.Numeric(15, 2)),
-    sa.Column("material_steel", sa.Numeric(15, 2)),
-    sa.Column("material_iron", sa.Numeric(15, 2)),
-    sa.Column("material_other", sa.Numeric(15, 2)),
-    sa.Column("material_name", sa.String(200)),
-    sa.Column("material_subtotal", sa.Numeric(15, 2)),
-    sa.Column("construction_fixed", sa.Numeric(15, 2)),
-    sa.Column("construction_adjustment", sa.Numeric(15, 2)),
-    sa.Column("construction_assessment", sa.Numeric(15, 2)),
-    sa.Column("construction_lighting", sa.Numeric(15, 2)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_installation_dynamic = sa.Table(
-    "data_installation_dynamic", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("project_code", sa.String(50)),
-    sa.Column("project_name", sa.String(300)),
-    sa.Column("project_feature", sa.Text),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("remark", sa.Text),
-    sa.Column("clarification", sa.Text),
-    sa.Column("cost_category", sa.String(200)),
-    sa.Column("initial_bid_qty", sa.Numeric(15, 2)),
-    sa.Column("device_material_fee", sa.Numeric(15, 2)),
-    sa.Column("installation_fee", sa.Numeric(15, 2)),
-    sa.Column("contract_device_material", sa.Numeric(15, 2)),
-    sa.Column("contract_installation", sa.Numeric(15, 2)),
-    sa.Column("indicator_device_material", sa.Numeric(15, 2)),
-    sa.Column("indicator_fabrication", sa.Numeric(15, 2)),
-    sa.Column("indicator_construction", sa.Numeric(15, 2)),
-    sa.Column("upstream_qty", sa.Numeric(15, 2)),
-    sa.Column("drawing_stat_qty", sa.Numeric(15, 2)),
-    sa.Column("drawing_confirmed_qty", sa.Numeric(15, 2)),
-    sa.Column("cumulative_settlement_qty", sa.Numeric(15, 2)),
-    sa.Column("estimated_device_material", sa.Numeric(15, 2)),
-    sa.Column("estimated_installation", sa.Numeric(15, 2)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_other_items = sa.Table(
-    "data_other_items", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("item_name", sa.String(300)),
-    sa.Column("work_desc", sa.Text),
-    sa.Column("calc_instruction", sa.Text),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("quantity", sa.Numeric(15, 2)),
-    sa.Column("pricing_method", sa.String(200)),
-    sa.Column("contract_price", sa.Numeric(15, 2)),
-    sa.Column("cost_amount", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_material_cost = sa.Table(
-    "data_material_cost", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("budget_category", sa.String(200)),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("indicator_qty", sa.Numeric(15, 4)),
-    sa.Column("indicator_unit_price", sa.Numeric(15, 4)),
-    sa.Column("indicator_total", sa.Numeric(15, 2)),
-    sa.Column("budget_qty", sa.Numeric(15, 4)),
-    sa.Column("budget_unit_price", sa.Numeric(15, 4)),
-    sa.Column("budget_total", sa.Numeric(15, 2)),
-    sa.Column("contract_qty", sa.Numeric(15, 4)),
-    sa.Column("contract_unit_price", sa.Numeric(15, 4)),
-    sa.Column("contract_total", sa.Numeric(15, 2)),
-    sa.Column("contract_remark", sa.Text),
-    sa.Column("actual_paid_qty", sa.Numeric(15, 4)),
-    sa.Column("actual_paid_unit_price", sa.Numeric(15, 4)),
-    sa.Column("actual_paid_total", sa.Numeric(15, 2)),
-    sa.Column("actual_unpaid_qty", sa.Numeric(15, 4)),
-    sa.Column("actual_unpaid_unit_price", sa.Numeric(15, 4)),
-    sa.Column("actual_unpaid_total", sa.Numeric(15, 2)),
-    sa.Column("estimated_completion_qty", sa.Numeric(15, 4)),
-    sa.Column("estimated_completion_unit_price", sa.Numeric(15, 4)),
-    sa.Column("estimated_completion_total", sa.Numeric(15, 2)),
-    sa.Column("qty_diff", sa.Numeric(15, 4)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_concrete_ledger = sa.Table(
-    "data_concrete_ledger", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("pour_number", sa.String(100)),
-    sa.Column("application_date", sa.String(50)),
-    sa.Column("drawing_unit_name", sa.String(300)),
-    sa.Column("drawing_number", sa.String(100)),
-    sa.Column("drawing_name", sa.String(300)),
-    sa.Column("usage_location", sa.String(500)),
-    sa.Column("concrete_grade", sa.String(100)),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("design_qty", sa.Numeric(15, 2)),
-    sa.Column("pour_applied_qty", sa.Numeric(15, 2)),
-    sa.Column("contract_scope", sa.String(200)),
-    sa.Column("indicator_budget_qty", sa.Numeric(15, 2)),
-    sa.Column("upstream_settlement_qty", sa.Numeric(15, 2)),
-    sa.Column("actual_pour_date", sa.String(50)),
-    sa.Column("actual_pour_hours", sa.String(50)),
-    sa.Column("actual_pour_method", sa.String(100)),
-    sa.Column("actual_pour_qty", sa.Numeric(15, 2)),
-    sa.Column("settlement_qty", sa.Numeric(15, 2)),
-    sa.Column("supplier_name", sa.String(200)),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_rebar_ledger = sa.Table(
-    "data_rebar_ledger", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("drawing_number", sa.String(100)),
-    sa.Column("drawing_name", sa.String(300)),
-    sa.Column("rebar_diameter", sa.String(50)),
-    sa.Column("rebar_length", sa.Numeric(15, 2)),
-    sa.Column("rebar_count", sa.Integer),
-    sa.Column("unit_weight", sa.Numeric(15, 4)),
-    sa.Column("total_weight", sa.Numeric(15, 2)),
-    sa.Column("connection_qty", sa.Integer),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-data_installation_material = sa.Table(
-    "data_installation_material", metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("batch_id", sa.Integer, sa.ForeignKey("upload_batches.id"), nullable=False),
-    sa.Column("hierarchy_code", sa.String(50)),
-    sa.Column("project_category", sa.String(300)),
-    sa.Column("project_feature", sa.Text),
-    sa.Column("unit", sa.String(50)),
-    sa.Column("drawing_qty", sa.Numeric(15, 2)),
-    sa.Column("budget_unit_price", sa.Numeric(15, 4)),
-    sa.Column("budget_total", sa.Numeric(15, 2)),
-    sa.Column("contract_qty", sa.Numeric(15, 2)),
-    sa.Column("contract_unit_price", sa.Numeric(15, 4)),
-    sa.Column("contract_total", sa.Numeric(15, 2)),
-    sa.Column("remark", sa.Text),
-    sa.Column("monthly_data", sa.JSON),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-    sa.Index("idx_batch", "batch_id"),
-    sa.Index("idx_hierarchy", "hierarchy_code"),
-)
-
-# ── Template lookup ──────────────────────────────────────────────────────────
-
-TEMPLATE_DATA_TABLES: dict[str, sa.Table] = {
-    "social_insurance": data_social_insurance,
-    "site_management": data_site_management,
-    "machinery": data_machinery,
-    "dynamic_indicator": data_dynamic_indicator,
-    "labor_cost": data_labor_cost,
-    "gross_profit": data_gross_profit,
-    "labor_cost_summary": data_labor_cost_summary,
-    "bid_comparison": data_bid_comparison,
-    "construction_dynamic": data_construction_dynamic,
-    "installation_dynamic": data_installation_dynamic,
-    "other_items": data_other_items,
-    "material_cost": data_material_cost,
-    "concrete_ledger": data_concrete_ledger,
-    "rebar_ledger": data_rebar_ledger,
-    "installation_material": data_installation_material,
-}
+from tortoise import fields
+from tortoise.models import Model
 
 
-def data_table_for(template_id: str) -> sa.Table:
-    """Return the SA Core Table for a data_{template_id} table."""
-    return TEMPLATE_DATA_TABLES[template_id]
+class DataSocialInsurance(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    person_name = fields.CharField(max_length=100, null=True)
+    department = fields.CharField(max_length=100, null=True)
+    position = fields.CharField(max_length=100, null=True)
+    contract_relation = fields.CharField(max_length=100, null=True)
+    actual_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    actual_total_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    subsequent_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    subsequent_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    estimated_total_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_social_insurance"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-# ── ORM model mappings (thin wrappers over the Core tables above) ────────────
+class DataSiteManagement(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    fee_name = fields.CharField(max_length=200, null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    quantity = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    unit_price_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    tax_rate = fields.DecimalField(max_digits=5, decimal_places=4, null=True)
+    unit_price_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    total_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    tax_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    total_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    current_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    subsequent_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
 
-@mapper_registry.mapped
-class DataSocialInsurance(_OrmBase):
-    __table__ = data_social_insurance
-
-
-@mapper_registry.mapped
-class DataSiteManagement(_OrmBase):
-    __table__ = data_site_management
-
-
-@mapper_registry.mapped
-class DataMachinery(_OrmBase):
-    __table__ = data_machinery
-
-
-@mapper_registry.mapped
-class DataDynamicIndicator(_OrmBase):
-    __table__ = data_dynamic_indicator
-
-
-@mapper_registry.mapped
-class DataLaborCost(_OrmBase):
-    __table__ = data_labor_cost
+    class Meta:
+        table = "data_site_management"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataGrossProfit(_OrmBase):
-    __table__ = data_gross_profit
+class DataMachinery(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    machine_name = fields.CharField(max_length=200, null=True)
+    model_spec = fields.CharField(max_length=100, null=True)
+    quantity = fields.IntField(null=True)
+    planned_start = fields.CharField(max_length=50, null=True)
+    planned_end = fields.CharField(max_length=50, null=True)
+    source = fields.CharField(max_length=50, null=True)
+    usage_desc = fields.TextField(null=True)
+    billing_method = fields.CharField(max_length=50, null=True)
+    planned_period = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    planned_monthly_rate = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    planned_entry_exit_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    planned_mgmt_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    planned_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_period = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    contract_monthly_rate = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_entry_exit_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_mgmt_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_machinery"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataLaborCostSummary(_OrmBase):
-    __table__ = data_labor_cost_summary
+class DataDynamicIndicator(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    item_name = fields.CharField(max_length=300, null=True)
+    indicator_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_tax_rate = fields.DecimalField(max_digits=5, decimal_places=4, null=True)
+    indicator_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_ratio = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
+    estimated_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_tax_rate = fields.DecimalField(max_digits=5, decimal_places=4, null=True)
+    estimated_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_ratio = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
+    qty_change = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    transfer_in = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    transfer_in_desc = fields.TextField(null=True)
+    transfer_out = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    transfer_out_desc = fields.TextField(null=True)
+    adjusted_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjusted_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    current_budget = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    incurred_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_dynamic_indicator"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataBidComparison(_OrmBase):
-    __table__ = data_bid_comparison
+class DataLaborCost(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    person_name = fields.CharField(max_length=100, null=True)
+    department = fields.CharField(max_length=100, null=True)
+    position = fields.CharField(max_length=100, null=True)
+    contract_relation = fields.CharField(max_length=100, null=True)
+    actual_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    actual_total_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    subsequent_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    subsequent_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    estimated_total_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_labor_cost"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataConstructionDynamic(_OrmBase):
-    __table__ = data_construction_dynamic
+class DataGrossProfit(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    item_name = fields.CharField(max_length=200, null=True)
+    contract_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_completion_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    economic_assessment = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_quantity = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    gross_profit_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    gross_profit_mgmt_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    gross_profit_net = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    gross_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
+    estimated_gross_profit_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_gross_profit_mgmt_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_gross_profit_net = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_gross_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_gross_profit"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataInstallationDynamic(_OrmBase):
-    __table__ = data_installation_dynamic
+class DataLaborCostSummary(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    total_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    planned_progress = fields.DecimalField(max_digits=10, decimal_places=4, null=True)
+    planned_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    actual_progress = fields.DecimalField(max_digits=10, decimal_places=4, null=True)
+    actual_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    planned_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    planned_labor_indicator = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    actual_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    actual_labor_indicator = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    indicator_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    completed_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
+    completed_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_labor_cost_summary"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataOtherItems(_OrmBase):
-    __table__ = data_other_items
+class DataBidComparison(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    item_name = fields.CharField(max_length=300, null=True)
+    subcontract_budget = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    subcontract_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    deviation = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    process_settlement = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_in_scope = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_out_scope_active = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_out_scope_passive = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_indicator = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_deviation = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_bid_comparison"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataMaterialCost(_OrmBase):
-    __table__ = data_material_cost
+class DataConstructionDynamic(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    work_content = fields.CharField(max_length=300, null=True)
+    quota_code = fields.CharField(max_length=50, null=True)
+    project_name = fields.CharField(max_length=300, null=True)
+    project_feature = fields.TextField(null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    remark = fields.TextField(null=True)
+    bill_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    subcontract_category = fields.CharField(max_length=200, null=True)
+    contract_unit_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_total_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    device_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    material_concrete = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    material_rebar = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    material_steel = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    material_iron = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    material_other = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    material_name = fields.CharField(max_length=200, null=True)
+    material_subtotal = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    construction_fixed = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    construction_adjustment = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    construction_assessment = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    construction_lighting = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_construction_dynamic"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataConcreteLedger(_OrmBase):
-    __table__ = data_concrete_ledger
+class DataInstallationDynamic(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    project_code = fields.CharField(max_length=50, null=True)
+    project_name = fields.CharField(max_length=300, null=True)
+    project_feature = fields.TextField(null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    remark = fields.TextField(null=True)
+    clarification = fields.TextField(null=True)
+    cost_category = fields.CharField(max_length=200, null=True)
+    initial_bid_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    device_material_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    installation_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_device_material = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_installation = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_device_material = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_fabrication = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_construction = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    upstream_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    drawing_stat_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    drawing_confirmed_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    cumulative_settlement_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_device_material = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_installation = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_installation_dynamic"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataRebarLedger(_OrmBase):
-    __table__ = data_rebar_ledger
+class DataOtherItems(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    item_name = fields.CharField(max_length=300, null=True)
+    work_desc = fields.TextField(null=True)
+    calc_instruction = fields.TextField(null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    quantity = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    pricing_method = fields.CharField(max_length=200, null=True)
+    contract_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    cost_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_other_items"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-@mapper_registry.mapped
-class DataInstallationMaterial(_OrmBase):
-    __table__ = data_installation_material
+class DataMaterialCost(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    budget_category = fields.CharField(max_length=200, null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    indicator_qty = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    indicator_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    indicator_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    budget_qty = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    budget_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    budget_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_qty = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    contract_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    contract_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_remark = fields.TextField(null=True)
+    actual_paid_qty = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    actual_paid_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    actual_paid_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    actual_unpaid_qty = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    actual_unpaid_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    actual_unpaid_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    estimated_completion_qty = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    estimated_completion_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    estimated_completion_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    qty_diff = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_material_cost"
+        indexes = (("batch_id",), ("hierarchy_code",))
 
 
-TEMPLATE_DATA_MODELS: dict[str, type] = {
+class DataConcreteLedger(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    pour_number = fields.CharField(max_length=100, null=True)
+    application_date = fields.CharField(max_length=50, null=True)
+    drawing_unit_name = fields.CharField(max_length=300, null=True)
+    drawing_number = fields.CharField(max_length=100, null=True)
+    drawing_name = fields.CharField(max_length=300, null=True)
+    usage_location = fields.CharField(max_length=500, null=True)
+    concrete_grade = fields.CharField(max_length=100, null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    design_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    pour_applied_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_scope = fields.CharField(max_length=200, null=True)
+    indicator_budget_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    upstream_settlement_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    actual_pour_date = fields.CharField(max_length=50, null=True)
+    actual_pour_hours = fields.CharField(max_length=50, null=True)
+    actual_pour_method = fields.CharField(max_length=100, null=True)
+    actual_pour_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    settlement_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    supplier_name = fields.CharField(max_length=200, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_concrete_ledger"
+        indexes = (("batch_id",), ("hierarchy_code",))
+
+
+class DataRebarLedger(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    drawing_number = fields.CharField(max_length=100, null=True)
+    drawing_name = fields.CharField(max_length=300, null=True)
+    rebar_diameter = fields.CharField(max_length=50, null=True)
+    rebar_length = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    rebar_count = fields.IntField(null=True)
+    unit_weight = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    total_weight = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    connection_qty = fields.IntField(null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_rebar_ledger"
+        indexes = (("batch_id",), ("hierarchy_code",))
+
+
+class DataInstallationMaterial(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    project_category = fields.CharField(max_length=300, null=True)
+    project_feature = fields.TextField(null=True)
+    unit = fields.CharField(max_length=50, null=True)
+    drawing_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    budget_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    budget_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    contract_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
+    contract_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_installation_material"
+        indexes = (("batch_id",), ("hierarchy_code",))
+
+
+TEMPLATE_DATA_MODELS: dict[str, type[Model]] = {
     "social_insurance": DataSocialInsurance,
     "site_management": DataSiteManagement,
     "machinery": DataMachinery,
@@ -530,6 +433,6 @@ TEMPLATE_DATA_MODELS: dict[str, type] = {
 }
 
 
-def data_model_for(template_id: str) -> type:
-    """Return the ORM data model class for a given template_id."""
+def data_model_for(template_id: str) -> type[Model]:
+    """Return the Tortoise data model class for a given template_id."""
     return TEMPLATE_DATA_MODELS[template_id]

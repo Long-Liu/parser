@@ -1,41 +1,24 @@
 from __future__ import annotations
 
-# DDL helpers — generate CREATE TABLE from SA Core definitions.
+# DDL helpers for Tortoise models.
 
-from sqlalchemy import schema as sa_schema
-from sqlalchemy.dialects.mysql import dialect as mysql_dialect
-from sqlalchemy import text
+from tortoise import Tortoise
 
-from contexts.shared.infrastructure.database.engine import get_sessionmaker
-from contexts.auth.infrastructure.tables import (
-    users, roles, permissions, user_roles, role_permissions,
-)
-from contexts.project.infrastructure.tables import projects
-from contexts.parsing.infrastructure.tables import upload_batches, upload_logs
-from contexts.template.infrastructure.tables import template_configs
-from contexts.shared.infrastructure.database.tables import (
-    TEMPLATE_DATA_TABLES,
-)
-
-ALL_TABLES = [users, roles, permissions, user_roles, role_permissions,
-              projects, upload_batches, upload_logs, template_configs]
-
-_mysql = mysql_dialect()
+from contexts.shared.infrastructure.database.engine import ensure_initialized
+from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
 
 async def init_db():
-    """Create all fixed application tables if they don't exist."""
-    async with get_sessionmaker().begin() as session:
-        for table in ALL_TABLES:
-            ddl = str(sa_schema.CreateTable(table, if_not_exists=True).compile(dialect=_mysql))
-            await session.execute(text(ddl))
+    """Create all registered Tortoise tables if they don't exist."""
+    ensure_initialized()
+    await Tortoise.generate_schemas(safe=True)
 
 
 async def create_data_table(template_id: str):
-    """Create a data_{template_id} table via DDL generated from its SA Table definition."""
-    table = TEMPLATE_DATA_TABLES.get(template_id)
-    if table is None:
+    """Validate that a template data table model is registered.
+
+    ``init_db`` creates all registered Tortoise models in one pass. This hook is
+    kept for the existing bootstrap flow and to fail fast on unknown templates.
+    """
+    if template_id not in TEMPLATE_DATA_MODELS:
         raise ValueError(f"unknown template: {template_id}")
-    ddl = str(sa_schema.CreateTable(table, if_not_exists=True).compile(dialect=_mysql))
-    async with get_sessionmaker().begin() as session:
-        await session.execute(text(ddl))

@@ -1,25 +1,17 @@
-"""SQLAlchemy Core table definition + ORM mapped class for the template context."""
+"""Tortoise model for template configuration rows."""
 
-import sqlalchemy as sa
+from tortoise import fields
+from tortoise.models import Model
 
-from contexts.shared.infrastructure.database.metadata import metadata, mapper_registry, _OrmBase
 
-# ── Core table ───────────────────────────────────────────────────────────────
+class TemplateConfig(Model):
+    id = fields.IntField(primary_key=True)
+    template_id = fields.CharField(max_length=100, unique=True)
+    description = fields.CharField(max_length=500, null=True)
+    config_yaml = fields.TextField()
+    data_table = fields.CharField(max_length=100)
+    is_active = fields.BooleanField(default=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
-template_configs = sa.Table(
-    "template_configs",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("template_id", sa.String(100), nullable=False, unique=True),
-    sa.Column("description", sa.String(500)),
-    sa.Column("config_yaml", sa.Text, nullable=False),
-    sa.Column("data_table", sa.String(100), nullable=False),
-    sa.Column("is_active", sa.Boolean, default=True),
-    sa.Column("updated_at", sa.DateTime, server_default=sa.func.now(), onupdate=sa.func.now()),
-)
-
-# ── ORM mapped class ─────────────────────────────────────────────────────────
-
-@mapper_registry.mapped
-class TemplateConfig(_OrmBase):
-    __table__ = template_configs
+    class Meta:
+        table = "template_configs"

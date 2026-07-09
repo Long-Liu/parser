@@ -1,236 +1,199 @@
 from __future__ import annotations
 
-import sqlalchemy as sa
-from contexts.auth.infrastructure.tables import User as OrmUser
-from contexts.auth.infrastructure.tables import Role as OrmRole
+from tortoise.exceptions import IntegrityError
+
+from contexts.auth.domain.repositories import RoleRepository, UserRepository
+from contexts.auth.domain.role import PermissionRef, Role
+from contexts.auth.domain.user import RoleRef, User
 from contexts.auth.infrastructure.tables import (
-    UserRole,
-    RolePermission,
     Permission as OrmPermission,
+    Role as OrmRole,
+    RolePermission,
+    User as OrmUser,
+    UserRole,
 )
 from contexts.shared.domain.identifiers import RoleId, UserId
-from contexts.shared.infrastructure.unit_of_work import current_session, session_scope
-from contexts.auth.domain.user import User, RoleRef
-from contexts.auth.domain.role import PermissionRef, Role
-from contexts.auth.domain.repositories import RoleRepository, UserRepository
 
 
 def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
     return User(
-        user_id=UserId(orm.id), username=orm.username, password_hash=orm.password,
-        real_name=orm.real_name or "", email=orm.email or "", phone=orm.phone or "",
+        user_id=UserId(orm.id),
+        username=orm.username,
+        password_hash=orm.password,
+        real_name=orm.real_name or "",
+        email=orm.email or "",
+        phone=orm.phone or "",
         roles=[RoleRef(role_id=r["id"], code=r["code"]) for r in roles],
         is_active=bool(orm.is_active),
     )
 
 
-async def _load_roles(session, user_id: int) -> list[dict]:
-    result = await session.execute(
-        sa.select(OrmRole.id, OrmRole.code, OrmRole.name)
-        .select_from(OrmRole)
-        .join(UserRole, UserRole.role_id == OrmRole.id)
-        .where(UserRole.user_id == user_id)
+async def _load_roles(user_id: int) -> list[dict]:
+    role_ids = await UserRole.filter(user_id=user_id).values_list("role_id", flat=True)
+    if not role_ids:
+        return []
+    return list(
+        await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name")
     )
-    return [{"id": r[0], "code": r[1], "name": r[2]} for r in result.all()]
 
-
-# ── User repository ──────────────────────────────────────────────────
 
 class UserRepositoryImpl(UserRepository):
     async def save(self, user: User) -> None:
-        session = current_session()
-        if session is None:
-            raise RuntimeError("UserRepository.save requires an active UnitOfWork")
         values = {
             "username": user.username,
             "password": user.password_hash,
             "real_name": user.real_name,
             "email": user.email,
             "phone": user.phone,
-            "is_active": 1 if user.is_active else 0,
+            "is_active": user.is_active,
         }
         if user.id is None:
-            orm = OrmUser(**values)
-            session.add(orm)
-            await session.flush()
+            orm = await OrmUser.create(**values)
             user.id = UserId(orm.id)
             return
-        existing = await session.execute(
-            sa.select(OrmUser.id).where(OrmUser.id == user.id.value)
-        )
-        if existing.first() is None:
-            session.add(OrmUser(id=user.id.value, **values))
+
+        existing = await OrmUser.get_or_none(id=user.id.value)
+        if existing is None:
+            orm = OrmUser(id=user.id.value, **values)
+            await orm.save(force_create=True)
         else:
-            await session.execute(
-                sa.update(OrmUser)
-                .where(OrmUser.id == user.id.value)
-                .values(**values)
-            )
-        await session.flush()
+            for key, value in values.items():
+                setattr(existing, key, value)
+            await existing.save(update_fields=list(values.keys()))
 
     async def find_by_id(self, user_id: UserId) -> User | None:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmUser).where(OrmUser.id == user_id.value))
-            orm = result.scalars().first()
-            if orm is None:
-                return None
-            roles = await _load_roles(session, orm.id)
-            return _user_to_entity(orm, roles)
+        orm = await OrmUser.get_or_none(id=user_id.value)
+        if orm is None:
+            return None
+        return _user_to_entity(orm, await _load_roles(orm.id))
 
     async def find_by_username(self, username: str) -> User | None:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmUser).where(OrmUser.username == username))
-            orm = result.scalars().first()
-            if orm is None:
-                return None
-            roles = await _load_roles(session, orm.id)
-            return _user_to_entity(orm, roles)
+        orm = await OrmUser.get_or_none(username=username)
+        if orm is None:
+            return None
+        return _user_to_entity(orm, await _load_roles(orm.id))
 
     async def get_permissions(self, user_id: UserId) -> set[str]:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmPermission.code)
-                .select_from(OrmUser)
-                .join(UserRole, UserRole.user_id == OrmUser.id)
-                .join(RolePermission, RolePermission.role_id == UserRole.role_id)
-                .join(OrmPermission, OrmPermission.id == RolePermission.permission_id)
-                .where(OrmUser.id == user_id.value)
-            )
-            return {row[0] for row in result.all()}
+        role_ids = await UserRole.filter(user_id=user_id.value).values_list(
+            "role_id", flat=True
+        )
+        if not role_ids:
+            return set()
+        permission_ids = await RolePermission.filter(
+            role_id__in=list(role_ids)
+        ).values_list("permission_id", flat=True)
+        if not permission_ids:
+            return set()
+        codes = await OrmPermission.filter(id__in=list(permission_ids)).values_list(
+            "code", flat=True
+        )
+        return set(codes)
 
-
-# ── Role repository ──────────────────────────────────────────────────
 
 class RoleRepositoryImpl(RoleRepository):
     async def save(self, role: Role) -> None:
-        session = current_session()
-        if session is None:
-            raise RuntimeError("RoleRepository.save requires an active UnitOfWork")
-        values = {"code": role.code, "name": role.name,
-                   "description": role.description}
+        values = {
+            "code": role.code,
+            "name": role.name,
+            "description": role.description,
+        }
         if role.id is None:
-            orm = OrmRole(**values)
-            session.add(orm)
-            await session.flush()
+            orm = await OrmRole.create(**values)
             role.id = orm.id
         else:
-            await session.execute(
-                sa.update(OrmRole).where(OrmRole.id == role.id).values(**values)
-            )
-            await session.execute(
-                sa.delete(RolePermission.__table__).where(
-                    RolePermission.__table__.c.role_id == role.id
-                )
-            )
-        await session.flush()
+            existing = await OrmRole.get_or_none(id=role.id)
+            if existing is None:
+                orm = OrmRole(id=role.id, **values)
+                await orm.save(force_create=True)
+            else:
+                for key, value in values.items():
+                    setattr(existing, key, value)
+                await existing.save(update_fields=list(values.keys()))
+            await RolePermission.filter(role_id=role.id).delete()
 
         for perm in role.permissions:
-            perm_id = await _ensure_permission(session, perm.code, perm.name)
-            await session.execute(
-                sa.insert(RolePermission.__table__).values(
-                    role_id=role.id, permission_id=perm_id,
-                ).prefix_with("IGNORE")
-            )
+            perm_id = await _ensure_permission(perm.code, perm.name)
+            await _ensure_role_permission(role.id, perm_id)
 
     async def find_by_id(self, role_id: RoleId) -> Role | None:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmRole).where(OrmRole.id == role_id.value)
-            )
-            orm = result.scalars().first()
-            if orm is None:
-                return None
-            perms = await _load_permissions(session, orm.id)
-            return Role(
-                role_id=orm.id, code=orm.code, name=orm.name,
-                description=orm.description or "",
-                permissions=[PermissionRef(code=p.code, name=p.name) for p in perms],
-            )
+        orm = await OrmRole.get_or_none(id=role_id.value)
+        if orm is None:
+            return None
+        perms = await _load_permissions(orm.id)
+        return Role(
+            role_id=orm.id,
+            code=orm.code,
+            name=orm.name,
+            description=orm.description or "",
+            permissions=[PermissionRef(code=p.code, name=p.name) for p in perms],
+        )
 
     async def find_all(self) -> list[Role]:
-        async with session_scope() as session:
-            result = await session.execute(sa.select(OrmRole))
-            roles = []
-            for orm in result.scalars().all():
-                perms = await _load_permissions(session, orm.id)
-                roles.append(Role(
-                    role_id=orm.id, code=orm.code, name=orm.name,
+        roles = []
+        for orm in await OrmRole.all():
+            perms = await _load_permissions(orm.id)
+            roles.append(
+                Role(
+                    role_id=orm.id,
+                    code=orm.code,
+                    name=orm.name,
                     description=orm.description or "",
                     permissions=[
                         PermissionRef(code=p.code, name=p.name) for p in perms
                     ],
-                ))
-            return roles
-
-    async def delete(self, role_id: RoleId) -> None:
-        session = current_session()
-        if session is None:
-            raise RuntimeError("RoleRepository.delete requires an active UnitOfWork")
-        await session.execute(
-            sa.delete(RolePermission.__table__).where(
-                RolePermission.__table__.c.role_id == role_id.value
-            )
-        )
-        await session.execute(
-            sa.delete(UserRole.__table__).where(
-                UserRole.__table__.c.role_id == role_id.value
-            )
-        )
-        await session.execute(
-            sa.delete(OrmRole.__table__).where(
-                OrmRole.__table__.c.id == role_id.value
-            )
-        )
-
-    async def assign_to_user(self, user_id: UserId, role_id: RoleId) -> None:
-        session = current_session()
-        if session is None:
-            raise RuntimeError(
-                "RoleRepository.assign_to_user requires an active UnitOfWork"
-            )
-        await session.execute(
-            sa.insert(UserRole.__table__).values(
-                user_id=user_id.value, role_id=role_id.value,
-            ).prefix_with("IGNORE")
-        )
-
-    async def remove_from_user(self, user_id: UserId, role_id: RoleId) -> None:
-        session = current_session()
-        if session is None:
-            raise RuntimeError(
-                "RoleRepository.remove_from_user requires an active UnitOfWork"
-            )
-        await session.execute(
-            sa.delete(UserRole.__table__).where(
-                sa.and_(
-                    UserRole.__table__.c.user_id == user_id.value,
-                    UserRole.__table__.c.role_id == role_id.value,
                 )
             )
-        )
+        return roles
+
+    async def delete(self, role_id: RoleId) -> None:
+        await RolePermission.filter(role_id=role_id.value).delete()
+        await UserRole.filter(role_id=role_id.value).delete()
+        await OrmRole.filter(id=role_id.value).delete()
+
+    async def assign_to_user(self, user_id: UserId, role_id: RoleId) -> None:
+        await _ensure_user_role(user_id.value, role_id.value)
+
+    async def remove_from_user(self, user_id: UserId, role_id: RoleId) -> None:
+        await UserRole.filter(
+            user_id=user_id.value, role_id=role_id.value
+        ).delete()
 
 
-async def _ensure_permission(session, code: str, name: str) -> int:
-    """Get or create a permission row; return its id."""
-    result = await session.execute(
-        sa.select(OrmPermission.id).where(OrmPermission.code == code)
+async def _ensure_permission(code: str, name: str) -> int:
+    perm = await OrmPermission.get_or_none(code=code)
+    if perm is not None:
+        return perm.id
+    try:
+        perm = await OrmPermission.create(code=code, name=name)
+    except IntegrityError:
+        perm = await OrmPermission.get(code=code)
+    return perm.id
+
+
+async def _ensure_role_permission(role_id: int, permission_id: int) -> None:
+    if await RolePermission.get_or_none(
+        role_id=role_id, permission_id=permission_id
+    ):
+        return
+    try:
+        await RolePermission.create(role_id=role_id, permission_id=permission_id)
+    except IntegrityError:
+        return
+
+
+async def _ensure_user_role(user_id: int, role_id: int) -> None:
+    if await UserRole.get_or_none(user_id=user_id, role_id=role_id):
+        return
+    try:
+        await UserRole.create(user_id=user_id, role_id=role_id)
+    except IntegrityError:
+        return
+
+
+async def _load_permissions(role_id: int) -> list[OrmPermission]:
+    permission_ids = await RolePermission.filter(role_id=role_id).values_list(
+        "permission_id", flat=True
     )
-    row = result.first()
-    if row is not None:
-        return row[0]
-    result = await session.execute(
-        sa.insert(OrmPermission.__table__).values(code=code, name=name)
-    )
-    return result.lastrowid
-
-
-async def _load_permissions(session, role_id: int) -> list[OrmPermission]:
-    result = await session.execute(
-        sa.select(OrmPermission)
-        .select_from(OrmPermission)
-        .join(RolePermission, RolePermission.permission_id == OrmPermission.id)
-        .where(RolePermission.role_id == role_id)
-    )
-    return list(result.scalars().all())
+    if not permission_ids:
+        return []
+    return list(await OrmPermission.filter(id__in=list(permission_ids)))

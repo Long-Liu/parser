@@ -1,67 +1,67 @@
 from __future__ import annotations
 
-# Async SQLAlchemy engine lifecycle.
+# Tortoise ORM lifecycle.
 
 import logging
 
-from sqlalchemy.engine import URL
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from tortoise import Tortoise, connections
 
 from contexts.shared.infrastructure.database.config import Config
 
 logger = logging.getLogger("parser.db")
 
-_POOL_RECYCLE_SECONDS = 3600
+_initialized = False
 
-_engine: AsyncEngine | None = None
-_sessionmaker: async_sessionmaker[AsyncSession] | None = None
+_MODEL_MODULES = [
+    "contexts.auth.infrastructure.tables",
+    "contexts.project.infrastructure.tables",
+    "contexts.parsing.infrastructure.tables",
+    "contexts.template.infrastructure.tables",
+    "contexts.shared.infrastructure.database.tables",
+]
 
 
 async def init(config: Config) -> None:
-    """Create the module-level async engine."""
-    global _engine, _sessionmaker
-    if _engine is not None:
+    """Initialize Tortoise connections and model registry."""
+    global _initialized
+    if _initialized:
         await close()
 
-    url = URL.create(
-        "mysql+aiomysql",
-        username=config.DB_USER,
-        password=config.DB_PASSWORD,
-        host=config.DB_HOST,
-        port=config.DB_PORT,
-        database=config.DB_NAME,
-        query={"charset": "utf8mb4"},
+    await Tortoise.init(
+        config={
+            "connections": {
+                "default": {
+                    "engine": "tortoise.backends.mysql",
+                    "credentials": {
+                        "host": config.DB_HOST,
+                        "port": config.DB_PORT,
+                        "user": config.DB_USER,
+                        "password": config.DB_PASSWORD,
+                        "database": config.DB_NAME,
+                        "charset": "utf8mb4",
+                        "maxsize": config.DB_POOL_SIZE,
+                    },
+                }
+            },
+            "apps": {
+                "models": {
+                    "models": _MODEL_MODULES,
+                    "default_connection": "default",
+                }
+            },
+        }
     )
-    _engine = create_async_engine(
-        url,
-        pool_size=config.DB_POOL_SIZE,
-        max_overflow=0,
-        pool_recycle=_POOL_RECYCLE_SECONDS,
-        pool_pre_ping=True,
-    )
-    _sessionmaker = async_sessionmaker(
-        _engine,
-        expire_on_commit=False,
-        autoflush=False,
-    )
+    _initialized = True
 
 
 async def close() -> None:
-    """Dispose the module-level async engine."""
-    global _engine, _sessionmaker
-    if _engine is not None:
-        await _engine.dispose()
-        _engine = None
-        _sessionmaker = None
+    """Close all Tortoise connections."""
+    global _initialized
+    if _initialized:
+        await connections.close_all()
+        _initialized = False
 
 
-def get_engine() -> AsyncEngine:
-    if _engine is None:
+def ensure_initialized() -> None:
+    if not _initialized:
         raise RuntimeError("db.init() must be called first")
-    return _engine
-
-
-def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
-    if _sessionmaker is None:
-        raise RuntimeError("db.init() must be called first")
-    return _sessionmaker

@@ -1,23 +1,15 @@
-"""SQLAlchemy Core table definition + ORM mapped class for the project context."""
+"""Tortoise model for the project context."""
 
-import sqlalchemy as sa
+from tortoise import fields
+from tortoise.models import Model
 
-from contexts.shared.infrastructure.database.metadata import metadata, mapper_registry, _OrmBase
 
-# ── Core table ───────────────────────────────────────────────────────────────
+class Project(Model):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=50, unique=True)
+    name = fields.CharField(max_length=200)
+    created_by = fields.IntField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
 
-projects = sa.Table(
-    "projects",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("code", sa.String(50), nullable=False, unique=True),
-    sa.Column("name", sa.String(200), nullable=False),
-    sa.Column("created_by", sa.Integer, sa.ForeignKey("users.id")),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-# ── ORM mapped class ─────────────────────────────────────────────────────────
-
-@mapper_registry.mapped
-class Project(_OrmBase):
-    __table__ = projects
+    class Meta:
+        table = "projects"

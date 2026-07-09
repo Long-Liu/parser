@@ -1,60 +1,47 @@
 from __future__ import annotations
 
-import sqlalchemy as sa
-
-from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
-from contexts.shared.infrastructure.unit_of_work import current_session, session_scope
-from contexts.data.domain.data_query import DataRow, Pagination, FilterCriterion
+from contexts.data.domain.data_query import DataRow, FilterCriterion, Pagination
 from contexts.data.domain.repositories import DataQueryRepository
+from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
 
 class DataQueryRepositoryImpl(DataQueryRepository):
     async def query(
-            self, template_id: str, batch_id: int | None,
-            filters: list[FilterCriterion], pagination: Pagination,
+        self,
+        template_id: str,
+        batch_id: int | None,
+        filters: list[FilterCriterion],
+        pagination: Pagination,
     ) -> tuple[list[DataRow], int]:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
             return [], 0
-        t = model.__table__
-        stmt = sa.select(t)
+
+        qs = model.all()
         if batch_id is not None:
-            stmt = stmt.where(t.c.batch_id == batch_id)
+            qs = qs.filter(batch_id=batch_id)
+        model_fields = set(model._meta.fields_map)
         for f in filters:
-            col = getattr(t.c, f.field, None)
-            if col is not None and f.operator == "eq":
-                stmt = stmt.where(col == f.value)
-            elif col is not None and f.operator == "like":
-                stmt = stmt.where(col.like(f"%{f.value}%"))
+            if f.field not in model_fields:
+                continue
+            if f.operator == "eq":
+                qs = qs.filter(**{f.field: f.value})
+            elif f.operator == "like":
+                qs = qs.filter(**{f"{f.field}__contains": str(f.value)})
 
-        count_stmt = sa.select(sa.func.count()).select_from(stmt.subquery())
-        stmt = stmt.limit(pagination.size).offset(pagination.offset)
-
-        async with session_scope() as session:
-            total = (await session.execute(count_stmt)).scalar() or 0
-            result = await session.execute(stmt)
-            return [DataRow(fields=dict(r._mapping)) for r in result.all()], total
+        total = await qs.count()
+        rows = await qs.limit(pagination.size).offset(pagination.offset).values()
+        return [DataRow(fields=dict(row)) for row in rows], total
 
     async def get_by_id(self, template_id: str, row_id: int) -> DataRow | None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
             return None
-        t = model.__table__
-
-        async with session_scope() as session:
-            r = (await session.execute(sa.select(t).where(t.c.id == row_id))).first()
-            return DataRow(fields=dict(r._mapping)) if r else None
+        row = await model.filter(id=row_id).values()
+        return DataRow(fields=dict(row[0])) if row else None
 
     async def delete_by_id(self, template_id: str, row_id: int) -> None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
             return
-        t = model.__table__
-
-        async def _delete(s):
-            await s.execute(sa.delete(t).where(t.c.id == row_id))
-
-        session = current_session()
-        if session is None:
-            raise RuntimeError("DataQueryRepository.delete_by_id requires an active UnitOfWork")
-        await _delete(session)
+        await model.filter(id=row_id).delete()

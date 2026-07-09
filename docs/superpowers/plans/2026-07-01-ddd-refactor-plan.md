@@ -561,14 +561,14 @@ git commit -m "feat(shared): add identifier, Money, and YearMonth value objects"
 # contexts/shared/infrastructure/unit_of_work.py
 from __future__ import annotations
 
-import contextvars
 from abc import ABC, abstractmethod
+from contextvars import ContextVar, Token
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.engine import get_sessionmaker
 
-_tx_session: contextvars.ContextVar[AsyncSession | None] = contextvars.ContextVar(
+_tx_session: ContextVar[AsyncSession | None] = ContextVar(
     "uow_session", default=None
 )
 
@@ -595,7 +595,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
     def __init__(self) -> None:
         self._ctx = None
         self._session: AsyncSession | None = None
-        self._token: contextvars.Token | None = None
+        self._token: Token | None = None
         self._owner = False
 
     @property

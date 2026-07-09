@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from contexts.auth.domain.repositories import RoleRepository
 from contexts.auth.domain.role import PermissionRef, Role
 from contexts.shared.domain.event_publisher import EventPublisher
@@ -10,20 +8,20 @@ from contexts.shared.domain.exceptions import (
     NotFoundError,
 )
 from contexts.shared.domain.identifiers import RoleId, UserId
-from contexts.shared.domain.unit_of_work import UnitOfWork
+from tortoise.transactions import atomic
 
 
 class RoleApplicationService:
     def __init__(
-        self, repo: RoleRepository, uow_factory: Callable[[], UnitOfWork],
+        self, repo: RoleRepository,
         event_publisher: EventPublisher | None = None,
     ) -> None:
         self._repo = repo
-        self._uow_factory = uow_factory
         self._event_publisher = event_publisher
 
     # ── role CRUD ─────────────────────────────────────────────────
 
+    @atomic()
     async def create(
         self, code: str, name: str, description: str = "",
         permission_codes: list[str] | None = None,
@@ -36,15 +34,14 @@ class RoleApplicationService:
         ]
         role = Role.create(code=code, name=name, description=description,
                           permissions=permissions)
-        async with self._uow_factory() as uow:
-            await self._repo.save(role)
-            await uow.commit()
+        await self._repo.save(role)
         if role.id is None:
             raise RuntimeError("role repository did not assign an id")
         if self._event_publisher:
             await self._event_publisher.publish(role.pull_events())
         return self._to_dict(role)
 
+    @atomic()
     async def update(
         self, role_id: int, name: str, description: str = "",
         permission_codes: list[str] | None = None,
@@ -57,20 +54,17 @@ class RoleApplicationService:
             role.assign_permissions(
                 [PermissionRef(code=c) for c in permission_codes]
             )
-        async with self._uow_factory() as uow:
-            await self._repo.save(role)
-            await uow.commit()
+        await self._repo.save(role)
         if self._event_publisher:
             await self._event_publisher.publish(role.pull_events())
         return self._to_dict(role)
 
+    @atomic()
     async def delete(self, role_id: int) -> None:
         role = await self._repo.find_by_id(RoleId(role_id))
         if role is None:
             raise NotFoundError(f"role {role_id} not found")
-        async with self._uow_factory() as uow:
-            await self._repo.delete(RoleId(role_id))
-            await uow.commit()
+        await self._repo.delete(RoleId(role_id))
 
     async def get(self, role_id: int) -> dict:
         role = await self._repo.find_by_id(RoleId(role_id))
@@ -84,19 +78,17 @@ class RoleApplicationService:
 
     # ── user-role assignment ──────────────────────────────────────
 
+    @atomic()
     async def assign_to_user(self, user_id: int, role_id: int) -> None:
         # Verify both exist
         role = await self._repo.find_by_id(RoleId(role_id))
         if role is None:
             raise NotFoundError(f"role {role_id} not found")
-        async with self._uow_factory() as uow:
-            await self._repo.assign_to_user(UserId(user_id), RoleId(role_id))
-            await uow.commit()
+        await self._repo.assign_to_user(UserId(user_id), RoleId(role_id))
 
+    @atomic()
     async def remove_from_user(self, user_id: int, role_id: int) -> None:
-        async with self._uow_factory() as uow:
-            await self._repo.remove_from_user(UserId(user_id), RoleId(role_id))
-            await uow.commit()
+        await self._repo.remove_from_user(UserId(user_id), RoleId(role_id))
 
     # ── helpers ───────────────────────────────────────────────────
 

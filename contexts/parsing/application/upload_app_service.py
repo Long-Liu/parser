@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
 from datetime import datetime
 
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.year_month import YearMonth
-from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.domain.event_publisher import EventPublisher
+from tortoise.transactions import atomic
 from contexts.parsing.domain.parse_job import ParseJob, FileInfo
 from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
@@ -32,7 +31,6 @@ class UploadApplicationService:
         template_repo: TemplateCatalog,
         data_sink: ParsedDataSink,
         event_publisher: EventPublisher,
-        uow_factory: Callable[[], UnitOfWork],
         file_storage: FileStorage,
         workbook_reader: WorkbookReader,
     ) -> None:
@@ -40,7 +38,6 @@ class UploadApplicationService:
         self._template_repo = template_repo
         self._data_sink = data_sink
         self._event_publisher = event_publisher
-        self._uow_factory = uow_factory
         self._file_storage = file_storage
         self._workbook_reader = workbook_reader
         self._unmerger = CellUnmerger()
@@ -65,26 +62,14 @@ class UploadApplicationService:
         )
 
         try:
-            workbook_sheets = await self._workbook_reader.read(stored_file.path)
-            sheet_results = []
-            async with self._uow_factory() as uow:
-                await self._repo.save(job)
-                job.confirm_submitted()
-                for sheet in workbook_sheets:
-                    r = await self._process_sheet(sheet, job)
-                    sheet_results.append(r)
-                job.complete()
-                await self._repo.save(job)
-                await uow.commit()
+            sheet_results = await self._process_workbook(stored_file.path, job)
             await self._event_publisher.publish(job.pull_events())
             status = job.result_status
         except Exception:
             logger.exception("upload failed for %s", batch_no)
             job.fail("processing error")
             try:
-                async with self._uow_factory() as uow:
-                    await self._repo.save(job)
-                    await uow.commit()
+                await self._save_failed_job(job)
                 await self._event_publisher.publish(job.pull_events())
             except Exception:
                 logger.exception("failed to persist error status for %s", batch_no)
@@ -107,6 +92,23 @@ class UploadApplicationService:
             logger.debug(
                 "failed to remove temp file %s", stored_file.path, exc_info=True
             )
+
+    @atomic()
+    async def _process_workbook(self, stored_path: str, job: ParseJob) -> list[dict]:
+        workbook_sheets = await self._workbook_reader.read(stored_path)
+        sheet_results = []
+        await self._repo.save(job)
+        job.confirm_submitted()
+        for sheet in workbook_sheets:
+            r = await self._process_sheet(sheet, job)
+            sheet_results.append(r)
+        job.complete()
+        await self._repo.save(job)
+        return sheet_results
+
+    @atomic()
+    async def _save_failed_job(self, job: ParseJob) -> None:
+        await self._repo.save(job)
 
     async def _process_sheet(self, sheet: WorkbookSheet, job: ParseJob) -> dict:
         sheet_name = sheet.name

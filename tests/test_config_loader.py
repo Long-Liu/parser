@@ -2,9 +2,10 @@ import pytest
 import tempfile
 import os
 import re
-import sqlalchemy as sa
 
-from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_TABLES
+from tortoise import fields
+
+from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.template.infrastructure.config_loader import (
     load_config,
     list_configs,
@@ -71,19 +72,21 @@ def test_all_template_configs_match_data_tables():
 
     for cfg in configs:
         template_id = cfg.get("template_id")
-        assert template_id in TEMPLATE_DATA_TABLES
+        assert template_id in TEMPLATE_DATA_MODELS
         assert cfg.get("sheet_pattern")
         assert cfg.get("headers", {}).get("data_start_row")
 
-        table = TEMPLATE_DATA_TABLES[template_id]
-        table_cols = set(table.c.keys())
+        model = TEMPLATE_DATA_MODELS[template_id]
+        model_fields = model._meta.fields_map
         for col in cfg.get("columns", []):
             db_field = col.get("db_field")
-            assert db_field in table_cols, f"{template_id}.{db_field} missing from {table.name}"
+            assert db_field in model_fields, (
+                f"{template_id}.{db_field} missing from {model._meta.db_table}"
+            )
 
             match = DECIMAL_RE.match(col.get("type", ""))
             if match:
-                table_type = table.c[db_field].type
-                assert isinstance(table_type, sa.Numeric)
-                assert table_type.precision == int(match.group(1))
-                assert table_type.scale == int(match.group(2))
+                field = model_fields[db_field]
+                assert isinstance(field, fields.DecimalField)
+                assert field.max_digits == int(match.group(1))
+                assert field.decimal_places == int(match.group(2))

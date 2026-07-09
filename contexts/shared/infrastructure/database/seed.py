@@ -2,10 +2,19 @@ from __future__ import annotations
 
 # Seed default permissions, roles, and admin user on first startup.
 
-import sqlalchemy as sa
+import os
 from collections.abc import Callable
 
-from contexts.shared.infrastructure.unit_of_work import transactional
+from tortoise.exceptions import IntegrityError
+from tortoise.transactions import atomic
+
+from contexts.auth.infrastructure.tables import (
+    Permission,
+    Role,
+    RolePermission,
+    User,
+    UserRole,
+)
 
 
 PERMISSIONS = [
@@ -20,15 +29,22 @@ PERMISSIONS = [
 ]
 
 ROLES = {
-    "admin": ["project:create", "project:view", "data:upload", "data:view",
-              "data:export", "template:manage", "user:manage", "admin:roles"],
+    "admin": [
+        "project:create",
+        "project:view",
+        "data:upload",
+        "data:view",
+        "data:export",
+        "template:manage",
+        "user:manage",
+        "admin:roles",
+    ],
     "manager": ["project:view", "data:upload", "data:view", "data:export"],
     "viewer": ["project:view", "data:view"],
 }
 
 
 async def seed_defaults(password_hasher: Callable[[str], str]):
-    import os
     env = os.getenv("APP_ENV", "local")
     admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
     if env != "local" and not admin_password:
@@ -37,63 +53,45 @@ async def seed_defaults(password_hasher: Callable[[str], str]):
     await _do_seed(admin_password, password_hasher)
 
 
-@transactional
+@atomic()
 async def _do_seed(admin_password: str, password_hasher: Callable[[str], str]):
-    from contexts.auth.infrastructure.tables import (
-        users, roles, permissions, user_roles, role_permissions,
-    )
-    from contexts.shared.infrastructure.unit_of_work import current_session
-
-    def _s():
-        return current_session()
-
-    # Insert permissions
     for code, name in PERMISSIONS:
-        await _s().execute(
-            sa.insert(permissions).prefix_with("IGNORE").values(code=code, name=name)
-        )
+        await _ensure(Permission, {"code": code}, {"name": name})
 
-    # Insert roles
     for code in ROLES:
-        await _s().execute(
-            sa.insert(roles).prefix_with("IGNORE").values(code=code, name=code)
-        )
+        await _ensure(Role, {"code": code}, {"name": code})
 
-    # Grant role → permission
     for role_code, perm_codes in ROLES.items():
-        for pc in perm_codes:
-            rid = (await _s().execute(
-                sa.select(roles.c.id).where(roles.c.code == role_code)
-            )).scalar()
-            pid = (await _s().execute(
-                sa.select(permissions.c.id).where(permissions.c.code == pc)
-            )).scalar()
-            if rid and pid:
-                await _s().execute(
-                    sa.insert(role_permissions).prefix_with("IGNORE").values(
-                        role_id=rid, permission_id=pid,
-                    )
-                )
+        role = await Role.get(code=role_code)
+        for perm_code in perm_codes:
+            perm = await Permission.get(code=perm_code)
+            await _ensure(
+                RolePermission,
+                {"role_id": role.id, "permission_id": perm.id},
+                {},
+            )
 
-    # Create admin user
-    await _s().execute(
-        sa.insert(users).prefix_with("IGNORE").values(
-            username="admin",
-            password=password_hasher(admin_password),
-            real_name="系统管理员",
-        )
+    admin = await _ensure(
+        User,
+        {"username": "admin"},
+        {
+            "password": password_hasher(admin_password),
+            "real_name": "系统管理员",
+        },
+    )
+    admin_role = await Role.get(code="admin")
+    await _ensure(
+        UserRole,
+        {"user_id": admin.id, "role_id": admin_role.id},
+        {},
     )
 
-    # Grant admin role
-    admin_uid = (await _s().execute(
-        sa.select(users.c.id).where(users.c.username == "admin")
-    )).scalar()
-    admin_rid = (await _s().execute(
-        sa.select(roles.c.id).where(roles.c.code == "admin")
-    )).scalar()
-    if admin_uid and admin_rid:
-        await _s().execute(
-            sa.insert(user_roles).prefix_with("IGNORE").values(
-                user_id=admin_uid, role_id=admin_rid,
-            )
-        )
+
+async def _ensure(model, lookup: dict, defaults: dict):
+    found = await model.get_or_none(**lookup)
+    if found is not None:
+        return found
+    try:
+        return await model.create(**lookup, **defaults)
+    except IntegrityError:
+        return await model.get(**lookup)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Callable as AbcCallable  # noqa: E402
 from typing import Generic, TypeVar, get_origin
 
 from contexts.auth.application.auth_app_service import AuthApplicationService
@@ -19,16 +18,14 @@ from contexts.auth.infrastructure.repositories import (
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
 from contexts.parsing.application.upload_app_service import UploadApplicationService
-from contexts.parsing.infrastructure.data_writer import SqlAlchemyParsedDataSink
+from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.parsing.infrastructure.file_storage import LocalUploadFileStorage
 from contexts.parsing.infrastructure.repositories import ParseJobRepositoryImpl
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.infrastructure.repositories import ProjectRepositoryImpl
 from contexts.shared.domain.event_publisher import EventPublisher
-from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.infrastructure.domain_event_bus import domain_event_bus
-from contexts.shared.infrastructure.unit_of_work import SqlAlchemyUnitOfWork
 from contexts.template.application.template_app_service import (
     TemplateApplicationService,
 )
@@ -155,7 +152,7 @@ class Container:
     def _lookup(self, ann: type) -> object | None:
         """Resolve a type annotation to a registered instance.
 
-        1. Exact match (e.g. ``Callable[[], UnitOfWork]`` bound explicitly).
+        1. Exact match.
         2. Union ``X | None`` — take the non-None arm.
         """
         # 1. Exact match
@@ -203,7 +200,7 @@ _reg(_project_repo := ProjectRepositoryImpl())
 _reg(_template_catalog := YamlTemplateCatalog())
 _reg(_data_repo := DataQueryRepositoryImpl())
 _reg(_parse_job_repo := ParseJobRepositoryImpl())
-_reg(_data_sink := SqlAlchemyParsedDataSink())
+_reg(_data_sink := TortoiseParsedDataSink())
 _reg(_file_storage := LocalUploadFileStorage())
 _reg(_workbook_reader := OpenPyxlWorkbookReader())
 
@@ -231,8 +228,6 @@ _bind(ParsedDataSink, _data_sink)
 _bind(FileStorage, _file_storage)
 _bind(WorkbookReader, _workbook_reader)
 _bind(EventPublisher, domain_event_bus)
-
-_bind(AbcCallable[[], UnitOfWork], SqlAlchemyUnitOfWork)
 
 # ── application services (auto-wired via inspect) ────────────────────────
 

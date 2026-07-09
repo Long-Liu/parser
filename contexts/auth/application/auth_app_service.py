@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 
 from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
-from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.domain.event_publisher import EventPublisher
+from tortoise.transactions import atomic
 from contexts.auth.domain.user import User
 from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.domain.auth_service import AuthenticationService
@@ -19,13 +18,11 @@ class AuthApplicationService:
     def __init__(self, user_repo: UserRepository, auth_service: AuthenticationService,
                  jwt_service: TokenService,
                  password_hasher: PasswordHasher,
-                 uow_factory: Callable[[], UnitOfWork],
                  event_publisher: EventPublisher | None = None) -> None:
         self._users = user_repo
         self._auth = auth_service
         self._jwt = jwt_service
         self._password_hasher = password_hasher
-        self._uow_factory = uow_factory
         self._event_publisher = event_publisher
 
     async def login(self, cmd: LoginCommand) -> LoginResult:
@@ -49,6 +46,7 @@ class AuthApplicationService:
         return LoginResult(token=token, user_id=user.id.value,
                            username=user.username, real_name=user.real_name)
 
+    @atomic()
     async def register(self, cmd: RegisterCommand) -> dict:
         if not cmd.username or not cmd.password:
             raise ValidationError("username and password are required")
@@ -60,9 +58,7 @@ class AuthApplicationService:
         hashed = self._password_hasher.hash(cmd.password)
         user = User.create(user_id=None, username=cmd.username, password_hash=hashed,
                            real_name=cmd.real_name, email=cmd.email, phone=cmd.phone)
-        async with self._uow_factory() as uow:
-            await self._users.save(user)
-            await uow.commit()
+        await self._users.save(user)
         if user.id is None:
             raise RuntimeError("user repository did not assign an id")
         if self._event_publisher:

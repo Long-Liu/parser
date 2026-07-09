@@ -1,83 +1,59 @@
-"""SQLAlchemy Core table definitions + ORM mapped classes for the auth context."""
+"""Tortoise models for the auth context."""
 
-import sqlalchemy as sa
-
-from contexts.shared.infrastructure.database.metadata import metadata, mapper_registry, _OrmBase
-
-# ── Core tables ──────────────────────────────────────────────────────────────
-
-users = sa.Table(
-    "users",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("username", sa.String(50), nullable=False, unique=True),
-    sa.Column("password", sa.String(255), nullable=False),
-    sa.Column("real_name", sa.String(100)),
-    sa.Column("email", sa.String(200)),
-    sa.Column("phone", sa.String(20)),
-    sa.Column("is_active", sa.Boolean, default=True),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-roles = sa.Table(
-    "roles",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("code", sa.String(50), nullable=False, unique=True),
-    sa.Column("name", sa.String(100), nullable=False),
-    sa.Column("description", sa.String(500)),
-    sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
-)
-
-permissions = sa.Table(
-    "permissions",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("code", sa.String(100), nullable=False, unique=True),
-    sa.Column("name", sa.String(200), nullable=False),
-    sa.Column("description", sa.String(500)),
-)
-
-user_roles = sa.Table(
-    "user_roles",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=False),
-    sa.Column("role_id", sa.Integer, sa.ForeignKey("roles.id"), nullable=False),
-    sa.UniqueConstraint("user_id", "role_id"),
-)
-
-role_permissions = sa.Table(
-    "role_permissions",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("role_id", sa.Integer, sa.ForeignKey("roles.id"), nullable=False),
-    sa.Column("permission_id", sa.Integer, sa.ForeignKey("permissions.id"), nullable=False),
-    sa.UniqueConstraint("role_id", "permission_id"),
-)
-
-# ── ORM mapped classes ───────────────────────────────────────────────────────
-
-@mapper_registry.mapped
-class User(_OrmBase):
-    __table__ = users
+from tortoise import fields
+from tortoise.models import Model
 
 
-@mapper_registry.mapped
-class Role(_OrmBase):
-    __table__ = roles
+class User(Model):
+    id = fields.IntField(primary_key=True)
+    username = fields.CharField(max_length=50, unique=True)
+    password = fields.CharField(max_length=255)
+    real_name = fields.CharField(max_length=100, null=True)
+    email = fields.CharField(max_length=200, null=True)
+    phone = fields.CharField(max_length=20, null=True)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "users"
 
 
-@mapper_registry.mapped
-class Permission(_OrmBase):
-    __table__ = permissions
+class Role(Model):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=50, unique=True)
+    name = fields.CharField(max_length=100)
+    description = fields.CharField(max_length=500, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "roles"
 
 
-@mapper_registry.mapped
-class UserRole(_OrmBase):
-    __table__ = user_roles
+class Permission(Model):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=100, unique=True)
+    name = fields.CharField(max_length=200)
+    description = fields.CharField(max_length=500, null=True)
+
+    class Meta:
+        table = "permissions"
 
 
-@mapper_registry.mapped
-class RolePermission(_OrmBase):
-    __table__ = role_permissions
+class UserRole(Model):
+    id = fields.IntField(primary_key=True)
+    user_id = fields.IntField()
+    role_id = fields.IntField()
+
+    class Meta:
+        table = "user_roles"
+        unique_together = (("user_id", "role_id"),)
+
+
+class RolePermission(Model):
+    id = fields.IntField(primary_key=True)
+    role_id = fields.IntField()
+    permission_id = fields.IntField()
+
+    class Meta:
+        table = "role_permissions"
+        unique_together = (("role_id", "permission_id"),)

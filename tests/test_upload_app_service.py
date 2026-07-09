@@ -1,3 +1,7 @@
+import contextlib
+
+import tortoise.transactions
+
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
 from contexts.parsing.application.upload_app_service import UploadApplicationService
@@ -8,7 +12,6 @@ from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
 from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.shared.domain.unit_of_work import UnitOfWork
 from contexts.shared.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
 from contexts.template.domain.template import (
@@ -18,20 +21,6 @@ from contexts.template.domain.template import (
     StopRuleType,
     Template,
 )
-
-
-class FakeUow(UnitOfWork):
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args) -> None:
-        return None
-
-    async def commit(self) -> None:
-        return None
-
-    async def rollback(self) -> None:
-        return None
 
 
 class FakeRepo(ParseJobRepository):
@@ -116,7 +105,13 @@ class FakePublisher(EventPublisher):
         self.events.extend(events)
 
 
-async def test_upload_process_records_extracted_event_and_counts():
+async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
+    @contextlib.asynccontextmanager
+    async def fake_transaction(connection_name=None):
+        yield object()
+
+    monkeypatch.setattr(tortoise.transactions, "in_transaction", fake_transaction)
+
     repo = FakeRepo()
     sink = FakeSink()
     publisher = FakePublisher()
@@ -125,7 +120,6 @@ async def test_upload_process_records_extracted_event_and_counts():
         template_repo=FakeTemplateCatalog(),
         data_sink=sink,
         event_publisher=publisher,
-        uow_factory=FakeUow,
         file_storage=FakeStorage(),
         workbook_reader=FakeWorkbookReader(),
     )

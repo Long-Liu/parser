@@ -1,28 +1,24 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from contexts.shared.domain.exceptions import ConflictError, NotFoundError
 from contexts.shared.domain.identifiers import ProjectId, UserId
-from contexts.shared.domain.unit_of_work import UnitOfWork
+from tortoise.transactions import atomic
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import ProjectRepository
 
 
 class ProjectApplicationService:
-    def __init__(self, repo: ProjectRepository, uow_factory: Callable[[], UnitOfWork]) -> None:
+    def __init__(self, repo: ProjectRepository) -> None:
         self._repo = repo
-        self._uow_factory = uow_factory
 
+    @atomic()
     async def create(self, code: str, name: str, created_by: UserId | None = None) -> dict:
         existing = await self._repo.find_by_code(code)
         if existing:
             raise ConflictError("project code already exists")
         project = Project.create(project_id=None, code=code, name=name,
                                  created_by=created_by)
-        async with self._uow_factory() as uow:
-            await self._repo.save(project)
-            await uow.commit()
+        await self._repo.save(project)
         if project.id is None:
             raise RuntimeError("project repository did not assign an id")
         return {"id": project.id.value, "code": project.code, "name": project.name}

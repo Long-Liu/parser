@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import sqlalchemy as sa
-
+from contexts.parsing.domain.parse_job import (
+    FileInfo,
+    JobStatus,
+    MatchStatus,
+    ParseJob,
+    SheetResult,
+)
+from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.parsing.infrastructure.tables import UploadBatch as OrmBatch
 from contexts.parsing.infrastructure.tables import UploadLog as OrmLog
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
-from contexts.shared.infrastructure.unit_of_work import current_session, session_scope
-from contexts.parsing.domain.parse_job import (
-    ParseJob, SheetResult, FileInfo, MatchStatus, JobStatus,
-)
-from contexts.parsing.domain.repositories import ParseJobRepository
 
 
 def _job_to_batch_values(job: ParseJob) -> dict:
@@ -47,7 +48,7 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
         tid = TemplateId(log.template_id) if log.template_id else None
         ms = MatchStatus.MATCHED if log.action == "matched" else MatchStatus.SKIPPED
         sr = SheetResult(
-            sheet_name=log.sheet_name,
+            sheet_name=log.sheet_name or "",
             template_id=tid,
             match_status=ms,
             total_rows=log.total_rows or 0,
@@ -76,102 +77,49 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
 class ParseJobRepositoryImpl(ParseJobRepository):
     async def save(self, job: ParseJob) -> None:
         batch_values = _job_to_batch_values(job)
+        if job.id is None:
+            batch = await OrmBatch.create(**batch_values)
+            job.id = JobId(batch.id)
+            return
 
-        async def _save(session):
-            if job.id is None:
-                result = await session.execute(
-                    sa.insert(OrmBatch.__table__).values(**batch_values)
-                )
-                job.id = JobId(result.lastrowid)
-                return
-            exists = await session.execute(
-                sa.select(OrmBatch.__table__.c.id).where(
-                    OrmBatch.__table__.c.id == job.id.value
-                )
-            )
-            if exists.first() is not None:
-                # Update existing
-                await session.execute(
-                    sa.update(OrmBatch.__table__)
-                    .where(OrmBatch.__table__.c.id == job.id.value)
-                    .values(**batch_values)
-                )
-                await session.execute(
-                    sa.delete(OrmLog.__table__).where(
-                        OrmLog.__table__.c.batch_id == job.id.value
-                    )
-                )
-            else:
-                await session.execute(
-                    sa.insert(OrmBatch.__table__).values(
-                        id=job.id.value, **batch_values
-                    )
-                )
+        batch = await OrmBatch.get_or_none(id=job.id.value)
+        if batch is None:
+            batch = OrmBatch(id=job.id.value, **batch_values)
+            await batch.save(force_create=True)
+        else:
+            for key, value in batch_values.items():
+                setattr(batch, key, value)
+            await batch.save(update_fields=list(batch_values.keys()))
+            await OrmLog.filter(batch_id=job.id.value).delete()
 
-            batch_id = job.id.value
-            for sheet in job.sheets:
-                log_vals = _sheet_to_log_values(sheet, batch_id)
-                await session.execute(
-                    sa.insert(OrmLog.__table__).values(**log_vals)
-                )
-
-        session = current_session()
-        if session is None:
-            raise RuntimeError("ParseJobRepository.save requires an active UnitOfWork")
-        await _save(session)
+        batch_id = job.id.value
+        logs = [OrmLog(**_sheet_to_log_values(sheet, batch_id)) for sheet in job.sheets]
+        if logs:
+            await OrmLog.bulk_create(logs)
 
     async def find_by_id(self, job_id: JobId) -> ParseJob | None:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmBatch).where(OrmBatch.__table__.c.id == job_id.value)
-            )
-            batch = result.scalars().first()
-            if batch is None:
-                return None
-            logs_result = await session.execute(
-                sa.select(OrmLog).where(OrmLog.__table__.c.batch_id == job_id.value)
-            )
-            return _orm_to_job(batch, list(logs_result.scalars().all()))
+        batch = await OrmBatch.get_or_none(id=job_id.value)
+        if batch is None:
+            return None
+        logs = await OrmLog.filter(batch_id=job_id.value)
+        return _orm_to_job(batch, list(logs))
 
     async def find_by_project(
         self, project_id: ProjectId, limit: int = 20, offset: int = 0
     ) -> list[ParseJob]:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmBatch)
-                .where(OrmBatch.__table__.c.project_id == project_id.value)
-                .order_by(OrmBatch.__table__.c.id.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-            jobs = []
-            for batch in result.scalars().all():
-                logs_result = await session.execute(
-                    sa.select(OrmLog).where(
-                        OrmLog.__table__.c.batch_id == batch.id
-                    )
-                )
-                jobs.append(
-                    _orm_to_job(batch, list(logs_result.scalars().all()))
-                )
-            return jobs
+        batches = await OrmBatch.filter(project_id=project_id.value).order_by(
+            "-id"
+        ).limit(limit).offset(offset)
+        jobs = []
+        for batch in batches:
+            logs = await OrmLog.filter(batch_id=batch.id)
+            jobs.append(_orm_to_job(batch, list(logs)))
+        return jobs
 
     async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]:
-        async with session_scope() as session:
-            result = await session.execute(
-                sa.select(OrmBatch)
-                .order_by(OrmBatch.__table__.c.id.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-            jobs = []
-            for batch in result.scalars().all():
-                logs_result = await session.execute(
-                    sa.select(OrmLog).where(
-                        OrmLog.__table__.c.batch_id == batch.id
-                    )
-                )
-                jobs.append(
-                    _orm_to_job(batch, list(logs_result.scalars().all()))
-                )
-            return jobs
+        batches = await OrmBatch.all().order_by("-id").limit(limit).offset(offset)
+        jobs = []
+        for batch in batches:
+            logs = await OrmLog.filter(batch_id=batch.id)
+            jobs.append(_orm_to_job(batch, list(logs)))
+        return jobs
