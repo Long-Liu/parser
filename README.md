@@ -9,4 +9,7 @@
 
 Swagger documentation is available at `http://127.0.0.1:8000/docs`.
 
+`main.py` is the local startup entry point; `application.py` assembles and
+exports the Sanic application for deployment and integration.
+
 Run tests with `python -m pytest -q`.
