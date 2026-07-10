@@ -15,13 +15,10 @@ class TortoiseParsedDataSink(ParsedDataSink):
     ) -> None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
-            logger.warning(
-                "No data table model for template_id=%r - %d rows dropped (batch=%d)",
-                template_id,
-                len(rows),
-                batch_id,
+            raise RuntimeError(
+                f"No data table model for template_id={template_id!r}; "
+                f"refusing to drop {len(rows)} parsed rows"
             )
-            return
 
         data = []
         model_fields = set(model._meta.fields_map)

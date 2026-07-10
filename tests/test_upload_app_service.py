@@ -1,4 +1,5 @@
 import contextlib
+import pytest
 
 import tortoise.transactions
 
@@ -21,6 +22,9 @@ from contexts.template.domain.template import (
     StopRuleType,
     Template,
 )
+from contexts.project.domain.repositories import ProjectRepository
+from contexts.project.domain.project import Project
+from contexts.shared.domain.exceptions import NotFoundError
 
 
 class FakeRepo(ParseJobRepository):
@@ -105,6 +109,20 @@ class FakePublisher(EventPublisher):
         self.events.extend(events)
 
 
+class FakeProjectRepo(ProjectRepository):
+    async def save(self, project: Project) -> None:
+        return None
+
+    async def find_by_id(self, project_id: ProjectId) -> Project | None:
+        return Project(project_id, "P001", "Test")
+
+    async def find_by_code(self, code: str) -> Project | None:
+        return None
+
+    async def list_all(self) -> list[Project]:
+        return []
+
+
 async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
     @contextlib.asynccontextmanager
     async def fake_transaction(connection_name=None):
@@ -122,6 +140,7 @@ async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
         event_publisher=publisher,
         file_storage=FakeStorage(),
         workbook_reader=FakeWorkbookReader(),
+        project_repo=FakeProjectRepo(),
     )
 
     result = await service.process(
@@ -136,3 +155,38 @@ async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
     assert len(sink.rows) == 1
     assert any(type(event).__name__ == "SheetExtracted" for event in publisher.events)
     assert repo.jobs[-1].sheets[0].total_rows == 1
+
+
+async def test_upload_rejects_unknown_project_before_storing_file():
+    class MissingProjectRepo(FakeProjectRepo):
+        async def find_by_id(self, project_id: ProjectId) -> Project | None:
+            return None
+
+    class TrackingStorage(FakeStorage):
+        def __init__(self) -> None:
+            self.saved = False
+
+        async def save(self, filename: str, body: bytes) -> StoredFile:
+            self.saved = True
+            return await super().save(filename, body)
+
+    storage = TrackingStorage()
+    service = UploadApplicationService(
+        repo=FakeRepo(),
+        template_repo=FakeTemplateCatalog(),
+        data_sink=FakeSink(),
+        event_publisher=FakePublisher(),
+        file_storage=storage,
+        workbook_reader=FakeWorkbookReader(),
+        project_repo=MissingProjectRepo(),
+    )
+
+    with pytest.raises(NotFoundError, match="project 999"):
+        await service.process(
+            UploadedFile(name="cost.xlsx", body=b"xlsx"),
+            ProjectId(999),
+            YearMonth.parse("2026-07"),
+            UserId(1),
+        )
+
+    assert storage.saved is False

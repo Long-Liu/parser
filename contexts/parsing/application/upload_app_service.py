@@ -20,6 +20,8 @@ from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.template.domain.repositories import TemplateCatalog
+from contexts.project.domain.repositories import ProjectRepository
+from contexts.shared.domain.exceptions import NotFoundError
 
 logger = logging.getLogger("parser.upload")
 
@@ -33,6 +35,7 @@ class UploadApplicationService:
         event_publisher: EventPublisher,
         file_storage: FileStorage,
         workbook_reader: WorkbookReader,
+        project_repo: ProjectRepository,
     ) -> None:
         self._repo = repo
         self._template_repo = template_repo
@@ -40,6 +43,7 @@ class UploadApplicationService:
         self._event_publisher = event_publisher
         self._file_storage = file_storage
         self._workbook_reader = workbook_reader
+        self._project_repo = project_repo
         self._unmerger = CellUnmerger()
         self._flattener = HeaderFlattener()
         self._stop_detector = StopDetector()
@@ -49,19 +53,23 @@ class UploadApplicationService:
     async def process(
         self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId
     ) -> dict:
+        if await self._project_repo.find_by_id(project_id) is None:
+            raise NotFoundError(f"project {project_id.value} not found")
         batch_no = self._make_batch_no()
-        stored_file = await self._file_storage.save(f"{batch_no}.xlsx", file.body)
+        stored_file: StoredFile | None = None
 
         job = ParseJob.submit(
             job_id=None,
             project_id=project_id,
             year_month=ym,
-            file_info=FileInfo(filename=file.name, size=stored_file.size),
+            file_info=FileInfo(filename=file.name, size=len(file.body)),
             batch_no=batch_no,
             uploaded_by=user_id,
         )
 
         try:
+            stored_file = await self._file_storage.save(f"{batch_no}.xlsx", file.body)
+            job.file_info = FileInfo(filename=file.name, size=stored_file.size)
             sheet_results = await self._process_workbook(stored_file.path, job)
             await self._event_publisher.publish(job.pull_events())
             status = job.result_status
@@ -76,7 +84,8 @@ class UploadApplicationService:
             status = "failed"
             sheet_results = []
         finally:
-            await self._delete_stored_file(stored_file)
+            if stored_file is not None:
+                await self._delete_stored_file(stored_file)
 
         return {
             "batch_no": batch_no,

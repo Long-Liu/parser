@@ -4,7 +4,7 @@ from sanic import Blueprint
 from sanic.response import json
 from sanic_ext import openapi
 
-from contexts.auth.interface.auth_middleware import require_auth
+from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.exceptions import DomainError
@@ -16,6 +16,7 @@ bp = Blueprint("project_ddd", url_prefix="/api")
 
 @bp.get("/projects")
 @require_auth
+@require_permission("project:view")
 @openapi.tag("Project")
 @openapi.summary("List projects")
 async def list_projects(request):
@@ -26,6 +27,7 @@ async def list_projects(request):
 
 @bp.post("/projects")
 @require_auth
+@require_permission("project:create")
 @openapi.tag("Project")
 @openapi.summary("Create project")
 async def create_project(request):

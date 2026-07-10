@@ -1,0 +1,14 @@
+# Copy this file to config/local.yaml before starting the service.
+debug: true
+
+db:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: "change-me"
+  database: excel_parser
+  pool_size: 5
+
+jwt:
+  secret: "local-development-secret-change-me"
+  expiry_hours: 24

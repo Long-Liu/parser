@@ -8,6 +8,8 @@ from contexts.auth.interface.auth_middleware import require_auth, require_permis
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.shared.domain.identifiers import ProjectId, JobId
 from contexts.shared.domain.exceptions import DomainError
+from contexts.shared.domain.exceptions import ValidationError
+from contexts.project.domain.repositories import ProjectRepository
 from contexts.container import container
 from contexts.shared.interface.base_controller import error_to_response
 
@@ -47,7 +49,14 @@ async def get_batches(request):
     try:
         project_id_raw = request.args.get("project_id")
         if project_id_raw:
-            jobs = await repo.find_by_project(ProjectId(int(project_id_raw)))
+            try:
+                project_id = ProjectId(int(project_id_raw))
+            except (TypeError, ValueError):
+                raise ValidationError("invalid project_id") from None
+            project_repo = container.get(ProjectRepository)
+            if await project_repo.find_by_id(project_id) is None:
+                return json({"error": "project not found"}, status=404)
+            jobs = await repo.find_by_project(project_id)
         else:
             jobs = await repo.list_recent(limit=100)
         return json({"batches": [_job_to_dict(j) for j in jobs]})
@@ -57,6 +66,7 @@ async def get_batches(request):
 
 @bp.get("/<batch_id:int>")
 @require_auth
+@require_permission("data:view")
 @openapi.tag("Batches")
 @openapi.summary("Get batch detail with sheet results")
 async def get_batch_detail(request, batch_id: int):

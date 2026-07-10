@@ -16,8 +16,15 @@ class LocalUploadFileStorage(FileStorage):
     async def save(self, filename: str, body: bytes) -> StoredFile:
         os.makedirs(self._upload_dir, exist_ok=True)
         path = os.path.join(self._upload_dir, filename)
-        async with aiofiles.open(path, "wb") as f:
-            await f.write(body)
+        try:
+            async with aiofiles.open(path, "wb") as f:
+                await f.write(body)
+        except Exception:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            raise
         return StoredFile(path=path, size=os.path.getsize(path))
 
     async def delete(self, stored_file: StoredFile) -> None:
