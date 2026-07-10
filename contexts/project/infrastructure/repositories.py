@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import ProjectRepository
-from contexts.project.infrastructure.tables import Project as OrmProject
+from contexts.project.infrastructure.tables import Project as OrmProject, ProjectUser
 from contexts.shared.domain.identifiers import ProjectId, UserId
 
 
@@ -45,3 +45,22 @@ class ProjectRepositoryImpl(ProjectRepository):
 
     async def list_all(self) -> list[Project]:
         return [_to_entity(o) for o in await OrmProject.all()]
+
+    async def assign_user(self, project_id: ProjectId, user_id: UserId, is_primary: bool = False) -> None:
+        if is_primary:
+            await ProjectUser.filter(user_id=user_id.value).update(is_primary=False)
+        existing = await ProjectUser.get_or_none(
+            project_id=project_id.value, user_id=user_id.value
+        )
+        if existing is None:
+            await ProjectUser.create(
+                project_id=project_id.value, user_id=user_id.value, is_primary=is_primary
+            )
+        else:
+            existing.is_primary = is_primary
+            await existing.save(update_fields=["is_primary"])
+
+    async def remove_user(self, project_id: ProjectId, user_id: UserId) -> None:
+        await ProjectUser.filter(
+            project_id=project_id.value, user_id=user_id.value
+        ).delete()

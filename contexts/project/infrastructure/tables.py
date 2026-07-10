@@ -13,3 +13,14 @@ class Project(Model):
 
     class Meta:
         table = "projects"
+
+
+class ProjectUser(Model):
+    id = fields.IntField(primary_key=True)
+    user_id = fields.IntField()
+    project_id = fields.IntField()
+    is_primary = fields.BooleanField(default=False)
+
+    class Meta:
+        table = "project_users"
+        unique_together = (("user_id", "project_id"),)

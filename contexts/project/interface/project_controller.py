@@ -44,3 +44,32 @@ async def create_project(request):
         return json(result, status=201)
     except DomainError as e:
         return error_to_response(e)
+
+
+@bp.post("/projects/<project_id:int>/users/<user_id:int>")
+@require_auth
+@require_permission("user:manage")
+@openapi.tag("Project")
+@openapi.summary("Assign a user to a project")
+async def assign_project_user(request, project_id: int, user_id: int):
+    data = request.json or {}
+    svc = container.get(ProjectApplicationService)
+    try:
+        await svc.assign_user(project_id, user_id, bool(data.get("is_primary", False)))
+        return json({"ok": True})
+    except DomainError as e:
+        return error_to_response(e)
+
+
+@bp.delete("/projects/<project_id:int>/users/<user_id:int>")
+@require_auth
+@require_permission("user:manage")
+@openapi.tag("Project")
+@openapi.summary("Remove a user from a project")
+async def remove_project_user(request, project_id: int, user_id: int):
+    svc = container.get(ProjectApplicationService)
+    try:
+        await svc.remove_user(project_id, user_id)
+        return json({"ok": True})
+    except DomainError as e:
+        return error_to_response(e)

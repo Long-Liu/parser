@@ -12,18 +12,21 @@ from contexts.auth.infrastructure.tables import (
     User as OrmUser,
     UserRole,
 )
+from contexts.project.infrastructure.tables import ProjectUser
+from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.shared.domain.identifiers import RoleId, UserId
 
 
 def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
-    return User(
+        return User(
         user_id=UserId(orm.id),
         username=orm.username,
         password_hash=orm.password,
         real_name=orm.real_name or "",
         email=orm.email or "",
         phone=orm.phone or "",
-        roles=[RoleRef(role_id=r["id"], code=r["code"]) for r in roles],
+        department=orm.department or "",
+        roles=[RoleRef(role_id=r["id"], code=r["code"], name=r.get("name", "")) for r in roles],
         is_active=bool(orm.is_active),
     )
 
@@ -45,6 +48,7 @@ class UserRepositoryImpl(UserRepository):
             "real_name": user.real_name,
             "email": user.email,
             "phone": user.phone,
+            "department": user.department,
             "is_active": user.is_active,
         }
         if user.id is None:
@@ -72,6 +76,28 @@ class UserRepositoryImpl(UserRepository):
         if orm is None:
             return None
         return _user_to_entity(orm, await _load_roles(orm.id))
+
+    async def list_all(self) -> list[User]:
+        users = []
+        for orm in await OrmUser.all().order_by("id"):
+            users.append(_user_to_entity(orm, await _load_roles(orm.id)))
+        return users
+
+    async def list_projects(self, user_id: UserId) -> list[dict]:
+        links = await ProjectUser.filter(user_id=user_id.value).values(
+            "project_id", "is_primary"
+        )
+        if not links:
+            return []
+        projects = {
+            p.id: p for p in await OrmProject.filter(
+                id__in=[link["project_id"] for link in links]
+            ).values("id", "code", "name")
+        }
+        return [
+            {**projects[link["project_id"]], "is_primary": bool(link["is_primary"])}
+            for link in links if link["project_id"] in projects
+        ]
 
     async def get_permissions(self, user_id: UserId) -> set[str]:
         role_ids = await UserRole.filter(user_id=user_id.value).values_list(

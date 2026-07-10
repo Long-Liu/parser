@@ -57,7 +57,8 @@ class AuthApplicationService:
             raise ConflictError("username already exists")
         hashed = self._password_hasher.hash(cmd.password)
         user = User.create(user_id=None, username=cmd.username, password_hash=hashed,
-                           real_name=cmd.real_name, email=cmd.email, phone=cmd.phone)
+                           real_name=cmd.real_name, email=cmd.email, phone=cmd.phone,
+                           department=cmd.department)
         await self._users.save(user)
         if user.id is None:
             raise RuntimeError("user repository did not assign an id")

@@ -13,11 +13,13 @@ from contexts.auth.domain.events import UserRegistered, UserStatusChanged
 class RoleRef(ValueObject):
     role_id: int
     code: str
+    name: str = ""
 
 
 class User(AggregateRoot[UserId]):
     def __init__(self, user_id: UserId | None, username: str, password_hash: str,
                  real_name: str = "", email: str = "", phone: str = "",
+                 department: str = "",
                  roles: list[RoleRef] | None = None, is_active: bool = True) -> None:
         super().__init__()
         self.id = user_id
@@ -26,6 +28,7 @@ class User(AggregateRoot[UserId]):
         self._real_name = real_name
         self._email = email
         self._phone = phone
+        self._department = department
         self._roles: list[RoleRef] = roles or []
         self._is_active = is_active
 
@@ -48,6 +51,10 @@ class User(AggregateRoot[UserId]):
     @property
     def phone(self) -> str:
         return self._phone
+
+    @property
+    def department(self) -> str:
+        return self._department
 
     @property
     def is_active(self) -> bool:
@@ -76,7 +83,8 @@ class User(AggregateRoot[UserId]):
 
     @classmethod
     def create(cls, user_id: UserId | None, username: str, password_hash: str,
-               real_name: str = "", email: str = "", phone: str = "") -> "User":
+               real_name: str = "", email: str = "", phone: str = "",
+               department: str = "") -> "User":
         username = username.strip()
         email = email.strip()
         if not username:
@@ -87,6 +95,7 @@ class User(AggregateRoot[UserId]):
             raise ValidationError("email must be valid")
         user = cls(user_id=user_id, username=username, password_hash=password_hash,
                    real_name=real_name.strip(), email=email, phone=phone.strip(),
+                   department=department.strip(),
                    roles=[], is_active=True)
         user.record(UserRegistered(
             aggregate_id=user_id.value if user_id else None,

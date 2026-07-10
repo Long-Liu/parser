@@ -11,6 +11,7 @@ class User(Model):
     real_name = fields.CharField(max_length=100, null=True)
     email = fields.CharField(max_length=200, null=True)
     phone = fields.CharField(max_length=20, null=True)
+    department = fields.CharField(max_length=100, null=True)
     is_active = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 

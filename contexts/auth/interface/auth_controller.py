@@ -42,7 +42,8 @@ async def register(request):
             password=data.get("password", ""),
             real_name=data.get("real_name", ""),
             email=data.get("email", ""),
-            phone=data.get("phone", "")))
+            phone=data.get("phone", ""),
+            department=data.get("department", "")))
         return json(result, status=201)
     except DomainError as e:
         return error_to_response(e)

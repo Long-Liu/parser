@@ -28,3 +28,6 @@ markers = [
 filterwarnings = [
     "ignore:Table .* already exists:Warning",
 ]
+
+[tool.tortoise]
+tortoise_orm = "contexts.shared.infrastructure.database.migration_settings.TORTOISE_ORM"

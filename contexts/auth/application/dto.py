@@ -23,3 +23,4 @@ class RegisterCommand:
     real_name: str = ""
     email: str = ""
     phone: str = ""
+    department: str = ""

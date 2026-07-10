@@ -8,6 +8,7 @@ from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
 from contexts.auth.application.role_app_service import RoleApplicationService
+from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
@@ -236,6 +237,7 @@ container.register_factory(TemplateApplicationService)
 container.register_factory(DataApplicationService)
 container.register_factory(UploadApplicationService)
 container.register_factory(RoleApplicationService)
+container.register_factory(UserApplicationService)
 
 # Jwt-dependent — deferred to configure()
 _container_auth: list[type] = [AuthApplicationService, AuthorizationApplicationService]

@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 from contexts.shared.infrastructure.database.config import load_config
 from contexts.shared.infrastructure.database.engine import init as db_init, close as db_close
-from contexts.shared.infrastructure.database.schema import init_db, create_data_table
+from contexts.shared.infrastructure.database.schema import migrate_db, create_data_table
 from contexts.shared.infrastructure.database.seed import seed_defaults
 
 logger = logging.getLogger("parser")
@@ -29,8 +29,8 @@ def register(
 
         await db_init(app.ctx.config)
 
-        await init_db()
-        logger.info("db tables created")
+        await migrate_db(app.ctx.config)
+        logger.info("db migrations applied")
 
         if password_hasher is None:
             raise RuntimeError("password_hasher is required for database seed")

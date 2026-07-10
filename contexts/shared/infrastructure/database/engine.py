@@ -20,6 +20,35 @@ _MODEL_MODULES = [
     "contexts.shared.infrastructure.database.tables",
 ]
 
+MIGRATIONS_MODULE = "contexts.shared.infrastructure.database.migrations"
+
+
+def tortoise_config(config: Config) -> dict:
+    """Build the single Tortoise config used by the app and migration CLI."""
+    return {
+        "connections": {
+            "default": {
+                "engine": "tortoise.backends.mysql",
+                "credentials": {
+                    "host": config.DB_HOST,
+                    "port": config.DB_PORT,
+                    "user": config.DB_USER,
+                    "password": config.DB_PASSWORD,
+                    "database": config.DB_NAME,
+                    "charset": "utf8mb4",
+                    "maxsize": config.DB_POOL_SIZE,
+                },
+            }
+        },
+        "apps": {
+            "models": {
+                "models": _MODEL_MODULES,
+                "default_connection": "default",
+                "migrations": MIGRATIONS_MODULE,
+            }
+        },
+    }
+
 
 async def init(config: Config) -> None:
     """Initialize Tortoise connections and model registry."""
@@ -27,30 +56,7 @@ async def init(config: Config) -> None:
     if _initialized:
         await close()
 
-    await Tortoise.init(
-        config={
-            "connections": {
-                "default": {
-                    "engine": "tortoise.backends.mysql",
-                    "credentials": {
-                        "host": config.DB_HOST,
-                        "port": config.DB_PORT,
-                        "user": config.DB_USER,
-                        "password": config.DB_PASSWORD,
-                        "database": config.DB_NAME,
-                        "charset": "utf8mb4",
-                        "maxsize": config.DB_POOL_SIZE,
-                    },
-                }
-            },
-            "apps": {
-                "models": {
-                    "models": _MODEL_MODULES,
-                    "default_connection": "default",
-                }
-            },
-        }
-    )
+    await Tortoise.init(config=tortoise_config(config))
     _initialized = True
 
 

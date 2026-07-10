@@ -7,6 +7,7 @@ from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 # DDD context blueprints
 from contexts.auth.interface.auth_controller import bp as auth_ddd_bp
 from contexts.auth.interface.role_controller import bp as role_bp
+from contexts.auth.interface.user_controller import bp as user_bp
 from contexts.data.interface.data_controller import bp as data_ddd_bp
 from contexts.parsing.interface.batch_controller import bp as batch_bp
 from contexts.parsing.interface.upload_controller import bp as upload_ddd_bp
@@ -39,6 +40,6 @@ register_db(
 )
 
 for bp in [health_bp, batch_bp,
-            auth_ddd_bp, role_bp, project_ddd_bp, upload_ddd_bp,
+            auth_ddd_bp, role_bp, user_bp, project_ddd_bp, upload_ddd_bp,
             data_ddd_bp, template_ddd_bp]:
     app.blueprint(bp)
