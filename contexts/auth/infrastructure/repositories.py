@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tortoise.exceptions import IntegrityError
+from tortoise.expressions import Q
 
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
@@ -77,11 +78,20 @@ class UserRepositoryImpl(UserRepository):
             return None
         return _user_to_entity(orm, await _load_roles(orm.id))
 
-    async def list_all(self) -> list[User]:
+    async def list_all(
+        self, *, keyword: str = "", offset: int = 0, limit: int = 20,
+    ) -> tuple[list[User], int]:
+        query = OrmUser.all()
+        if keyword:
+            query = query.filter(
+                Q(real_name__icontains=keyword) | Q(email__icontains=keyword)
+            )
+
+        total = await query.count()
         users = []
-        for orm in await OrmUser.all().order_by("id"):
+        for orm in await query.order_by("id").offset(offset).limit(limit):
             users.append(_user_to_entity(orm, await _load_roles(orm.id)))
-        return users
+        return users, total
 
     async def list_projects(self, user_id: UserId) -> list[dict]:
         links = await ProjectUser.filter(user_id=user_id.value).values(

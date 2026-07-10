@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contexts.auth.domain.repositories import UserRepository
+from contexts.shared.domain.pagination import Pagination
 
 
 class UserApplicationService:
@@ -9,9 +10,18 @@ class UserApplicationService:
     def __init__(self, users: UserRepository) -> None:
         self._users = users
 
-    async def list_all(self) -> list[dict]:
+    async def list_all(
+        self, *, keyword: str = "", page: int = 1, size: int = 20,
+    ) -> dict:
+        pagination = Pagination(page=page, size=size, max_size=100)
+        keyword = keyword.strip()
+        users, total = await self._users.list_all(
+            keyword=keyword,
+            offset=pagination.offset,
+            limit=pagination.size,
+        )
         result = []
-        for index, user in enumerate(await self._users.list_all(), start=1):
+        for index, user in enumerate(users, start=pagination.offset + 1):
             projects = await self._users.list_projects(user.id) if user.id else []
             result.append({
                 "serial_number": index,
@@ -32,4 +42,7 @@ class UserApplicationService:
                 ],
                 "is_active": user.is_active,
             })
-        return result
+        return {
+            "users": result,
+            "pagination": {"page": page, "size": size, "total": total},
+        }

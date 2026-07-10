@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from contexts.data.domain.data_query import DataRow, Pagination, FilterCriterion
+from contexts.data.domain.data_query import DataRow, FilterCriterion
+from contexts.shared.domain.pagination import Pagination
 
 
 class DataQueryRepository(ABC):

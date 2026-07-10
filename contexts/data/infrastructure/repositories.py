@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from contexts.data.domain.data_query import DataRow, FilterCriterion, Pagination
+from contexts.data.domain.data_query import DataRow, FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
+from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 

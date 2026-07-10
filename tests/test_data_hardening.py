@@ -1,9 +1,9 @@
 import pytest
 
-from contexts.data.domain.data_query import Pagination
 from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
 from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
+from contexts.shared.domain.pagination import Pagination
 
 
 @pytest.mark.parametrize("page,size", [(0, 10), (-1, 10), (1, 0), (1, 1001)])

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from contexts.shared.domain.exceptions import NotFoundError
 from tortoise.transactions import atomic
-from contexts.data.domain.data_query import FilterCriterion, Pagination
+from contexts.data.domain.data_query import FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
+from contexts.shared.domain.pagination import Pagination
 
 
 class DataApplicationService:
