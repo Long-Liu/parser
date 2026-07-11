@@ -84,12 +84,12 @@ async def _alert_outbox_worker(app):
 
 
 @app.after_server_start
-async def start_alert_outbox_worker(app, loop):
+async def start_alert_outbox_worker(app):
     app.ctx.alert_outbox_task = app.add_task(_alert_outbox_worker(app))
 
 
 @app.before_server_stop
-async def stop_alert_outbox_worker(app, loop):
+async def stop_alert_outbox_worker(app):
     task = getattr(app.ctx, "alert_outbox_task", None)
     if task:
         task.cancel()
