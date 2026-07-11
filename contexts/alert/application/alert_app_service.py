@@ -70,26 +70,24 @@ class AlertApplicationService:
                 "triggered": triggered, "resolved": resolved}
 
     async def find(self, *, project_ids: list[int] | None, status: str = "",
-                   level: str = "", page: int = 1, size: int = 20) -> dict:
+                   level: str = "", pagination: Pagination) -> dict:
         if status and status not in {item.value for item in AlertStatus}:
             raise ValidationError("invalid alert status")
-        pagination = Pagination(page, size, max_size=100)
         rows, total = await self._repository.find(
             project_ids=project_ids, status=status, level=level,
             pagination=pagination,
         )
         return {"alerts": rows, "pagination": {
-            "page": page, "size": size, "total": total,
+            "page": pagination.page, "size": pagination.size, "total": total,
         }}
 
     async def summary(self, project_ids: list[int] | None) -> dict:
         return await self._repository.summary(project_ids)
 
-    async def rules(self, page: int = 1, size: int = 20) -> dict:
-        pagination = Pagination(page, size, max_size=100)
+    async def rules(self, pagination: Pagination) -> dict:
         rows, total = await self._repository.rule_records(pagination)
         return {"rules": rows, "pagination": {
-            "page": page, "size": size, "total": total,
+            "page": pagination.page, "size": pagination.size, "total": total,
         }}
 
     @transactional
@@ -118,12 +116,11 @@ class AlertApplicationService:
             raise NotFoundError(f"alert {alert_id} not found")
         return row
 
-    async def events(self, alert_id: int, page: int = 1, size: int = 20) -> dict:
+    async def events(self, alert_id: int, pagination: Pagination) -> dict:
         await self._required(alert_id)
-        pagination = Pagination(page, size, max_size=100)
         rows, total = await self._repository.events(alert_id, pagination)
         return {"events": rows, "pagination": {
-            "page": page, "size": size, "total": total,
+            "page": pagination.page, "size": pagination.size, "total": total,
         }}
 
     @transactional

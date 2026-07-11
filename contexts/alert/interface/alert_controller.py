@@ -62,11 +62,11 @@ class AlertController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def list_alerts(self, request):
-        p = pagination_from(request)
         return self.json(await self.alert_svc.find(
             project_ids=await self._scope(request),
             status=request.args.get("status", ""),
-            level=request.args.get("level", ""), page=p.page, size=p.size,
+            level=request.args.get("level", ""),
+            pagination=pagination_from(request),
         ))
 
     @require_auth
@@ -77,8 +77,7 @@ class AlertController(BaseController):
     @require_auth
     @require_permission("admin:roles")
     async def rules(self, request):
-        p = pagination_from(request)
-        return self.json(await self.alert_svc.rules(p.page, p.size))
+        return self.json(await self.alert_svc.rules(pagination_from(request)))
 
     @require_auth
     @require_permission("admin:roles")
@@ -95,8 +94,7 @@ class AlertController(BaseController):
     @require_permission("data:view")
     async def events(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id)
-        p = pagination_from(request)
-        return self.json(await self.alert_svc.events(alert_id, p.page, p.size))
+        return self.json(await self.alert_svc.events(alert_id, pagination_from(request)))
 
     @require_auth
     @require_permission("data:view")
