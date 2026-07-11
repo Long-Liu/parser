@@ -8,17 +8,20 @@ from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import (
     ProjectRepository, ProjectDataCleanup, UserDirectory, ProjectNotificationPort,
 )
+from contexts.alert.application.alert_app_service import AlertApplicationService
 
 
 class ProjectApplicationService:
     def __init__(self, repo: ProjectRepository,
                  cleanup: ProjectDataCleanup | None = None,
                  users: UserDirectory | None = None,
-                 notifications: ProjectNotificationPort | None = None) -> None:
+                 notifications: ProjectNotificationPort | None = None,
+                 alert_svc: AlertApplicationService | None = None) -> None:
         self._repo = repo
         self._cleanup = cleanup
         self._users = users
         self._notifications = notifications
+        self._alert_svc = alert_svc
 
     @transactional
     async def create(self, code: str, name: str, created_by: UserId | None = None,
@@ -33,6 +36,8 @@ class ProjectApplicationService:
             await self._notifications.publish_warning(project.id, project.name)
         if project.id is None:
             raise RuntimeError("project repository did not assign an id")
+        if self._alert_svc:
+            await self._alert_svc.evaluate(project.id.value)
         return self._serialize(project)
 
     async def list_all(self, *, keyword: str = "", status: str = "",
@@ -67,6 +72,8 @@ class ProjectApplicationService:
         await self._repo.save(project)
         if project.status == "warning" and self._notifications:
             await self._notifications.publish_warning(project.id, project.name)
+        if self._alert_svc:
+            await self._alert_svc.evaluate(project_id)
         return self._serialize(project)
 
     @transactional
@@ -74,6 +81,8 @@ class ProjectApplicationService:
         if await self._repo.find_by_id(ProjectId(project_id)) is None:
             raise NotFoundError(f"project {project_id} not found")
         pid = ProjectId(project_id)
+        if self._alert_svc:
+            await self._alert_svc.delete_project(project_id)
         if self._cleanup:
             await self._cleanup.delete_for_project(pid)
         await self._repo.delete(pid)

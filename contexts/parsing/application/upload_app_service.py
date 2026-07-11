@@ -27,6 +27,7 @@ from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
+from contexts.alert.application.alert_app_service import AlertApplicationService
 
 logger = logging.getLogger("parser.upload")
 
@@ -42,6 +43,7 @@ class UploadApplicationService:
         workbook_reader: WorkbookReader,
         project_repo: ProjectRepository,
         preview_repo: UploadPreviewRepository | None = None,
+        alert_svc: AlertApplicationService | None = None,
     ) -> None:
         self._repo = repo
         self._template_repo = template_repo
@@ -51,6 +53,7 @@ class UploadApplicationService:
         self._workbook_reader = workbook_reader
         self._project_repo = project_repo
         self._preview_repo = preview_repo
+        self._alert_svc = alert_svc
         self._unmerger = CellUnmerger()
         self._flattener = HeaderFlattener()
         self._stop_detector = StopDetector()
@@ -79,6 +82,8 @@ class UploadApplicationService:
             job.file_info = FileInfo(filename=file.name, size=stored_file.size)
             sheet_results = await self._process_workbook(stored_file.path, job)
             await self._event_publisher.publish(job.pull_events())
+            if self._alert_svc and job.id:
+                await self._alert_svc.evaluate(project_id.value, str(ym))
             status = job.result_status
         except Exception:
             logger.exception("upload failed for %s", batch_no)
@@ -180,6 +185,8 @@ class UploadApplicationService:
         job.confirm()
         await self._repo.save(job)
         await self._preview_repo.delete(batch_id)
+        if self._alert_svc:
+            await self._alert_svc.evaluate(job.project_id.value, str(job.year_month))
         return {"batch_id": batch_id, "status": "success", "sheets": preview["summary"]}
 
     @transactional

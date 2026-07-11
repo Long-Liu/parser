@@ -13,6 +13,7 @@ logger = logging.getLogger("parser.db")
 _initialized = False
 
 _MODEL_MODULES = [
+    "contexts.alert.infrastructure.tables",
     "contexts.auth.infrastructure.tables",
     "contexts.project.infrastructure.tables",
     "contexts.parsing.infrastructure.tables",

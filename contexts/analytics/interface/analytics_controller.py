@@ -6,6 +6,7 @@ from openpyxl import Workbook
 from sanic.response import raw
 
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
+from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.interface.auth_middleware import (
     require_auth,
@@ -34,10 +35,12 @@ class AnalyticsController(BaseController):
         self,
         analytics_analytics_svc: AnalyticsApplicationService,
         access_policy: ProjectAccessPolicy,
+        alert_svc: AlertApplicationService,
     ):
         super().__init__()
         self.analytics_svc = analytics_analytics_svc
         self.access_policy = access_policy
+        self.alert_svc = alert_svc
 
     async def _project_scope(
         self, request, requested: list[int] | None = None
@@ -284,9 +287,12 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     async def dashboard_alerts(self, request):
         p = pagination_from(request)
-        return self.json(
-            await self.analytics_svc.alerts(p.page, p.size, await self._project_scope(request))
+        result = await self.alert_svc.list(
+            project_ids=await self._project_scope(request),
+            status=request.args.get("status", "active"),
+            level=request.args.get("level", ""), page=p.page, size=p.size,
         )
+        return self.json(result)
     # ── notification endpoints ──────────────────────────────────────────
 
     @require_auth

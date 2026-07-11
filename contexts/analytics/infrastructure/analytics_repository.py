@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from decimal import Decimal
-
+import asyncio
 from tortoise.transactions import atomic
 
+from tortoise.expressions import Q
 from contexts.auth.infrastructure.tables import User
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
 from contexts.parsing.infrastructure.tables import UploadBatch
@@ -35,6 +36,12 @@ def _rate(profit: float, revenue: float) -> float:
 
 
 class TortoiseAnalyticsRepository(AnalyticsRepository):
+    _REPORT_CATALOG: list[dict] = [
+        {"type": "report", "id": "cost-categories", "title": "成本科目", "subtitle": "多项目成本对比"},
+        {"type": "report", "id": "project-profits", "title": "项目毛利情况", "subtitle": "项目盈利分析"},
+        {"type": "report", "id": "dashboard", "title": "数据大屏", "subtitle": "经营监控中心"},
+    ]
+
     def __init__(self, ai_provider: AIAnalysisPort | None = None) -> None:
         self._ai_provider = ai_provider
 
@@ -445,43 +452,43 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     async def global_search(self, keyword: str, page: int, size: int,
                             project_ids: list[int] | None = None,
                             include_users: bool = True) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
+        p = Pagination(page, size, max_size=100)
         keyword = keyword.strip()
-        from tortoise.expressions import Q
-        limit = size
-        offset = (page - 1) * size
         if not keyword:
             return {"results": [],
                     "pagination": {"page": page, "size": size, "total": 0}}
-        candidate_limit = offset + limit
+        candidate_limit = p.offset + p.size
         project_query = Project.filter(
             Q(name__icontains=keyword) | Q(code__icontains=keyword)
         )
         if project_ids is not None:
             project_query = project_query.filter(id__in=project_ids)
-        project_total = await project_query.count()
-        projects = await project_query.order_by("name").limit(candidate_limit)
-        users, user_total = [], 0
         if include_users:
             user_query = User.filter(
                 Q(real_name__icontains=keyword) | Q(email__icontains=keyword)
             )
-            user_total = await user_query.count()
-            users = await user_query.order_by("real_name", "id").limit(candidate_limit)
-        report_catalog = [
-            {"type": "report", "id": "cost-categories", "title": "成本科目", "subtitle": "多项目成本对比"},
-            {"type": "report", "id": "project-profits", "title": "项目毛利情况", "subtitle": "项目盈利分析"},
-            {"type": "report", "id": "dashboard", "title": "数据大屏", "subtitle": "经营监控中心"},
-        ]
-        reports = [item for item in report_catalog
+            project_total, user_total, projects, users = await asyncio.gather(
+                project_query.count(),
+                user_query.count(),
+                project_query.order_by("name").limit(candidate_limit),
+                user_query.order_by("real_name", "id").limit(candidate_limit),
+            )
+        else:
+            users, user_total = [], 0
+            project_total = await project_query.count()
+            projects = await project_query.order_by("name").limit(candidate_limit)
+        reports = [item for item in self._REPORT_CATALOG
                    if keyword.lower() in (item["title"] + item["subtitle"]).lower()]
-        all_results = ([{"type": "project", "id": p.id, "title": p.name, "subtitle": p.code} for p in projects]
-                   + [{"type": "user", "id": u.id, "title": u.real_name or u.username,
-                       "subtitle": u.email or ""} for u in users] + reports)
+        all_results = (
+            [{"type": "project", "id": p.id, "title": p.name, "subtitle": p.code}
+             for p in projects]
+            + [{"type": "user", "id": u.id, "title": u.real_name or u.username,
+                "subtitle": u.email or ""} for u in users]
+            + reports
+        )
         all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
-        results = all_results[offset:offset + limit]
         total = project_total + user_total + len(reports)
-        return {"results": results,
+        return {"results": all_results[p.offset:p.offset + p.size],
                 "pagination": {"page": page, "size": size, "total": total}}
 
     async def sync_status(self) -> dict:

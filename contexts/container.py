@@ -8,6 +8,14 @@ from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.infrastructure.ai_provider import HttpAIAnalysisProvider
 from contexts.analytics.infrastructure.analytics_repository import TortoiseAnalyticsRepository
 from contexts.analytics.domain.repositories import AnalyticsRepository
+from contexts.alert.application.alert_app_service import AlertApplicationService
+from contexts.alert.domain.repositories import (
+    AlertMetricProvider, AlertPushDispatcher, AlertRepository,
+)
+from contexts.alert.infrastructure.repositories import (
+    TortoiseAlertMetricProvider, TortoiseAlertRepository,
+)
+from contexts.alert.infrastructure.push import AlertWebSocketHub, TortoiseAlertOutboxDispatcher
 from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
@@ -248,6 +256,10 @@ _reg(_file_storage := LocalUploadFileStorage())
 _reg(_workbook_reader := OpenPyxlWorkbookReader())
 _reg(_ai_provider := HttpAIAnalysisProvider())
 _reg(_analytics_repo := TortoiseAnalyticsRepository(_ai_provider))
+_reg(_alert_repo := TortoiseAlertRepository())
+_reg(_alert_metrics := TortoiseAlertMetricProvider())
+_reg(_alert_hub := AlertWebSocketHub())
+_reg(_alert_dispatcher := TortoiseAlertOutboxDispatcher(_alert_hub))
 
 # ── interface bindings (abstract → concrete) ─────────────────────────────
 
@@ -288,10 +300,14 @@ _bind(WorkbookReader, _workbook_reader)
 _bind(EventPublisher, domain_event_bus)
 _bind(AIAnalysisPort, _ai_provider)
 _bind(AnalyticsRepository, _analytics_repo)
+_bind(AlertRepository, _alert_repo)
+_bind(AlertMetricProvider, _alert_metrics)
+_bind(AlertPushDispatcher, _alert_dispatcher)
 
 # ── application services (auto-wired via inspect) ────────────────────────
 
 container.register_factory(ProjectApplicationService)
+container.register_factory(AlertApplicationService)
 container.register_factory(TemplateApplicationService)
 container.register_factory(DataApplicationService)
 container.register_factory(UploadApplicationService)
