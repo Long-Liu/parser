@@ -6,7 +6,7 @@ from contexts.auth.interface.auth_middleware import require_auth, require_permis
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.project.domain.repositories import ProjectRepository
-from contexts.shared.domain.identifiers import JobId, ProjectId
+from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from, parse_int
 from contexts.shared.interface.rest_controller import rest_controller

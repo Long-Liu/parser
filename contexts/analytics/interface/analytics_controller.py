@@ -19,7 +19,6 @@ from contexts.shared.interface.controller_helpers import pagination_from
 from contexts.shared.interface.rest_controller import rest_controller
 
 
-
 def _xlsx(workbook: Workbook, filename: str):
     output = io.BytesIO()
     workbook.save(output)
@@ -31,25 +30,30 @@ def _xlsx(workbook: Workbook, filename: str):
 class AnalyticsController(BaseController):
     name = "analytics"
 
-    def __init__(self, analytics_svc: AnalyticsApplicationService,
-                 access_policy: ProjectAccessPolicy):
+    def __init__(
+        self,
+        analytics_analytics_svc: AnalyticsApplicationService,
+        access_policy: ProjectAccessPolicy,
+    ):
         super().__init__()
-        self.svc = analytics_svc
+        self.analytics_svc = analytics_analytics_svc
         self.access_policy = access_policy
 
-    async def _project_scope(self, request,
-                             requested: list[int] | None = None) -> list[int] | None:
+    async def _project_scope(
+        self, request, requested: list[int] | None = None
+    ) -> list[int] | None:
         permissions = set(request.ctx.permissions or set())
         if "admin:roles" in permissions or "user:manage" in permissions:
             return requested
-        accessible = set(await self.access_policy.accessible_project_ids(
-            UserId(request.ctx.user_id)
-        ))
+        accessible = set(
+            await self.access_policy.accessible_project_ids(UserId(request.ctx.user_id))
+        )
         if requested is None:
             return sorted(accessible)
         denied = set(requested) - accessible
         if denied:
             from contexts.shared.domain.exceptions import AuthorizationError
+
             raise AuthorizationError(f"no access to projects: {sorted(denied)}")
         return requested
 
@@ -91,35 +95,37 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("project:view")
     async def summary(self, request):
-        return self.json(await self.svc.project_summary(await self._project_scope(request)))
+        return self.json(
+            await self.analytics_svc.project_summary(await self._project_scope(request))
+        )
 
     @require_auth
     @require_permission("data:view")
     @require_project_access()
     async def monthly_data(self, request, project_id: int):
             p = pagination_from(request)
-            return self.json(await self.svc.monthly_data(project_id, p.page, p.size))
+            return self.json(await self.analytics_svc.monthly_data(project_id, p.page, p.size))
 
     @require_auth
     @require_permission("project:view")
     @require_project_access()
     async def project_progress(self, request, project_id: int):
             p = pagination_from(request)
-            return self.json(await self.svc.project_progress(project_id, p.page, p.size))
+            return self.json(await self.analytics_svc.project_progress(project_id, p.page, p.size))
 
     @require_auth
     @require_permission("project:view")
     @require_project_access()
     async def milestones(self, request, project_id: int):
             p = pagination_from(request)
-            return self.json(await self.svc.milestones(project_id, p.page, p.size))
+            return self.json(await self.analytics_svc.milestones(project_id, p.page, p.size))
 
     @require_auth
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
     async def create_milestone(self, request, project_id: int):
         try:
-            return self.json(await self.svc.create_milestone(project_id, request.json or {}), status=201)
+            return self.json(await self.analytics_svc.create_milestone(project_id, request.json or {}), status=201)
         except ValueError:
             raise ValidationError("invalid milestone values") from None
 
@@ -128,7 +134,7 @@ class AnalyticsController(BaseController):
     @require_project_access(roles={"manager"})
     async def update_milestone(self, request, project_id: int, milestone_id: int):
         try:
-            return self.json(await self.svc.update_milestone(
+            return self.json(await self.analytics_svc.update_milestone(
                 project_id, milestone_id, request.json or {},
             ))
         except ValueError:
@@ -138,7 +144,7 @@ class AnalyticsController(BaseController):
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
     async def delete_milestone(self, request, project_id: int, milestone_id: int):
-        await self.svc.delete_milestone(project_id, milestone_id)
+        await self.analytics_svc.delete_milestone(project_id, milestone_id)
         return self.json_ok()
 
     @require_auth
@@ -147,7 +153,7 @@ class AnalyticsController(BaseController):
     async def cost_details(self, request, project_id: int):
         p = pagination_from(request)
         return self.json(
-            await self.svc.cost_details(
+            await self.analytics_svc.cost_details(
                 project_id, request.args.get("ym"), p.page, p.size
             )
         )
@@ -156,14 +162,14 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     @require_project_access()
     async def project_analysis(self, request, project_id: int):
-        return self.json(await self.svc.project_analysis(project_id, request.args.get("ym")))
+        return self.json(await self.analytics_svc.project_analysis(project_id, request.args.get("ym")))
 
     @require_auth
     @require_permission("data:view")
     @require_project_access()
     async def month_comparison(self, request, project_id: int):
         return self.json(
-            await self.svc.month_comparison(
+            await self.analytics_svc.month_comparison(
                 project_id, (request.json or {}).get("months", [])
             )
         )
@@ -172,7 +178,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:delete")
     @require_project_access(roles={"manager"})
     async def delete_monthly_data(self, request, project_id: int, ym: str):
-        await self.svc.delete_monthly_data(project_id, ym)
+        await self.analytics_svc.delete_monthly_data(project_id, ym)
         return self.json_ok()
 
     @require_auth
@@ -181,8 +187,11 @@ class AnalyticsController(BaseController):
         try:
             body = request.json or {}
             ids = [int(v) for v in body.get("project_ids", [])]
-            return self.json(await self.svc.compare_projects(
-                await self._project_scope(request, ids), body.get("ym")))
+            return self.json(
+                await self.analytics_svc.compare_projects(
+                    await self._project_scope(request, ids), body.get("ym")
+                )
+            )
         except (TypeError, ValueError):
             raise ValidationError("invalid project_ids") from None
 
@@ -196,7 +205,7 @@ class AnalyticsController(BaseController):
             ids = [int(v) for v in raw.split(",") if v.strip()]
             ids = await self._project_scope(request, ids or None)
             p = pagination_from(request)
-            return self.json(await self.svc.cost_categories(
+            return self.json(await self.analytics_svc.cost_categories(
                 ids, request.args.get("ym"), p.page, p.size,
             ))
         except ValueError:
@@ -207,8 +216,11 @@ class AnalyticsController(BaseController):
     async def project_profits(self, request):
         p = pagination_from(request)
         return self.json(
-            await self.svc.project_profits(
-                request.args.get("ym"), p.page, p.size, await self._project_scope(request)
+            await self.analytics_svc.project_profits(
+                request.args.get("ym"),
+                p.page,
+                p.size,
+                await self._project_scope(request),
             )
         )
     # ── dashboard endpoints ─────────────────────────────────────────────
@@ -216,33 +228,49 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def dashboard(self, request):
-        return self.json(await self.svc.dashboard(await self._project_scope(request)))
+        return self.json(await self.analytics_svc.dashboard(await self._project_scope(request)))
 
     @require_auth
     @require_permission("data:view")
     async def dashboard_summary(self, request):
-        return self.json((await self.svc.dashboard(await self._project_scope(request)))["summary"])
+        return self.json(
+            (await self.analytics_svc.dashboard(await self._project_scope(request)))["summary"]
+        )
 
     @require_auth
     @require_permission("data:view")
     async def dashboard_trends(self, request):
-        return self.json({"data": await self.svc.dashboard_trends(await self._project_scope(request))})
+        return self.json(
+            {
+                "data": await self.analytics_svc.dashboard_trends(
+                    await self._project_scope(request)
+                )
+            }
+        )
 
     @require_auth
     @require_permission("data:view")
     async def dashboard_cost(self, request):
-        return self.json({"data": await self.svc.cost_composition(await self._project_scope(request))})
+        return self.json(
+            {
+                "data": await self.analytics_svc.cost_composition(
+                    await self._project_scope(request)
+                )
+            }
+        )
 
     @require_auth
     @require_permission("data:view")
     async def dashboard_health(self, request):
-        return self.json(await self.svc.health_radar(await self._project_scope(request)))
+        return self.json(
+            await self.analytics_svc.health_radar(await self._project_scope(request))
+        )
 
     @require_auth
     @require_permission("data:view")
     async def dashboard_status(self, request):
         p = pagination_from(request)
-        result = await self.svc.dashboard(await self._project_scope(request))
+        result = await self.analytics_svc.dashboard(await self._project_scope(request))
         rows = result["project_status"]
         start = (p.page - 1) * p.size
         return self.json(
@@ -257,7 +285,7 @@ class AnalyticsController(BaseController):
     async def dashboard_alerts(self, request):
         p = pagination_from(request)
         return self.json(
-            await self.svc.alerts(p.page, p.size, await self._project_scope(request))
+            await self.analytics_svc.alerts(p.page, p.size, await self._project_scope(request))
         )
     # ── notification endpoints ──────────────────────────────────────────
 
@@ -265,7 +293,7 @@ class AnalyticsController(BaseController):
     async def notifications(self, request):
         p = pagination_from(request)
         return self.json(
-            await self.svc.notifications(
+            await self.analytics_svc.notifications(
                 request.ctx.user_id,
                 p.page,
                 p.size,
@@ -278,12 +306,12 @@ class AnalyticsController(BaseController):
     @require_permission("user:manage")
     async def create_notification(self, request):
         return self.json(
-            await self.svc.create_notification(request.json or {}), status=201
+            await self.analytics_svc.create_notification(request.json or {}), status=201
         )
 
     @require_auth
     async def mark_read(self, request, notification_id: int):
-        await self.svc.mark_notification_read(request.ctx.user_id, notification_id)
+        await self.analytics_svc.mark_notification_read(request.ctx.user_id, notification_id)
         return self.json_ok()
     # ── misc ────────────────────────────────────────────────────────────
 
@@ -292,7 +320,7 @@ class AnalyticsController(BaseController):
     @require_project_access()
     async def ai_analysis(self, request, project_id: int):
         return self.json(
-            await self.svc.ai_analysis(project_id, (request.json or {}).get("ym"))
+            await self.analytics_svc.ai_analysis(project_id, (request.json or {}).get("ym"))
         )
 
     @require_auth
@@ -300,7 +328,7 @@ class AnalyticsController(BaseController):
         p = pagination_from(request)
         permissions = set(request.ctx.permissions or set())
         return self.json(
-            await self.svc.global_search(
+            await self.analytics_svc.global_search(
                 request.args.get("keyword", ""),
                 p.page,
                 p.size,
@@ -311,15 +339,16 @@ class AnalyticsController(BaseController):
 
     @require_auth
     async def sync_status(self, request):
-        return self.json(await self.svc.sync_status())
+        return self.json(await self.analytics_svc.sync_status())
 
     # ── export endpoints ────────────────────────────────────────────────
 
     @require_auth
     @require_permission("data:export")
     async def export_profits(self, request):
-        result = await self.svc.project_profits(
-            request.args.get("ym"), 1, 100, await self._project_scope(request))
+        result = await self.analytics_svc.project_profits(
+            request.args.get("ym"), 1, 100, await self._project_scope(request)
+        )
         wb = Workbook()
         ws = wb.active
         ws.title = "项目毛利"
@@ -336,7 +365,7 @@ class AnalyticsController(BaseController):
         try:
             ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v]
             ids = await self._project_scope(request, ids or None)
-            result = await self.svc.cost_categories(ids, request.args.get("ym"), 1, 100)
+            result = await self.analytics_svc.cost_categories(ids, request.args.get("ym"), 1, 100)
         except ValueError:
             raise ValidationError("invalid project_ids") from None
         wb = Workbook()
@@ -354,7 +383,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:export")
     @require_project_access()
     async def export_project(self, request, project_id: int):
-        result = await self.svc.project_analysis(project_id, request.args.get("ym"))
+        result = await self.analytics_svc.project_analysis(project_id, request.args.get("ym"))
         wb = Workbook()
         overview = wb.active
         overview.title = "项目概览"
