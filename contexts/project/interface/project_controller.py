@@ -6,6 +6,7 @@ from contexts.auth.interface.auth_middleware import require_auth, require_permis
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.shared.domain.identifiers import UserId, ProjectId
 from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
 from datetime import date
@@ -63,8 +64,8 @@ class ProjectsController(BaseController):
             result = await self.svc.list_all(
                 keyword=request.args.get("keyword", ""),
                 status=request.args.get("status", ""),
-                page=parse_int(request.args.get("page"), 1),
-                size=parse_int(request.args.get("size"), 20),
+                pagination=Pagination(parse_int(request.args.get("page"), 1),
+                                      parse_int(request.args.get("size"), 20), max_size=100),
                 user_id=scoped_user_id,
             )
             return self.json(result)

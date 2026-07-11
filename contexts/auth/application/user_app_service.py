@@ -31,9 +31,8 @@ class UserApplicationService:
         self._event_publisher = event_publisher
 
     async def list_all(
-        self, *, keyword: str = "", page: int = 1, size: int = 20,
+        self, *, keyword: str = "", pagination: Pagination,
     ) -> dict:
-        pagination = Pagination(page=page, size=size, max_size=100)
         keyword = keyword.strip()
         users, total = await self._users.list_all(
             keyword=keyword,
@@ -62,7 +61,7 @@ class UserApplicationService:
             result.append(base)
         return {
             "users": result,
-            "pagination": {"page": page, "size": size, "total": total},
+            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
         }
 
     async def get(self, user_id: int) -> dict:

@@ -33,8 +33,7 @@ class RolesController(BaseController):
     @openapi.tag("Roles")
     @openapi.summary("List all roles")
     async def list_roles(self, request):
-        p = pagination_from(request)
-        return self.json(await self.svc.list_all(p.page, p.size))
+        return self.json(await self.svc.list_all(pagination_from(request)))
 
     @require_auth
     @require_permission("admin:roles")

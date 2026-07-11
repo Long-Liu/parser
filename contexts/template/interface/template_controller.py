@@ -28,8 +28,7 @@ class TemplatesController(BaseController):
     @openapi.tag("Template")
     @openapi.summary("List templates")
     async def list_templates(self, request):
-        p = pagination_from(request)
-        return self.json(await self.svc.list_all(p.page, p.size))
+        return self.json(await self.svc.list_all(pagination_from(request)))
 
     @require_auth
     @openapi.tag("Template")

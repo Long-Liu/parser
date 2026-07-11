@@ -8,6 +8,7 @@ from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
+from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
 from contexts.shared.interface.rest_controller import rest_controller
@@ -57,9 +58,8 @@ class DataController(BaseController):
             await self.access_policy.require_batch(
                 UserId(request.ctx.user_id), batch_id,
             )
-        page = parse_int(request.args.get("page"), 1)
-        size = parse_int(request.args.get("size"), 200)
-        return self.json(await self.svc.query(template_id, batch_id=batch_id, page=page, size=size,
+        p = Pagination(parse_int(request.args.get("page"), 1), parse_int(request.args.get("size"), 200), max_size=500)
+        return self.json(await self.svc.query(template_id, batch_id=batch_id, pagination=p,
                                           filters=_parse_filters(request)))
 
     @require_auth

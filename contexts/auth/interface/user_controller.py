@@ -31,9 +31,8 @@ class UsersController(BaseController):
     @openapi.tag("Users")
     @openapi.summary("List personnel")
     async def list_users(self, request):
-        p = pagination_from(request)
         return self.json(await self.svc.list_all(
-            keyword=request.args.get("keyword", ""), page=p.page, size=p.size))
+            keyword=request.args.get("keyword", ""), pagination=pagination_from(request)))
 
     @require_auth
     @require_permission("user:manage")

@@ -10,10 +10,9 @@ class TemplateApplicationService:
     def __init__(self, repo: TemplateCatalog) -> None:
         self._repo = repo
 
-    async def list_all(self, page: int = 1, size: int = 20) -> dict:
-        pagination = Pagination(page, size, max_size=100)
+    async def list_all(self, pagination: Pagination) -> dict:
         templates = await self._repo.find_all_active()
-        rows = templates[pagination.offset : pagination.offset + pagination.size]
+        rows = templates[pagination.offset: pagination.offset + pagination.size]
         return {
             "templates": [
                 {
@@ -24,7 +23,7 @@ class TemplateApplicationService:
                 }
                 for t in rows
             ],
-            "pagination": {"page": page, "size": size, "total": len(templates)},
+            "pagination": {"page": pagination.page, "size": pagination.size, "total": len(templates)},
         }
     async def get_by_id(self, template_id: TemplateId) -> dict:
         t = await self._repo.find_by_id(template_id)

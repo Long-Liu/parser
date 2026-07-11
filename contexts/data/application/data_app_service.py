@@ -13,15 +13,15 @@ class DataApplicationService:
 
     async def query(
         self, template_id: str, batch_id: int | None = None,
-        page: int = 1, size: int = 200, filters: list[FilterCriterion] | None = None,
+        pagination: Pagination = Pagination(1, 200, max_size=500),
+        filters: list[FilterCriterion] | None = None,
     ) -> dict:
-        pagination = Pagination(page=page, size=size)
         rows, total = await self._repo.query(
             template_id, batch_id, filters or [], pagination,
         )
         return {
             "data": [r.fields for r in rows],
-            "pagination": {"page": page, "size": size, "total": total},
+            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
         }
 
     async def get_by_id(self, template_id: str, row_id: int) -> dict:

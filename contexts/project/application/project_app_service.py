@@ -41,9 +41,8 @@ class ProjectApplicationService:
         return self._serialize(project)
 
     async def list_all(self, *, keyword: str = "", status: str = "",
-                       page: int = 1, size: int = 20,
+                       pagination: Pagination,
                        user_id: UserId | None = None) -> dict:
-        pagination = Pagination(page, size, max_size=100)
         query = {
             "keyword": keyword.strip(), "status": status.strip(),
             "offset": pagination.offset, "limit": pagination.size,
@@ -53,7 +52,7 @@ class ProjectApplicationService:
         projects, total = await self._repo.list_all(**query)
         return {
             "projects": [self._serialize(p) for p in projects],
-            "pagination": {"page": page, "size": size, "total": total},
+            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
         }
 
     async def get_by_id(self, project_id: ProjectId) -> dict:

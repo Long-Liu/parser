@@ -6,6 +6,7 @@ from contexts.project.application.project_app_service import ProjectApplicationS
 from contexts.project.domain.project import Project
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId
+from contexts.shared.domain.pagination import Pagination
 
 
 class FakeProjectRepository:
@@ -53,7 +54,7 @@ class FakeUsers:
 async def test_project_list_is_filtered_and_paginated():
     repo = FakeProjectRepository()
     result = await ProjectApplicationService(repo).list_all(
-        keyword=" 上高 ", status="normal", page=2, size=20,
+        keyword=" 上高 ", status="normal", pagination=Pagination(2, 20, max_size=100),
     )
     assert repo.list_args == {
         "keyword": "上高", "status": "normal", "offset": 20, "limit": 20,
@@ -91,4 +92,4 @@ async def test_project_assignment_rejects_unknown_user():
 @pytest.mark.asyncio
 async def test_project_list_rejects_invalid_pagination():
     with pytest.raises(ValidationError):
-        await ProjectApplicationService(FakeProjectRepository()).list_all(page=0)
+        Pagination(0, 20, max_size=100)  # page < 1

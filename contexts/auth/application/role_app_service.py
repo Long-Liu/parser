@@ -77,13 +77,12 @@ class RoleApplicationService:
             raise NotFoundError(f"role {role_id} not found")
         return self._serialize(role)
 
-    async def list_all(self, page: int = 1, size: int = 20) -> dict:
-        pagination = Pagination(page, size, max_size=100)
+    async def list_all(self, pagination: Pagination) -> dict:
         roles = await self._repo.find_all()
-        rows = roles[pagination.offset : pagination.offset + pagination.size]
+        rows = roles[pagination.offset: pagination.offset + pagination.size]
         return {
             "roles": [self._serialize(r) for r in rows],
-            "pagination": {"page": page, "size": size, "total": len(roles)},
+            "pagination": {"page": pagination.page, "size": pagination.size, "total": len(roles)},
         }
 
     # ── user-role assignment ──────────────────────────────────────

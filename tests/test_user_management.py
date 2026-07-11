@@ -4,6 +4,7 @@ from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.domain.user import RoleRef, User
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
+from contexts.shared.domain.pagination import Pagination
 
 
 class FakeUserRepository:
@@ -31,7 +32,7 @@ class FakeUserRepository:
 async def test_personnel_list_contains_table_columns():
     repo = FakeUserRepository()
     result = await UserApplicationService(repo).list_all(
-        keyword="  alice@example  ", page=2, size=20,
+        keyword="  alice@example  ", pagination=Pagination(2, 20, max_size=100),
     )
 
     assert repo.list_args == ("alice@example", 20, 20)
@@ -58,6 +59,4 @@ async def test_personnel_list_contains_table_columns():
 @pytest.mark.parametrize("page,size", [(0, 20), (1, 0), (1, 101)])
 async def test_personnel_list_rejects_invalid_pagination(page, size):
     with pytest.raises(ValidationError, match="page|size"):
-        await UserApplicationService(FakeUserRepository()).list_all(
-            page=page, size=size,
-        )
+        Pagination(page, size, max_size=100)
