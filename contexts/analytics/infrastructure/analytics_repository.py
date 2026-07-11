@@ -237,53 +237,51 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             query = query.filter(id__in=project_ids)
         total = await query.count()
         projects = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
-        project_ids = [project.id for project in projects]
-        batch_query = UploadBatch.filter(
-            project_id__in=project_ids, status="success",
-        )
+        batch_map, profit_map = await self._load_batches(projects, ym)
+        items = [self._profit_item(p, batch_map, profit_map, ym) for p in projects]
+        return {"projects": items, "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
+
+    async def _load_batches(self, projects, ym):
+        pids = [p.id for p in projects]
+        batch_query = UploadBatch.filter(project_id__in=pids, status="success")
         if ym:
             batch_query = batch_query.filter(ym=ym)
-        batches = await batch_query.order_by("project_id", "-ym", "-id")
-        latest_batches = {}
-        for batch in batches:
-            latest_batches.setdefault(batch.project_id, batch)
-        profits = {
+        batch_map = {}
+        for batch in await batch_query.order_by("project_id", "-ym", "-id"):
+            batch_map.setdefault(batch.project_id, batch)
+        profit_map = {
             row.batch_id: row
             for row in await DataGrossProfit.filter(
-                batch_id__in=[batch.id for batch in latest_batches.values()]
-            )
+                batch_id__in=[b.id for b in batch_map.values()])
         }
-        items = []
-        for project in projects:
-            batch = latest_batches.get(project.id)
-            row = profits.get(batch.id) if batch else None
-            revenue = _number(_or_default(row.actual_revenue, row.contract_price)) if row else _number(project.contract_price)
-            profit = _number(_or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
-            cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
-            forecast_revenue = _number(_or_default(row.forecast_revenue, row.estimated_completion_price)) if row else revenue
-            forecast_profit = _number(_or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else profit
-            bid_revenue = _number(_or_default(row.bid_revenue, row.contract_price)) if row else revenue
-            bid_profit = _number(_or_default(row.bid_profit, row.gross_profit_total)) if row else 0.0
-            indicator_revenue = _number(_or_default(row.indicator_revenue, row.contract_price)) if row else revenue
-            indicator_profit = _number(_or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
-            items.append({
-                "project_id": project.id, "project_code": project.code,
-                "project_name": project.name, "ym": batch.ym if batch else ym,
-                "bid": {"revenue": bid_revenue,
-                        "cost": _number(row.bid_cost) if row and row.bid_cost is not None else bid_revenue - bid_profit,
-                        "profit": bid_profit, "profit_rate": _rate(bid_profit, bid_revenue)},
-                "indicator": {"revenue": indicator_revenue,
-                              "cost": _number(row.indicator_cost) if row and row.indicator_cost is not None else indicator_revenue - indicator_profit,
-                              "profit": indicator_profit,
-                              "profit_rate": _rate(indicator_profit, indicator_revenue)},
-                "current": {"revenue": revenue, "cost": cost, "profit": profit,
-                            "profit_rate": _rate(profit, revenue)},
-                "forecast": {"revenue": forecast_revenue,
-                             "cost": forecast_revenue - forecast_profit,
-                             "profit": forecast_profit,
-                             "profit_rate": _rate(forecast_profit, forecast_revenue)},
-            })
-        return {"projects": items, "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
+        return batch_map, profit_map
+
+    def _profit_item(self, project, batch_map, profit_map, ym) -> dict:
+        batch = batch_map.get(project.id)
+        row = profit_map.get(batch.id) if batch else None
+        revenue = _number(_or_default(row.actual_revenue, row.contract_price)) if row else _number(project.contract_price)
+        profit = _number(_or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
+        cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
+        f_rev = _number(_or_default(row.forecast_revenue, row.estimated_completion_price)) if row else revenue
+        f_prf = _number(_or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else profit
+        b_rev = _number(_or_default(row.bid_revenue, row.contract_price)) if row else revenue
+        b_prf = _number(_or_default(row.bid_profit, row.gross_profit_total)) if row else 0.0
+        i_rev = _number(_or_default(row.indicator_revenue, row.contract_price)) if row else revenue
+        i_prf = _number(_or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
+        return {
+            "project_id": project.id, "project_code": project.code,
+            "project_name": project.name, "ym": batch.ym if batch else ym,
+            "bid": {"revenue": b_rev,
+                    "cost": _number(row.bid_cost) if row and row.bid_cost is not None else b_rev - b_prf,
+                    "profit": b_prf, "profit_rate": _rate(b_prf, b_rev)},
+            "indicator": {"revenue": i_rev,
+                          "cost": _number(row.indicator_cost) if row and row.indicator_cost is not None else i_rev - i_prf,
+                          "profit": i_prf, "profit_rate": _rate(i_prf, i_rev)},
+            "current": {"revenue": revenue, "cost": cost, "profit": profit,
+                        "profit_rate": _rate(profit, revenue)},
+            "forecast": {"revenue": f_rev, "cost": f_rev - f_prf,
+                         "profit": f_prf, "profit_rate": _rate(f_prf, f_rev)},
+        }
 
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
         summary = await self.project_summary(project_ids)

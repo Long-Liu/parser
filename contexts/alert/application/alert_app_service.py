@@ -25,49 +25,55 @@ class AlertApplicationService:
             raise NotFoundError(f"project {project_id} not found")
         triggered = resolved = 0
         for rule in await self._repository.rules():
-            value = values.get(rule.metric)
-            if value is None:
-                continue
-            scope = (period or "current") if rule.metric in {
-                "cost_deviation_rate", "gross_profit_rate"
-            } else "current"
-            fingerprint = f"{project_id}:{rule.code}:{scope}"
-            existing = await self._repository.find_open(fingerprint)
-            matched = rule.matches(value)
-            consecutive = await self._repository.register_match(
-                project_id, rule.code, scope, matched,
-            )
-            if matched and consecutive >= rule.consecutive_triggers:
-                if existing and existing.status == AlertStatus.IGNORED:
-                    continue
-                message = self._message(rule.name, value, rule.threshold)
-                if existing:
-                    event_type = existing.retrigger(value, rule.level, message)
-                    alert = existing
-                else:
-                    alert = Alert(
-                        alert_id=None, project_id=project_id,
-                        rule_code=rule.code, alert_type=rule.metric,
-                        level=rule.level, title=rule.name, message=message,
-                        metric_value=value, threshold_value=rule.threshold,
-                        fingerprint=fingerprint, ym=period,
-                    )
-                    event_type = "triggered"
-                await self._repository.save(alert)
-                await self._repository.record_event(alert, event_type)
-                await self._repository.add_outbox(alert, event_type)
-                triggered += 1
-            elif existing and existing.open and rule.auto_resolve:
-                existing.resolve()
-                await self._repository.save(existing)
-                await self._repository.record_event(
-                    existing, "auto_resolved", note="指标已恢复正常"
-                )
-                await self._repository.add_outbox(existing, "resolved")
-                resolved += 1
+            t, r = await self._evaluate_rule(rule, project_id, period, values)
+            triggered += t
+            resolved += r
         self._schedule_dispatch()
         return {"project_id": project_id, "ym": period,
                 "triggered": triggered, "resolved": resolved}
+
+    async def _evaluate_rule(self, rule, project_id, period, values):
+        value = values.get(rule.metric)
+        if value is None:
+            return 0, 0
+        scope = (period or "current") if rule.metric in {
+            "cost_deviation_rate", "gross_profit_rate"
+        } else "current"
+        fingerprint = f"{project_id}:{rule.code}:{scope}"
+        existing = await self._repository.find_open(fingerprint)
+        matched = rule.matches(value)
+        consecutive = await self._repository.register_match(
+            project_id, rule.code, scope, matched)
+        if matched and consecutive >= rule.consecutive_triggers:
+            return await self._trigger_alert(rule, existing, project_id, period, value, fingerprint), 0
+        if existing and existing.open and rule.auto_resolve:
+            return 0, await self._auto_resolve_alert(existing)
+        return 0, 0
+
+    async def _trigger_alert(self, rule, existing, project_id, period, value, fingerprint):
+        if existing and existing.status == AlertStatus.IGNORED:
+            return 0
+        message = self._message(rule.name, value, rule.threshold)
+        if existing:
+            event_type = existing.retrigger(value, rule.level, message)
+            alert = existing
+        else:
+            alert = Alert(alert_id=None, project_id=project_id, rule_code=rule.code,
+                          alert_type=rule.metric, level=rule.level, title=rule.name,
+                          message=message, metric_value=value, threshold_value=rule.threshold,
+                          fingerprint=fingerprint, ym=period)
+            event_type = "triggered"
+        await self._repository.save(alert)
+        await self._repository.record_event(alert, event_type)
+        await self._repository.add_outbox(alert, event_type)
+        return 1
+
+    async def _auto_resolve_alert(self, existing):
+        existing.resolve()
+        await self._repository.save(existing)
+        await self._repository.record_event(existing, "auto_resolved", note="指标已恢复正常")
+        await self._repository.add_outbox(existing, "resolved")
+        return 1
 
     async def find(self, *, project_ids: list[int] | None, status: str = "",
                    level: str = "", pagination: Pagination) -> dict:

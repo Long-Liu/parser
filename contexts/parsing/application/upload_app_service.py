@@ -128,25 +128,14 @@ class UploadApplicationService:
         try:
             await self._repo.save(job)
             job.confirm_submitted()
-            payload = []
-            summary = []
-            for sheet in await self._workbook_reader.read(stored_file.path):
-                result = await self._process_sheet(sheet, job, write=False)
-                rows = result.pop("_rows", [])
-                summary.append(result)
-                if result.get("template"):
-                    payload.append({"template": result["template"], "rows": rows})
+            payload, summary = await self._collect_preview_sheets(job, stored_file.path)
             job.complete()
             job.mark_as_previewed()
             await self._event_publisher.publish(job.pull_events())
             await self._repo.save(job)
             await self._preview_repo.save(job.id.value, payload, summary)
-            return {
-                "batch_id": job.id.value,
-                "batch_no": batch_no,
-                "status": "preview",
-                "sheets": summary,
-            }
+            return {"batch_id": job.id.value, "batch_no": batch_no,
+                    "status": "preview", "sheets": summary}
         except Exception:
             logger.exception("preview failed for %s", batch_no)
             job.fail("preview error")
@@ -233,54 +222,55 @@ class UploadApplicationService:
 
         if template is None:
             job.match_sheet(sheet_name, None)
-            return {
-                "name": sheet_name, "template": None,
-                "rows": 0, "status": "skipped",
-            }
+            return {"name": sheet_name, "template": None, "rows": 0, "status": "skipped"}
 
         job.match_sheet(sheet_name, template.id.value)
-        grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
-        flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
-        rows = self._extractor.extract(grid, flat_headers, template)
-        job.set_extracted(sheet_name, rows)
-
-        valid_rows, errors = self._validator.validate(rows, template)
-        job.set_validated(sheet_name, valid_rows, errors)
+        valid_rows, errors = await self._run_parsing_pipeline(sheet, job, template)
 
         if valid_rows and write:
             if job.id is None:
                 raise RuntimeError("ParseJob repository did not assign an id")
             await self._data_sink.insert_data_rows(
-                template.id.value, job.id.value, valid_rows
-            )
+                template.id.value, job.id.value, valid_rows)
 
-        result = {
-            "name": sheet_name,
-            "template": template.id.value,
-            "rows": len(valid_rows),
-            "status": "success" if not errors else "partial",
-        }
+        result = {"name": sheet_name, "template": template.id.value,
+                  "rows": len(valid_rows),
+                  "status": "success" if not errors else "partial"}
         if not write:
-            result["preview"] = [self._json_safe(row.fields) for row in valid_rows[:20]]
-            result["errors"] = [
-                {
-                    "row": e.row_index,
-                    "field": e.field,
-                    "value": e.value,
-                    "reason": e.reason,
-                }
-                for e in errors[:20]
-            ]
-            result["_rows"] = [
-                {
-                    "row_index": row.row_index,
-                    "fields": self._json_safe(row.fields),
-                    "hierarchy_code": row.hierarchy_code,
-                    "monthly_data": self._json_safe(row.monthly_data),
-                }
-                for row in valid_rows
-            ]
+            result.update(self._build_preview_data(valid_rows, errors))
         return result
+
+    async def _collect_preview_sheets(self, job, stored_path):
+        """Process all sheets without persisting data, collecting preview results."""
+        payload, summary = [], []
+        for sheet in await self._workbook_reader.read(stored_path):
+            result = await self._process_sheet(sheet, job, write=False)
+            rows = result.pop("_rows", [])
+            summary.append(result)
+            if result.get("template"):
+                payload.append({"template": result["template"], "rows": rows})
+        return payload, summary
+
+    async def _run_parsing_pipeline(self, sheet, job, template):
+        grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
+        flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
+        rows = self._extractor.extract(grid, flat_headers, template)
+        job.set_extracted(sheet.name, rows)
+        valid_rows, errors = self._validator.validate(rows, template)
+        job.set_validated(sheet.name, valid_rows, errors)
+        return valid_rows, errors
+
+    def _build_preview_data(self, valid_rows, errors) -> dict:
+        return {
+            "preview": [self._json_safe(r.fields) for r in valid_rows[:20]],
+            "errors": [{"row": e.row_index, "field": e.field,
+                         "value": e.value, "reason": e.reason}
+                        for e in errors[:20]],
+            "_rows": [{"row_index": r.row_index, "fields": self._json_safe(r.fields),
+                       "hierarchy_code": r.hierarchy_code,
+                       "monthly_data": self._json_safe(r.monthly_data)}
+                      for r in valid_rows],
+        }
 
     @classmethod
     def _json_safe(cls, value):
