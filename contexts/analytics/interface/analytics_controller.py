@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import io
 
-from sanic.response import json, raw
 from openpyxl import Workbook
+from sanic.response import raw
 
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
-from contexts.auth.interface.auth_middleware import require_auth, require_permission, require_project_access
+from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.interface.auth_middleware import (
+    require_auth,
+    require_permission,
+    require_project_access,
+)
+from contexts.container import container
 from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
-from contexts.auth.application.project_access import ProjectAccessPolicy
-from contexts.container import container
-from contexts.shared.domain.identifiers import UserId
+from contexts.shared.interface.rest_controller import rest_controller
 
 
 async def _project_scope(request, requested: list[int] | None = None) -> list[int] | None:
@@ -36,8 +41,6 @@ def _xlsx(workbook: Workbook, filename: str):
     return raw(output.getvalue(), content_type=(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     ), headers={"Content-Disposition": f'attachment; filename="{filename}"'})
-
-from contexts.shared.interface.rest_controller import rest_controller
 
 @rest_controller("/api")
 class AnalyticsController(BaseController):
@@ -132,15 +135,19 @@ class AnalyticsController(BaseController):
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
     async def delete_milestone(self, request, project_id: int, milestone_id: int):
-            await self.svc.delete_milestone(project_id, milestone_id)
-            return self.json_ok()
+        await self.svc.delete_milestone(project_id, milestone_id)
+        return self.json_ok()
 
     @require_auth
     @require_permission("data:view")
     @require_project_access()
     async def cost_details(self, request, project_id: int):
-            p = pagination_from(request)
-            return self.json(await self.svc.cost_details(project_id, request.args.get("ym"), p.page, p.size))
+        p = pagination_from(request)
+        return self.json(
+            await self.svc.cost_details(
+                project_id, request.args.get("ym"), p.page, p.size
+            )
+        )
 
     @require_auth
     @require_permission("data:view")
@@ -152,15 +159,18 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     @require_project_access()
     async def month_comparison(self, request, project_id: int):
-            return self.json(await self.svc.month_comparison(
-                project_id, (request.json or {}).get("months", [])))
+        return self.json(
+            await self.svc.month_comparison(
+                project_id, (request.json or {}).get("months", [])
+            )
+        )
 
     @require_auth
     @require_permission("data:delete")
     @require_project_access(roles={"manager"})
     async def delete_monthly_data(self, request, project_id: int, ym: str):
-            await self.svc.delete_monthly_data(project_id, ym)
-            return self.json_ok()
+        await self.svc.delete_monthly_data(project_id, ym)
+        return self.json_ok()
 
     @require_auth
     @require_permission("data:view")
@@ -192,10 +202,12 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def project_profits(self, request):
-            p = pagination_from(request)
-            return self.json(await self.svc.project_profits(
-                request.args.get("ym"), p.page, p.size,
-                await _project_scope(request)))
+        p = pagination_from(request)
+        return self.json(
+            await self.svc.project_profits(
+                request.args.get("ym"), p.page, p.size, await _project_scope(request)
+            )
+        )
     # ── dashboard endpoints ─────────────────────────────────────────────
 
     @require_auth
@@ -226,55 +238,73 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def dashboard_status(self, request):
-            p = pagination_from(request)
-            result = await self.svc.dashboard(await _project_scope(request))
-            rows = result["project_status"]
-            start = (p.page - 1) * p.size
-            return self.json({"projects": rows[start:start + p.size],
-                         "pagination": {"page": p.page, "size": p.size, "total": len(rows)}})
+        p = pagination_from(request)
+        result = await self.svc.dashboard(await _project_scope(request))
+        rows = result["project_status"]
+        start = (p.page - 1) * p.size
+        return self.json(
+            {
+                "projects": rows[start : start + p.size],
+                "pagination": {"page": p.page, "size": p.size, "total": len(rows)},
+            }
+        )
 
     @require_auth
     @require_permission("data:view")
     async def dashboard_alerts(self, request):
-            p = pagination_from(request)
-            return self.json(await self.svc.alerts(
-                p.page, p.size, await _project_scope(request)))
+        p = pagination_from(request)
+        return self.json(
+            await self.svc.alerts(p.page, p.size, await _project_scope(request))
+        )
     # ── notification endpoints ──────────────────────────────────────────
 
     @require_auth
     async def notifications(self, request):
-            p = pagination_from(request)
-            return self.json(await self.svc.notifications(
-                request.ctx.user_id, p.page, p.size,
+        p = pagination_from(request)
+        return self.json(
+            await self.svc.notifications(
+                request.ctx.user_id,
+                p.page,
+                p.size,
                 request.args.get("unread_only", "false").lower() == "true",
-                await _project_scope(request)))
+                await _project_scope(request),
+            )
+        )
 
     @require_auth
     @require_permission("user:manage")
     async def create_notification(self, request):
-            return self.json(await self.svc.create_notification(request.json or {}), status=201)
+        return self.json(
+            await self.svc.create_notification(request.json or {}), status=201
+        )
 
     @require_auth
     async def mark_read(self, request, notification_id: int):
-            await self.svc.mark_notification_read(request.ctx.user_id, notification_id)
-            return self.json_ok()
+        await self.svc.mark_notification_read(request.ctx.user_id, notification_id)
+        return self.json_ok()
     # ── misc ────────────────────────────────────────────────────────────
 
     @require_auth
     @require_permission("data:view")
     @require_project_access()
     async def ai_analysis(self, request, project_id: int):
-            return self.json(await self.svc.ai_analysis(project_id, (request.json or {}).get("ym")))
+        return self.json(
+            await self.svc.ai_analysis(project_id, (request.json or {}).get("ym"))
+        )
 
     @require_auth
     async def global_search(self, request):
-            p = pagination_from(request)
-            permissions = set(request.ctx.permissions or set())
-            return self.json(await self.svc.global_search(
-                request.args.get("keyword", ""), p.page, p.size,
+        p = pagination_from(request)
+        permissions = set(request.ctx.permissions or set())
+        return self.json(
+            await self.svc.global_search(
+                request.args.get("keyword", ""),
+                p.page,
+                p.size,
                 await _project_scope(request),
                 "user:manage" in permissions or "admin:roles" in permissions,
-            ))
+            )
+        )
 
     @require_auth
     async def sync_status(self, request):

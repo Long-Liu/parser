@@ -11,6 +11,7 @@ from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
+from contexts.shared.interface.rest_controller import rest_controller
 
 def _parse_filters(request) -> list[FilterCriterion]:
     filters: list[FilterCriterion] = []
@@ -28,8 +29,6 @@ def _parse_int_or_none(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         raise ValidationError(f"invalid integer: {value}") from None
-
-from contexts.shared.interface.rest_controller import rest_controller
 
 @rest_controller("/api")
 class DataController(BaseController):
