@@ -4,11 +4,10 @@ from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.auth.application.project_access import ProjectAccessPolicy
-from contexts.container import container
-from contexts.shared.domain.identifiers import UserId
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
 from contexts.shared.interface.rest_controller import rest_controller
@@ -34,9 +33,11 @@ def _parse_int_or_none(value: str | None) -> int | None:
 class DataController(BaseController):
     name = "data_ddd"
 
-    def __init__(self, data_svc: DataApplicationService):
+    def __init__(self, data_svc: DataApplicationService,
+                 access_policy: ProjectAccessPolicy):
         super().__init__()
         self.svc = data_svc
+        self.access_policy = access_policy
 
     def setup(self):
         self.bp.add_route(self.query,   "/data/<template_id:str>",            methods=["GET"])
@@ -53,7 +54,7 @@ class DataController(BaseController):
         if "admin:roles" not in permissions and "user:manage" not in permissions:
             if batch_id is None:
                 raise ValidationError("batch_id is required for project-scoped data access")
-            await container.get(ProjectAccessPolicy).require_batch(
+            await self.access_policy.require_batch(
                 UserId(request.ctx.user_id), batch_id,
             )
         page = parse_int(request.args.get("page"), 1)
@@ -68,7 +69,7 @@ class DataController(BaseController):
     async def get_row(self, request, template_id: str, row_id: int):
         permissions = set(request.ctx.permissions or set())
         if "admin:roles" not in permissions and "user:manage" not in permissions:
-            await container.get(ProjectAccessPolicy).require_data_row(
+            await self.access_policy.require_data_row(
                 UserId(request.ctx.user_id), template_id, row_id,
             )
         return self.json(await self.svc.get_by_id(template_id, row_id))
@@ -80,7 +81,7 @@ class DataController(BaseController):
     async def delete(self, request, template_id: str, row_id: int):
         permissions = set(request.ctx.permissions or set())
         if "admin:roles" not in permissions and "user:manage" not in permissions:
-            await container.get(ProjectAccessPolicy).require_data_row(
+            await self.access_policy.require_data_row(
                 UserId(request.ctx.user_id), template_id, row_id, {"manager"},
             )
         await self.svc.delete_by_id(template_id, row_id)

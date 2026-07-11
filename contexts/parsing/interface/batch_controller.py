@@ -4,8 +4,6 @@ from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission, require_batch_access
 from contexts.auth.application.project_access import ProjectAccessPolicy
-from contexts.container import container
-from contexts.shared.domain.identifiers import UserId
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.project.domain.repositories import ProjectRepository
 from contexts.shared.domain.identifiers import JobId, ProjectId
@@ -39,10 +37,12 @@ class BatchesController(BaseController):
     url_prefix = "/api/batches"
 
     def __init__(self, parse_job_repo: ParseJobRepository,
-                 project_repo: ProjectRepository):
+                 project_repo: ProjectRepository,
+                 access_policy: ProjectAccessPolicy):
         super().__init__()
         self.parse_job_repo = parse_job_repo
         self.project_repo = project_repo
+        self.access_policy = access_policy
 
     def setup(self):
         self.bp.add_route(self.list_batches, "/",               methods=["GET"])
@@ -58,7 +58,7 @@ class BatchesController(BaseController):
         if project_id_raw:
             permissions = set(request.ctx.permissions or set())
             if "admin:roles" not in permissions and "user:manage" not in permissions:
-                await container.get(ProjectAccessPolicy).require(
+                await self.access_policy.require(
                     UserId(request.ctx.user_id), int(project_id_raw)
                 )
             project_id = ProjectId(parse_int(project_id_raw, 0))
