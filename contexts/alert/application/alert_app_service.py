@@ -161,6 +161,10 @@ class AlertApplicationService:
     async def delete_project(self, project_id: int) -> None:
         await self._repository.delete_project(project_id)
 
+    async def missed_notifications(self, project_ids: list[int],
+                                    since: str | None) -> list[dict]:
+        return await self._repository.missed_outbox(project_ids, since)
+
     async def _persist_action(self, alert: Alert, event_type: str,
                               actor_id: int, note: str) -> None:
         await self._repository.save(alert)

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 # Application bootstrap: config → db.init → schema + seed + data tables.
-
 import logging
 import os
 from collections.abc import Callable
 
+from contexts.alert.domain.repositories import AlertPushDispatcher
+from contexts.container import container
 from contexts.shared.infrastructure.database.config import load_config
-from contexts.shared.infrastructure.database.engine import init as db_init, close as db_close
-from contexts.shared.infrastructure.database.schema import migrate_db, create_data_table
+from contexts.shared.infrastructure.database.engine import close as db_close
+from contexts.shared.infrastructure.database.engine import init as db_init
+from contexts.shared.infrastructure.database.schema import create_data_table, migrate_db
 from contexts.shared.infrastructure.database.seed import seed_defaults
 
 logger = logging.getLogger("parser")
@@ -23,7 +25,6 @@ def register(
     async def startup(app):
         app.ctx.config = load_config()
         # Wire the JWT secret into the container once at startup
-        from contexts.container import container
         container.configure(app.ctx.config.SECRET_KEY)
         logger.info("env=%s debug=%s", os.getenv("APP_ENV", "local"), app.ctx.config.DEBUG)
 
@@ -39,8 +40,6 @@ def register(
 
         # Drain any stale alert outbox entries (context is active here)
         try:
-            from contexts.alert.domain.repositories import AlertPushDispatcher
-            from contexts.container import container
             await container.get(AlertPushDispatcher).dispatch_pending()
         except Exception:
             logger.debug("startup outbox drain skipped", exc_info=True)

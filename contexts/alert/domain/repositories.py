@@ -44,6 +44,10 @@ class AlertRepository(ABC):
     @abstractmethod
     async def delete_project(self, project_id: int) -> None: ...
 
+    async def missed_outbox(self, project_ids: list[int],
+                            since: str | None) -> list[dict]:
+        return []
+
 
 class AlertMetricProvider(ABC):
     @abstractmethod

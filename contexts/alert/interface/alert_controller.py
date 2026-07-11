@@ -148,6 +148,11 @@ class AlertController(BaseController):
         await self.hub.connect(context.user_id, ws, projects)
         try:
             await ws.send('{"event":"alerts.connected"}')
+            # Push missed notifications since reconnect
+            since = request.args.get("since")
+            missed = await self.alert_svc.missed_notifications(projects, since)
+            for entry in missed:
+                await ws.send(json.dumps(entry, ensure_ascii=False))
             while True:
                 message = await ws.recv()
                 if message is None:

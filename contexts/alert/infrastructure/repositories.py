@@ -224,6 +224,27 @@ class TortoiseAlertRepository(AlertRepository):
         await AlertRuleStateModel.filter(project_id=project_id).delete()
         await AlertModel.filter(project_id=project_id).delete()
 
+    async def missed_outbox(self, project_ids: list[int],
+                            since: str | None) -> list[dict]:
+        from datetime import datetime, timedelta, timezone
+        query = AlertOutboxModel.filter(status="sent")
+        # -1 is the _ALL_PROJECTS sentinel for admins
+        if -1 not in project_ids:
+            query = query.filter(project_id__in=project_ids)
+        if since:
+            try:
+                cutoff = datetime.fromisoformat(since)
+            except (ValueError, TypeError):
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        query = query.filter(sent_at__gte=cutoff)
+        rows = await query.order_by("id").limit(200)
+        return [{"event": row.event_type, "event_id": row.id,
+                 "data": row.payload, "project_id": row.project_id}
+                for row in rows]
+        await AlertModel.filter(project_id=project_id).delete()
+
 
 class TortoiseAlertMetricProvider(AlertMetricProvider):
     async def snapshot(self, project_id: int, ym: str | None = None) -> tuple[str | None, dict[str, Decimal]]:
