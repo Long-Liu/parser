@@ -366,7 +366,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         rows = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
         return {"alerts": [{"type": "project_warning", "project_id": p.id,
                             "title": p.name, "message": "项目处于预警状态"} for p in rows],
-                "pagination": {"page": page, "size": size, "total": total}}
+                "pagination": {"page":pagination.page, "size": pagination.size, "total": total}}
 
     async def notifications(self, user_id: int, pagination: Pagination,
                             unread_only: bool = False,
@@ -389,7 +389,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                                     "is_read": row.id in read_ids,
                                     "created_at": row.created_at.isoformat()} for row in rows],
                 "unread": len(all_ids) - len(read_ids),
-                "pagination": {"page": page, "size": size, "total": total}}
+                "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
     @atomic()
     async def create_notification(self, data: dict) -> dict:
@@ -482,7 +482,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
         total = project_total + user_total + len(reports)
         return {"results": all_results[pagination.offset:pagination.offset + pagination.size],
-                "pagination": {"page": page, "size": size, "total": total}}
+                "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
     async def sync_status(self) -> dict:
         latest = await UploadBatch.all().order_by("-created_at").first()
