@@ -37,6 +37,14 @@ def register(
         await seed_defaults(password_hasher)
         logger.info("db seed done")
 
+        # Drain any stale alert outbox entries (context is active here)
+        try:
+            from contexts.alert.domain.repositories import AlertPushDispatcher
+            from contexts.container import container
+            await container.get(AlertPushDispatcher).dispatch_pending()
+        except Exception:
+            logger.debug("startup outbox drain skipped", exc_info=True)
+
         configs = template_config_provider() if template_config_provider else []
         for cfg in configs:
             await create_data_table(cfg["template_id"])

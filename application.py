@@ -67,7 +67,3 @@ async def on_unhandled_error(request, exception: Exception):
 container.configure(load_config().SECRET_KEY)
 app.blueprint(health_bp)
 register_all(app, container)
-
-
-# Alert outbox dispatching is handled per-request via defer_after_commit()
-# in AlertApplicationService._schedule_dispatch(). No background worker needed.
