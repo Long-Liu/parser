@@ -57,7 +57,7 @@ async def init(config: Config) -> None:
     if _initialized:
         await close()
 
-    await Tortoise.init(config=tortoise_config(config))
+    await Tortoise.init(config=tortoise_config(config), _enable_global_fallback=True)
     _initialized = True
 
 
