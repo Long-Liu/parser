@@ -106,22 +106,19 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     @require_project_access()
     async def monthly_data(self, request, project_id: int):
-            p = pagination_from(request)
-            return self.json(await self.analytics_svc.monthly_data(project_id, p.page, p.size))
+            return self.json(await self.analytics_svc.monthly_data(project_id, pagination_from(request)))
 
     @require_auth
     @require_permission("project:view")
     @require_project_access()
     async def project_progress(self, request, project_id: int):
-            p = pagination_from(request)
-            return self.json(await self.analytics_svc.project_progress(project_id, p.page, p.size))
+            return self.json(await self.analytics_svc.project_progress(project_id, pagination_from(request)))
 
     @require_auth
     @require_permission("project:view")
     @require_project_access()
     async def milestones(self, request, project_id: int):
-            p = pagination_from(request)
-            return self.json(await self.analytics_svc.milestones(project_id, p.page, p.size))
+            return self.json(await self.analytics_svc.milestones(project_id, pagination_from(request)))
 
     @require_auth
     @require_permission("project:create")
@@ -207,7 +204,6 @@ class AnalyticsController(BaseController):
             raw = request.args.get("project_ids", "")
             ids = [int(v) for v in raw.split(",") if v.strip()]
             ids = await self._project_scope(request, ids or None)
-            p = pagination_from(request)
             return self.json(await self.analytics_svc.cost_categories(
                 ids, request.args.get("ym"), p.page, p.size,
             ))
@@ -290,7 +286,7 @@ class AnalyticsController(BaseController):
         result = await self.alert_svc.list(
             project_ids=await self._project_scope(request),
             status=request.args.get("status", "active"),
-            level=request.args.get("level", ""), page=p.page, size=p.size,
+            level=request.args.get("level", ""), pagination=pagination_from(request),
         )
         return self.json(result)
     # ── notification endpoints ──────────────────────────────────────────

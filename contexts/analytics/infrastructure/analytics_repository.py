@@ -65,14 +65,13 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "contract_total": float(prices),
         }
 
-    async def monthly_data(self, project_id: int, page: int, size: int) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
+    async def monthly_data(self, project_id: int, pagination: Pagination) -> dict:
         await self._project(project_id)
         months = list(await UploadBatch.filter(
             project_id=project_id, status="success",
         ).order_by("-ym").distinct().values_list("ym", flat=True))
         total = len(months)
-        selected = months[(page - 1) * size:page * size]
+        selected = months[pagination.offset:pagination.offset + pagination.size]
         items = []
         for ym in selected:
             batch = await UploadBatch.filter(
@@ -80,7 +79,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             ).order_by("-id").first()
             if batch:
                 items.append(await self._monthly_item(batch))
-        return {"data": items, "pagination": {"page": page, "size": size, "total": total}}
+        return {"data": items, "pagination": {
+            "page": pagination.page, "size": pagination.size, "total": total}}
 
     async def month_comparison(self, project_id: int, months: list[str]) -> dict:
         await self._project(project_id)
@@ -101,7 +101,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     async def compare_projects(self, project_ids: list[int], ym: str | None) -> dict:
         if len(set(project_ids)) < 2:
             raise ValidationError("at least two projects are required")
-        costs = await self.cost_categories(project_ids, ym, 1, 100)
+        costs = await self.cost_categories(project_ids, ym, Pagination(1, 100, max_size=100))
         profits = await self._profits_for_ids(project_ids, ym)
         return {"cost_categories": costs["projects"], "profits": profits}
 
@@ -121,8 +121,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         await UploadPreview.filter(batch_id__in=batch_ids).delete()
 
     async def cost_categories(self, project_ids: list[int], ym: str | None,
-                              page: int = 1, size: int = 20) -> dict:
-        pagination = Pagination(page, size, max_size=100)
+                              pagination: Pagination) -> dict:
         projects = await Project.filter(id__in=project_ids).order_by("id") if project_ids else await Project.all().order_by("id")
         series = []
         totals = []
@@ -150,13 +149,12 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 } for row in rows],
             })
         return {"projects": series,
-                "pagination": {"page": page, "size": size,
+                "pagination": {"page": pagination.page, "size": pagination.size,
                                "total": max(totals, default=0)}}
 
     async def cost_details(self, project_id: int, ym: str | None,
-                           page: int, size: int) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
-        result = await self.cost_categories([project_id], ym, page, size)
+                           pagination: Pagination) -> dict:
+        result = await self.cost_categories([project_id], ym, pagination)
         if not result["projects"]:
             raise NotFoundError(f"project {project_id} not found")
         project = result["projects"][0]
@@ -167,26 +165,25 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     async def project_analysis(self, project_id: int, ym: str | None) -> dict:
         project = await self._project(project_id)
         profit = await self._profit_for(project_id, ym)
-        cost = await self.cost_details(project_id, ym, 1, 100)
+        cost = await self.cost_details(project_id, ym, Pagination(1, 100, max_size=100))
         return {
             "project": {"id": project.id, "code": project.code, "name": project.name,
                         "status": project.status, "progress": _number(project.progress),
                         "contract_price": _number(project.contract_price)},
             "ym": cost["ym"], "profit": profit, "cost_categories": cost["data"],
-            "milestones": (await self.milestones(project_id, 1, 100))["milestones"],
+            "milestones": (await self.milestones(project_id, Pagination(1, 100, max_size=100)))["milestones"],
         }
 
-    async def milestones(self, project_id: int, page: int, size: int) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
+    async def milestones(self, project_id: int, pagination: Pagination) -> dict:
         await self._project(project_id)
         query = ProjectMilestone.filter(project_id=project_id)
         total = await query.count()
-        rows = await query.order_by("-ym", "-id").offset((page - 1) * size).limit(size)
+        rows = await query.order_by("-ym", "-id").offset(pagination.offset).limit(pagination.size)
         return {"milestones": [self._milestone(row) for row in rows],
-                "pagination": {"page": page, "size": size, "total": total}}
+                "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
-    async def project_progress(self, project_id: int, page: int, size: int) -> dict:
-        result = await self.milestones(project_id, page, size)
+    async def project_progress(self, project_id: int, pagination: Pagination) -> dict:
+        result = await self.milestones(project_id, pagination)
         return {
             "progress": [{
                 "id": row["id"], "ym": row["ym"], "progress": row["progress"],
@@ -233,14 +230,13 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if not deleted:
             raise NotFoundError(f"milestone {milestone_id} not found")
 
-    async def project_profits(self, ym: str | None, page: int, size: int,
+    async def project_profits(self, ym: str | None, pagination: Pagination,
                               project_ids: list[int] | None = None) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
         query = Project.all()
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
         total = await query.count()
-        projects = await query.order_by("id").offset((page - 1) * size).limit(size)
+        projects = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
         project_ids = [project.id for project in projects]
         batch_query = UploadBatch.filter(
             project_id__in=project_ids, status="success",
@@ -287,11 +283,11 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                              "profit": forecast_profit,
                              "profit_rate": _rate(forecast_profit, forecast_revenue)},
             })
-        return {"projects": items, "pagination": {"page": page, "size": size, "total": total}}
+        return {"projects": items, "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
         summary = await self.project_summary(project_ids)
-        profits = await self.project_profits(None, 1, 100, project_ids)
+        profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
         project_query = Project.all()
         if project_ids is not None:
             project_query = project_query.filter(id__in=project_ids)
@@ -314,7 +310,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if not projects:
             return {"dimensions": {"profit": 0, "cost": 0, "progress": 0,
                                     "schedule": 0, "risk": 0}}
-        profits = await self.project_profits(None, 1, 100, project_ids)
+        profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
         rates = [max(0, min(100, item["current"]["profit_rate"] * 5))
                  for item in profits["projects"]]
         avg = lambda values: round(sum(values) / len(values), 2) if values else 0
@@ -361,22 +357,20 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         return [{"name": name, "amount": round(amount, 2)}
                 for name, amount in sorted(totals.items(), key=lambda item: -item[1])]
 
-    async def alerts(self, page: int, size: int,
+    async def alerts(self, pagination: Pagination,
                      project_ids: list[int] | None = None) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
         query = Project.filter(status="warning")
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
         total = await query.count()
-        rows = await query.order_by("id").offset((page - 1) * size).limit(size)
+        rows = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
         return {"alerts": [{"type": "project_warning", "project_id": p.id,
                             "title": p.name, "message": "项目处于预警状态"} for p in rows],
                 "pagination": {"page": page, "size": size, "total": total}}
 
-    async def notifications(self, user_id: int, page: int, size: int,
+    async def notifications(self, user_id: int, pagination: Pagination,
                             unread_only: bool = False,
                             project_ids: list[int] | None = None) -> dict:
-        Pagination(page, size, max_size=100)  # validates, then discarded — side-effect free
         from tortoise.expressions import Q
         query = Notification.filter(Q(user_id=user_id) | Q(user_id=None))
         if project_ids is not None:
@@ -388,7 +382,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if unread_only:
             query = query.exclude(id__in=list(read_ids))
         total = await query.count()
-        rows = await query.order_by("-id").offset((page - 1) * size).limit(size)
+        rows = await query.order_by("-id").offset(pagination.offset).limit(pagination.size)
         return {"notifications": [{"id": row.id, "type": row.notification_type,
                                     "title": row.title, "message": row.message,
                                     "project_id": row.project_id,
@@ -449,15 +443,14 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 return {"project_id": project_id, "ym": profits["ym"], **result}
         return fallback
 
-    async def global_search(self, keyword: str, page: int, size: int,
+    async def global_search(self, keyword: str, pagination: Pagination,
                             project_ids: list[int] | None = None,
                             include_users: bool = True) -> dict:
-        p = Pagination(page, size, max_size=100)
         keyword = keyword.strip()
         if not keyword:
             return {"results": [],
-                    "pagination": {"page": page, "size": size, "total": 0}}
-        candidate_limit = p.offset + p.size
+                    "pagination": {"page": pagination.page, "size": pagination.size, "total": 0}}
+        candidate_limit = pagination.offset + pagination.size
         project_query = Project.filter(
             Q(name__icontains=keyword) | Q(code__icontains=keyword)
         )
@@ -488,7 +481,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         )
         all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
         total = project_total + user_total + len(reports)
-        return {"results": all_results[p.offset:p.offset + p.size],
+        return {"results": all_results[pagination.offset:pagination.offset + pagination.size],
                 "pagination": {"page": page, "size": size, "total": total}}
 
     async def sync_status(self) -> dict:
