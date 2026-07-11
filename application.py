@@ -1,7 +1,6 @@
 """Sanic application assembly and configuration."""
 
 import logging
-import asyncio
 
 from sanic import Sanic
 from sanic_ext import Extend
@@ -31,8 +30,6 @@ from contexts.shared.interface.rest_controller import register_all
 from contexts.template.infrastructure.config_loader import (
     list_configs as list_template_configs,
 )
-from contexts.alert.domain.repositories import AlertPushDispatcher
-
 _logger = logging.getLogger("sanic.error")
 
 app = Sanic("excel_parser")
@@ -72,31 +69,5 @@ app.blueprint(health_bp)
 register_all(app, container)
 
 
-async def _alert_outbox_worker(app):
-    from tortoise.context import _current_context, _global_context
-
-    # asyncio tasks may not inherit ContextVar — restore from global fallback.
-    ctx = _global_context
-    if ctx is not None:
-        _current_context.set(ctx)
-
-    while True:
-        try:
-            await container.get(AlertPushDispatcher).dispatch_pending()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _logger.exception("alert outbox dispatch failed")
-        await asyncio.sleep(5)
-
-
-@app.after_server_start
-async def start_alert_outbox_worker(app):
-    app.ctx.alert_outbox_task = app.add_task(_alert_outbox_worker(app))
-
-
-@app.before_server_stop
-async def stop_alert_outbox_worker(app):
-    task = getattr(app.ctx, "alert_outbox_task", None)
-    if task:
-        task.cancel()
+# Alert outbox dispatching is handled per-request via defer_after_commit()
+# in AlertApplicationService._schedule_dispatch(). No background worker needed.
