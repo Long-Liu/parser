@@ -1,37 +1,38 @@
 from __future__ import annotations
 
-from sanic import Blueprint
-from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth
 from contexts.shared.domain.identifiers import TemplateId
-from contexts.shared.domain.exceptions import DomainError
-from contexts.template.application.template_app_service import TemplateApplicationService
-from contexts.container import container
-from contexts.shared.interface.base_controller import error_to_response
-
-bp = Blueprint("template_ddd", url_prefix="/api")
-
-
-@bp.get("/templates")
-@require_auth
-@openapi.tag("Template")
-@openapi.summary("List templates")
-async def list_templates(request):
-    svc = container.get(TemplateApplicationService)
-    result = await svc.list_all()
-    return json(result)
+from contexts.shared.interface.base_controller import BaseController
+from contexts.shared.interface.controller_helpers import pagination_from
+from contexts.shared.interface.rest_controller import rest_controller
+from contexts.template.application.template_app_service import (
+    TemplateApplicationService,
+)
 
 
-@bp.get("/templates/<template_id:str>")
-@require_auth
-@openapi.tag("Template")
-@openapi.summary("Get template detail")
-async def get_template(request, template_id: str):
-    svc = container.get(TemplateApplicationService)
-    try:
-        result = await svc.get_by_id(TemplateId(template_id))
-        return json(result)
-    except DomainError as e:
-        return error_to_response(e)
+@rest_controller("/api")
+class TemplatesController(BaseController):
+    name = "template_ddd"
+
+    def __init__(self, template_svc: TemplateApplicationService):
+        super().__init__()
+        self.svc = template_svc
+
+    def setup(self):
+        self.bp.add_route(self.list_templates, "/templates",                   methods=["GET"])
+        self.bp.add_route(self.get_template,   "/templates/<template_id:str>", methods=["GET"])
+
+    @require_auth
+    @openapi.tag("Template")
+    @openapi.summary("List templates")
+    async def list_templates(self, request):
+        p = pagination_from(request)
+        return self.json(await self.svc.list_all(p.page, p.size))
+
+    @require_auth
+    @openapi.tag("Template")
+    @openapi.summary("Get template detail")
+    async def get_template(self, request, template_id: str):
+        return self.json(await self.svc.get_by_id(TemplateId(template_id)))

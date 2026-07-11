@@ -34,3 +34,15 @@ class UploadLog(Model):
     class Meta:
         table = "upload_logs"
         indexes = (("batch_id",),)
+
+
+class UploadPreview(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField(unique=True)
+    payload = fields.JSONField()
+    summary = fields.JSONField()
+    status = fields.CharField(max_length=20, default="pending")
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "upload_previews"

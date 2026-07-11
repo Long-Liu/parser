@@ -1,6 +1,6 @@
 import contextlib
-import pytest
 
+import pytest
 import tortoise.transactions
 
 from contexts.parsing.application.dto import UploadedFile
@@ -10,8 +10,11 @@ from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.parse_job import ParseJob
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
+from contexts.project.domain.project import Project
+from contexts.project.domain.repositories import ProjectRepository
 from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
+from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
@@ -22,14 +25,12 @@ from contexts.template.domain.template import (
     StopRuleType,
     Template,
 )
-from contexts.project.domain.repositories import ProjectRepository
-from contexts.project.domain.project import Project
-from contexts.shared.domain.exceptions import NotFoundError
 
 
 class FakeRepo(ParseJobRepository):
     def __init__(self) -> None:
         self.jobs: list[ParseJob] = []
+        self.status = None
 
     async def save(self, job: ParseJob) -> None:
         if job.id is None:
@@ -37,7 +38,7 @@ class FakeRepo(ParseJobRepository):
         self.jobs.append(job)
 
     async def find_by_id(self, job_id: JobId) -> ParseJob | None:
-        return None
+        return self.jobs[-1] if self.jobs else None
 
     async def find_by_project(
         self, project_id: ProjectId, limit: int = 20, offset: int = 0
@@ -46,6 +47,9 @@ class FakeRepo(ParseJobRepository):
 
     async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]:
         return []
+
+    async def count(self, project_id=None) -> int:
+        return len(self.jobs)
 
 
 class FakeTemplateCatalog(TemplateCatalog):
@@ -109,6 +113,23 @@ class FakePublisher(EventPublisher):
         self.events.extend(events)
 
 
+class FakePreviewRepo:
+    def __init__(self):
+        self.data = None
+
+    async def save(self, batch_id, payload, summary):
+        self.data = {"payload": payload, "summary": summary}
+
+    async def get(self, batch_id):
+        return self.data
+
+    async def delete(self, batch_id):
+        self.data = None
+
+    async def cleanup_expired(self, max_age_hours=24):
+        return 0
+
+
 class FakeProjectRepo(ProjectRepository):
     async def save(self, project: Project) -> None:
         return None
@@ -119,8 +140,9 @@ class FakeProjectRepo(ProjectRepository):
     async def find_by_code(self, code: str) -> Project | None:
         return None
 
-    async def list_all(self) -> list[Project]:
-        return []
+    async def list_all(self, *, keyword: str = "", status: str = "",
+                       offset: int = 0, limit: int = 20) -> tuple[list[Project], int]:
+        return [], 0
 
 
 async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
@@ -190,3 +212,34 @@ async def test_upload_rejects_unknown_project_before_storing_file():
         )
 
     assert storage.saved is False
+
+
+async def test_upload_preview_does_not_write_until_confirmed(monkeypatch):
+    @contextlib.asynccontextmanager
+    async def fake_transaction(connection_name=None):
+        yield object()
+
+    monkeypatch.setattr(tortoise.transactions, "in_transaction", fake_transaction)
+    repo = FakeRepo()
+    preview_repo = FakePreviewRepo()
+    sink = FakeSink()
+    service = UploadApplicationService(
+        repo=repo, template_repo=FakeTemplateCatalog(), data_sink=sink,
+        event_publisher=FakePublisher(), file_storage=FakeStorage(),
+        workbook_reader=FakeWorkbookReader(), project_repo=FakeProjectRepo(),
+        preview_repo=preview_repo,
+    )
+    preview = await service.preview(
+        UploadedFile(name="cost.xlsx", body=b"xlsx"), ProjectId(1),
+        YearMonth.parse("2026-07"), UserId(1),
+    )
+    assert preview["status"] == "preview"
+    assert preview["sheets"][0]["preview"] == [{"amount": 1}]
+    assert sink.rows == []
+
+    confirmed = await UploadApplicationService.confirm.__wrapped__(
+        service, preview["batch_id"], UserId(1),
+    )
+    assert confirmed["status"] == "success"
+    assert len(sink.rows) == 1
+    assert preview_repo.data is None

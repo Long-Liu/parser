@@ -4,7 +4,7 @@ import logging
 
 from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
 from contexts.shared.domain.event_publisher import EventPublisher
-from tortoise.transactions import atomic
+from contexts.shared.application.transaction import transactional
 from contexts.auth.domain.user import User
 from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.domain.auth_service import AuthenticationService
@@ -46,7 +46,7 @@ class AuthApplicationService:
         return LoginResult(token=token, user_id=user.id.value,
                            username=user.username, real_name=user.real_name)
 
-    @atomic()
+    @transactional
     async def register(self, cmd: RegisterCommand) -> dict:
         if not cmd.username or not cmd.password:
             raise ValidationError("username and password are required")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contexts.shared.domain.exceptions import NotFoundError
-from tortoise.transactions import atomic
+from contexts.shared.application.transaction import transactional
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.shared.domain.pagination import Pagination
@@ -30,7 +30,7 @@ class DataApplicationService:
             raise NotFoundError(f"row {row_id} not found in {template_id}")
         return row.fields
 
-    @atomic()
+    @transactional
     async def delete_by_id(self, template_id: str, row_id: int) -> None:
         row = await self._repo.get_by_id(template_id, row_id)
         if row is None:

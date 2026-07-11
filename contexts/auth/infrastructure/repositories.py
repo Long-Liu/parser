@@ -16,6 +16,7 @@ from contexts.auth.infrastructure.tables import (
 from contexts.project.infrastructure.tables import ProjectUser
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.shared.domain.identifiers import RoleId, UserId
+from contexts.shared.domain.exceptions import ValidationError
 
 
 def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
@@ -95,7 +96,7 @@ class UserRepositoryImpl(UserRepository):
 
     async def list_projects(self, user_id: UserId) -> list[dict]:
         links = await ProjectUser.filter(user_id=user_id.value).values(
-            "project_id", "is_primary"
+            "project_id", "is_primary", "role"
         )
         if not links:
             return []
@@ -105,9 +106,65 @@ class UserRepositoryImpl(UserRepository):
             ).values("id", "code", "name")
         }
         return [
-            {**projects[link["project_id"]], "is_primary": bool(link["is_primary"])}
+            {**projects[link["project_id"]], "is_primary": bool(link["is_primary"]),
+             "role": link["role"]}
             for link in links if link["project_id"] in projects
         ]
+
+    async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict]]:
+        ids = [item.value for item in user_ids]
+        result = {user_id: [] for user_id in ids}
+        if not ids:
+            return result
+        links = list(await ProjectUser.filter(user_id__in=ids).values(
+            "user_id", "project_id", "is_primary", "role"
+        ))
+        project_ids = {link["project_id"] for link in links}
+        projects = {
+            row["id"]: row for row in await OrmProject.filter(id__in=project_ids).values(
+                "id", "code", "name"
+            )
+        }
+        for link in links:
+            project = projects.get(link["project_id"])
+            if project:
+                result[link["user_id"]].append({
+                    **project,
+                    "is_primary": bool(link["is_primary"]),
+                    "role": link["role"],
+                })
+        return result
+
+    async def delete(self, user_id: UserId) -> None:
+        await ProjectUser.filter(user_id=user_id.value).delete()
+        await UserRole.filter(user_id=user_id.value).delete()
+        await OrmUser.filter(id=user_id.value).delete()
+
+    async def set_project_permissions(self, user_id: UserId,
+                                      permissions: list[dict]) -> None:
+        # Deduplicate by project_id — last entry wins. Validate types early.
+        deduped: dict[int, str] = {}
+        try:
+            for item in permissions:
+                deduped[int(item["project_id"])] = item.get("role", "none")
+        except (ValueError, TypeError, KeyError):
+            raise ValidationError("each permission requires a valid numeric project_id") from None
+        existing_ids = set(await OrmProject.filter(
+            id__in=list(deduped.keys())
+        ).values_list("id", flat=True)) if deduped else set()
+        missing = set(deduped.keys()) - existing_ids
+        if missing:
+            raise ValidationError(f"unknown project ids: {sorted(missing)}")
+        await ProjectUser.filter(user_id=user_id.value).delete()
+        for project_id, role in deduped.items():
+            if role == "none":
+                continue
+            await ProjectUser.create(
+                user_id=user_id.value,
+                project_id=project_id,
+                role=role,
+                is_primary=role == "manager",
+            )
 
     async def get_permissions(self, user_id: UserId) -> set[str]:
         role_ids = await UserRole.filter(user_id=user_id.value).values_list(
@@ -135,21 +192,22 @@ class RoleRepositoryImpl(RoleRepository):
         }
         if role.id is None:
             orm = await OrmRole.create(**values)
-            role.id = orm.id
+            role.id = RoleId(orm.id)
         else:
-            existing = await OrmRole.get_or_none(id=role.id)
+            rid = role.id.value
+            existing = await OrmRole.get_or_none(id=rid)
             if existing is None:
-                orm = OrmRole(id=role.id, **values)
+                orm = OrmRole(id=rid, **values)
                 await orm.save(force_create=True)
             else:
                 for key, value in values.items():
                     setattr(existing, key, value)
                 await existing.save(update_fields=list(values.keys()))
-            await RolePermission.filter(role_id=role.id).delete()
+            await RolePermission.filter(role_id=rid).delete()
 
         for perm in role.permissions:
             perm_id = await _ensure_permission(perm.code, perm.name)
-            await _ensure_role_permission(role.id, perm_id)
+            await _ensure_role_permission(role.id.value, perm_id)
 
     async def find_by_id(self, role_id: RoleId) -> Role | None:
         orm = await OrmRole.get_or_none(id=role_id.value)
@@ -157,7 +215,7 @@ class RoleRepositoryImpl(RoleRepository):
             return None
         perms = await _load_permissions(orm.id)
         return Role(
-            role_id=orm.id,
+            role_id=RoleId(orm.id),
             code=orm.code,
             name=orm.name,
             description=orm.description or "",
@@ -170,7 +228,7 @@ class RoleRepositoryImpl(RoleRepository):
             perms = await _load_permissions(orm.id)
             roles.append(
                 Role(
-                    role_id=orm.id,
+                    role_id=RoleId(orm.id),
                     code=orm.code,
                     name=orm.name,
                     description=orm.description or "",

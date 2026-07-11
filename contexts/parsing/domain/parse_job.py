@@ -165,8 +165,37 @@ class ParseJob(AggregateRoot[JobId]):
         batch_no: str = "",
         uploaded_by: UserId | None = None,
     ) -> "ParseJob":
-        """Create a new ParseJob (no events recorded yet — call confirm_submitted after persistence)."""
+        """Create a new ParseJob. The ParseJobSubmitted event is deferred until
+        confirm_submitted() is called after initial persistence."""
         return cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
+
+    @classmethod
+    def reconstitute(
+        cls,
+        job_id: JobId,
+        project_id: ProjectId,
+        year_month: YearMonth,
+        file_info: FileInfo,
+        status: str,
+        sheets: list[SheetResult],
+        batch_no: str = "",
+        uploaded_by: UserId | None = None,
+    ) -> "ParseJob":
+        """Reconstitute a ParseJob from persisted state — for repository use only.
+        Bypasses event recording since this is not a new operation."""
+        job = cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
+        # Map persisted status string to JobStatus, handling terminal states from the PR
+        _status_map = {
+            "submitted": JobStatus.SUBMITTED,
+            "failed": JobStatus.FAILED,
+            "success": JobStatus.DONE,
+            "partial": JobStatus.DONE,
+            "preview": JobStatus.DONE,
+            "cancelled": JobStatus.DONE,
+        }
+        job.status = _status_map.get(status, JobStatus.SUBMITTED)
+        job._sheets = {s.sheet_name: s for s in sheets}
+        return job
 
     def confirm_submitted(self) -> None:
         """Record ParseJobSubmitted after persistence has assigned an id."""
@@ -177,6 +206,28 @@ class ParseJob(AggregateRoot[JobId]):
             project_id=self.project_id.value,
             file_name=self.file_info.filename,
         ))
+
+    def update_file_info(self, file_info: FileInfo) -> None:
+        """Update file metadata after the stored file is saved."""
+        self.file_info = file_info
+
+    def mark_as_previewed(self) -> None:
+        """Indicate this job was a preview upload — status is informational only."""
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before marking previewed")
+        self.status = JobStatus.DONE
+
+    def confirm(self) -> None:
+        """Confirm a preview batch — transition from preview to success."""
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before confirming")
+        self.status = JobStatus.DONE
+
+    def cancel(self) -> None:
+        """Cancel a preview batch."""
+        if self.id is None:
+            raise RuntimeError("ParseJob must be persisted before cancelling")
+        self.status = JobStatus.DONE
 
     # -- sheet operations --
 

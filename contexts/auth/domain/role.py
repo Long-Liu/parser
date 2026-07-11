@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.identifiers import RoleId
 from contexts.auth.domain.events import RoleCreated, RolePermissionsChanged
 
 
@@ -14,12 +15,12 @@ class PermissionRef(ValueObject):
     name: str = ""
 
 
-class Role(AggregateRoot[int]):
+class Role(AggregateRoot[RoleId]):
     """Role aggregate — owns a set of permissions."""
 
     def __init__(
         self,
-        role_id: int | None,
+        role_id: RoleId | None,
         code: str,
         name: str,
         description: str = "",

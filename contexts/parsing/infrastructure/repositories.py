@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from contexts.parsing.domain.parse_job import (
     FileInfo,
     JobStatus,
@@ -7,9 +9,13 @@ from contexts.parsing.domain.parse_job import (
     ParseJob,
     SheetResult,
 )
-from contexts.parsing.domain.repositories import ParseJobRepository
+from contexts.parsing.domain.repositories import (
+    ParseJobRepository,
+    UploadPreviewRepository,
+)
 from contexts.parsing.infrastructure.tables import UploadBatch as OrmBatch
 from contexts.parsing.infrastructure.tables import UploadLog as OrmLog
+from contexts.parsing.infrastructure.tables import UploadPreview
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
 
@@ -57,8 +63,7 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
         )
         sheets.append(sr)
 
-    status = JobStatus.FAILED if orm_batch.status == "failed" else JobStatus.DONE
-    job = ParseJob(
+    return ParseJob.reconstitute(
         job_id=JobId(orm_batch.id),
         project_id=ProjectId(orm_batch.project_id),
         year_month=YearMonth.parse(orm_batch.ym),
@@ -66,12 +71,11 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
             filename=orm_batch.file_name or "",
             size=orm_batch.file_size or 0,
         ),
+        status=orm_batch.status or "submitted",
+        sheets=sheets,
         batch_no=orm_batch.batch_no or "",
         uploaded_by=UserId(orm_batch.uploaded_by) if orm_batch.uploaded_by else None,
     )
-    job.status = status
-    job._sheets = {s.sheet_name: s for s in sheets}  # type: ignore[attr-defined]
-    return job
 
 
 class ParseJobRepositoryImpl(ParseJobRepository):
@@ -123,3 +127,53 @@ class ParseJobRepositoryImpl(ParseJobRepository):
             logs = await OrmLog.filter(batch_id=batch.id)
             jobs.append(_orm_to_job(batch, list(logs)))
         return jobs
+
+    async def count(self, project_id: ProjectId | None = None) -> int:
+        query = OrmBatch.all()
+        if project_id is not None:
+            query = query.filter(project_id=project_id.value)
+        return await query.count()
+
+class UploadPreviewRepositoryImpl(UploadPreviewRepository):
+    async def save(self, batch_id: int, payload: list[dict], summary: list[dict]) -> None:
+        from tortoise.exceptions import IntegrityError
+        existing = await UploadPreview.get_or_none(batch_id=batch_id)
+        if existing:
+            existing.payload = payload
+            existing.summary = summary
+            existing.status = "pending"
+            await existing.save(update_fields=["payload", "summary", "status"])
+        else:
+            try:
+                await UploadPreview.create(batch_id=batch_id, payload=payload, summary=summary)
+            except IntegrityError:
+                # Race: another concurrent request created the record between
+                # our get_or_none and create. Fall back to update.
+                existing = await UploadPreview.get_or_none(batch_id=batch_id)
+                if existing:
+                    existing.payload = payload
+                    existing.summary = summary
+                    existing.status = "pending"
+                    await existing.save(update_fields=["payload", "summary", "status"])
+                else:
+                    raise
+
+    async def get(self, batch_id: int) -> dict | None:
+        row = await UploadPreview.get_or_none(batch_id=batch_id, status="pending")
+        return None if row is None else {"payload": row.payload, "summary": row.summary}
+
+    async def delete(self, batch_id: int) -> None:
+        await UploadPreview.filter(batch_id=batch_id).delete()
+
+    async def cleanup_expired(self, max_age_hours: int = 24) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        expired_ids = list(await UploadPreview.filter(
+            status="pending", created_at__lt=cutoff,
+        ).values_list("batch_id", flat=True))
+        if not expired_ids:
+            return 0
+        await UploadPreview.filter(batch_id__in=expired_ids).delete()
+        await OrmBatch.filter(id__in=expired_ids, status="preview").update(
+            status="cancelled"
+        )
+        return len(expired_ids)

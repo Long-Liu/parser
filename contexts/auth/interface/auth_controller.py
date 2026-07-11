@@ -1,49 +1,67 @@
 from __future__ import annotations
 
-from sanic import Blueprint
-from sanic.response import json
 from sanic_ext import openapi
 
 from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.dto import LoginCommand, RegisterCommand
-from contexts.container import container
-from contexts.shared.domain.exceptions import DomainError
-from contexts.shared.interface.base_controller import error_to_response
-
-bp = Blueprint("auth_ddd", url_prefix="/api")
-
-
-@bp.post("/auth/login")
-@openapi.tag("Auth")
-@openapi.summary("Login")
-async def login(request):
-    data = request.json or {}
-    svc = container.get(AuthApplicationService)
-    try:
-        result = await svc.login(LoginCommand(
-            username=data.get("username", ""),
-            password=data.get("password", "")))
-        return json({"token": result.token, "user": {
-            "id": result.user_id, "username": result.username,
-            "real_name": result.real_name}})
-    except DomainError as e:
-        return error_to_response(e)
+from contexts.auth.application.user_app_service import UserApplicationService
+from contexts.auth.interface.auth_middleware import require_auth
+from contexts.shared.interface.base_controller import BaseController
+from contexts.shared.interface.rest_controller import rest_controller
 
 
-@bp.post("/auth/register")
-@openapi.tag("Auth")
-@openapi.summary("Register")
-async def register(request):
-    data = request.json or {}
-    svc = container.get(AuthApplicationService)
-    try:
-        result = await svc.register(RegisterCommand(
-            username=data.get("username", ""),
-            password=data.get("password", ""),
-            real_name=data.get("real_name", ""),
-            email=data.get("email", ""),
-            phone=data.get("phone", ""),
-            department=data.get("department", "")))
-        return json(result, status=201)
-    except DomainError as e:
-        return error_to_response(e)
+@rest_controller("/api")
+class AuthController(BaseController):
+    name = "auth_ddd"
+
+    def __init__(
+        self, auth_svc: AuthApplicationService, user_svc: UserApplicationService
+    ):
+        super().__init__()
+        self.auth_svc = auth_svc
+        self.user_svc = user_svc
+
+    def setup(self):
+        self.bp.add_route(self.login, "/auth/login", methods=["POST"])
+        self.bp.add_route(self.register, "/auth/register", methods=["POST"])
+        self.bp.add_route(self.current_user, "/auth/me", methods=["GET"])
+
+    @openapi.tag("Auth")
+    @openapi.summary("Login")
+    async def login(self, request):
+        data = request.json or {}
+        result = await self.auth_svc.login(
+            LoginCommand(
+                username=data.get("username", ""), password=data.get("password", "")
+            )
+        )
+        return self.json(
+            {
+                "token": result.token,
+                "user": {
+                    "id": result.user_id,
+                    "username": result.username,
+                    "real_name": result.real_name,
+                },
+            }
+        )
+
+    @openapi.tag("Auth")
+    @openapi.summary("Register")
+    async def register(self, request):
+        data = request.json or {}
+        result = await self.auth_svc.register(
+            RegisterCommand(
+                username=data.get("username", ""),
+                password=data.get("password", ""),
+                real_name=data.get("real_name", ""),
+                email=data.get("email", ""),
+                phone=data.get("phone", ""),
+                department=data.get("department", ""),
+            )
+        )
+        return self.json(result, status=201)
+
+    @require_auth
+    async def current_user(self, request):
+        return self.json(await self.user_svc.get(request.ctx.user_id))

@@ -42,6 +42,7 @@ async def test_personnel_list_contains_table_columns():
             "username": "alice",
             "real_name": "Alice",
             "email": "alice@example.com",
+            "phone": "",
             "department": "项目部",
             "system_roles": [{"id": 2, "code": "manager", "name": "项目经理"}],
             "projects": [{"id": 3, "code": "P001", "name": "一号项目", "is_primary": True}],

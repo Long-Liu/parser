@@ -58,3 +58,29 @@ class RolePermission(Model):
     class Meta:
         table = "role_permissions"
         unique_together = (("role_id", "permission_id"),)
+
+
+class Notification(Model):
+    id = fields.IntField(primary_key=True)
+    user_id = fields.IntField(null=True)
+    notification_type = fields.CharField(max_length=50, default="system")
+    title = fields.CharField(max_length=200)
+    message = fields.TextField()
+    project_id = fields.IntField(null=True)
+    is_read = fields.BooleanField(default=False)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "notifications"
+        indexes = (("user_id", "is_read"),)
+
+
+class NotificationRead(Model):
+    id = fields.IntField(primary_key=True)
+    notification_id = fields.IntField()
+    user_id = fields.IntField()
+    read_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "notification_reads"
+        unique_together = (("notification_id", "user_id"),)

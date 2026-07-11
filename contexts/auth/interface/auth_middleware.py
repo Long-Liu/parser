@@ -5,7 +5,9 @@ from functools import wraps
 from sanic.response import json
 
 from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
-from contexts.shared.domain.exceptions import AuthenticationError
+from contexts.shared.domain.exceptions import AuthenticationError, AuthorizationError, DomainError
+from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.shared.domain.identifiers import UserId
 from contexts.container import container
 
 
@@ -39,6 +41,50 @@ def require_permission(perm_code: str):
                 return json(
                     {"error": f"missing permission: {perm_code}"}, status=403
                 )
+            return await f(request, *args, **kwargs)
+        return decorated
+    return decorator
+
+
+def require_project_access(*, roles: set[str] | None = None):
+    """Require membership of the project identified by route, query or form."""
+    def decorator(f):
+        @wraps(f)
+        async def decorated(request, *args, **kwargs):
+            permissions = set(getattr(request.ctx, "permissions", set()) or set())
+            if "admin:roles" in permissions or "user:manage" in permissions:
+                return await f(request, *args, **kwargs)
+            raw = kwargs.get("project_id")
+            if raw is None:
+                raw = request.args.get("project_id") or request.form.get("project_id")
+            try:
+                await container.get(ProjectAccessPolicy).require(
+                    UserId(int(request.ctx.user_id)), int(raw), roles,
+                )
+            except (TypeError, ValueError):
+                return json({"error": "valid project_id is required"}, status=400)
+            except AuthorizationError as exc:
+                return json({"error": str(exc)}, status=403)
+            return await f(request, *args, **kwargs)
+        return decorated
+    return decorator
+
+
+def require_batch_access(*, roles: set[str] | None = None):
+    def decorator(f):
+        @wraps(f)
+        async def decorated(request, *args, **kwargs):
+            permissions = set(getattr(request.ctx, "permissions", set()) or set())
+            if "admin:roles" in permissions or "user:manage" in permissions:
+                return await f(request, *args, **kwargs)
+            try:
+                await container.get(ProjectAccessPolicy).require_batch(
+                    UserId(int(request.ctx.user_id)), int(kwargs["batch_id"]), roles,
+                )
+            except AuthorizationError as exc:
+                return json({"error": str(exc)}, status=403)
+            except DomainError as exc:
+                return json({"error": str(exc)}, status=404)
             return await f(request, *args, **kwargs)
         return decorated
     return decorator

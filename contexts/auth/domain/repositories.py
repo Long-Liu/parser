@@ -25,6 +25,19 @@ class UserRepository(ABC):
     @abstractmethod
     async def list_projects(self, user_id: UserId) -> list[dict]: ...
 
+    async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict]]:
+        result: dict[int, list[dict]] = {}
+        for user_id in user_ids:
+            result[user_id.value] = await self.list_projects(user_id)
+        return result
+
+    async def delete(self, user_id: UserId) -> None:
+        raise NotImplementedError
+
+    async def set_project_permissions(self, user_id: UserId,
+                                      permissions: list[dict]) -> None:
+        raise NotImplementedError
+
     @abstractmethod
     async def get_permissions(self, user_id: UserId) -> set[str]: ...
 

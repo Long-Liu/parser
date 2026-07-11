@@ -3,12 +3,19 @@ from __future__ import annotations
 import typing
 from typing import Generic, TypeVar, get_origin
 
+from contexts.analytics.application.analytics_service import AnalyticsApplicationService
+from contexts.analytics.domain.ports import AIAnalysisPort
+from contexts.analytics.infrastructure.ai_provider import HttpAIAnalysisProvider
+from contexts.analytics.infrastructure.analytics_repository import TortoiseAnalyticsRepository
+from contexts.analytics.domain.repositories import AnalyticsRepository
 from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
 from contexts.auth.application.role_app_service import RoleApplicationService
+from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.application.user_app_service import UserApplicationService
+from contexts.auth.application.project_access import ProjectAccessPolicy, ProjectAccessRepository
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
@@ -16,17 +23,28 @@ from contexts.auth.infrastructure.repositories import (
     RoleRepositoryImpl,
     UserRepositoryImpl,
 )
+from contexts.auth.infrastructure.project_access_repository import TortoiseProjectAccessRepository
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.parsing.infrastructure.file_storage import LocalUploadFileStorage
-from contexts.parsing.infrastructure.repositories import ParseJobRepositoryImpl
+from contexts.parsing.infrastructure.repositories import (
+    ParseJobRepositoryImpl,
+    UploadPreviewRepositoryImpl,
+)
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
 from contexts.project.application.project_app_service import ProjectApplicationService
-from contexts.project.infrastructure.repositories import ProjectRepositoryImpl
+from contexts.project.infrastructure.repositories import (
+    ProjectDataCleanupImpl,
+    ProjectNotificationAdapter,
+    ProjectRepositoryImpl,
+    TortoiseUserDirectory,
+)
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.infrastructure.domain_event_bus import domain_event_bus
+from contexts.shared.application.transaction import configure_transaction_manager
+from contexts.shared.infrastructure.database.transaction import TortoiseTransactionManager
 from contexts.template.application.template_app_service import (
     TemplateApplicationService,
 )
@@ -106,6 +124,7 @@ class Container:
         """Called once at startup — registers JWT-dependent services and wires them."""
         jwt = JwtService(secret_key)
         self.register_instance(jwt)
+        self.bind(TokenService, jwt)
         for cls in _container_auth:
             self.register_factory(cls)
         self.wire()
@@ -119,6 +138,22 @@ class Container:
                 f"{cls.__name__} not registered. "
                 f"Ensure container.wire() has been called."
             ) from None
+
+    def resolve(self, cls: type[T]) -> T:
+        """Auto-wire and return an instance of *cls*.
+
+        Unlike ``get()``, this constructs *cls* on the spot, resolving its
+        constructor arguments from the registry.  The instance is cached so
+        repeated calls return the same singleton.
+        """
+        existing = self._registry.get(cls)
+        if existing is not None:
+            return existing  # type: ignore[return-value]
+        if not self._try_construct(cls):
+            raise KeyError(
+                f"Cannot resolve {cls.__name__} — missing dependencies"
+            )
+        return self._registry[cls]  # type: ignore[return-value]
 
     # ── internal ──────────────────────────────────────────────────────────
 
@@ -180,6 +215,7 @@ class _Missing(Exception):
 # ── module-level singleton ───────────────────────────────────────────────
 
 container = Container()
+configure_transaction_manager(TortoiseTransactionManager())
 
 
 def _reg(instance: object) -> None:
@@ -194,16 +230,24 @@ def _bind(abstract: type, concrete: object) -> None:
 
 _container_pw = BCryptPasswordHasher()
 _reg(_container_pw)
+_bind(PasswordHasher, _container_pw)
 _reg(AuthenticationService(_container_pw))
 _reg(_user_repo := UserRepositoryImpl())
 _reg(_role_repo := RoleRepositoryImpl())
+_reg(_project_access_repo := TortoiseProjectAccessRepository())
 _reg(_project_repo := ProjectRepositoryImpl())
+_reg(_project_cleanup := ProjectDataCleanupImpl())
+_reg(_user_directory := TortoiseUserDirectory())
+_reg(_project_notifications := ProjectNotificationAdapter())
 _reg(_template_catalog := YamlTemplateCatalog())
 _reg(_data_repo := DataQueryRepositoryImpl())
 _reg(_parse_job_repo := ParseJobRepositoryImpl())
+_reg(_preview_repo := UploadPreviewRepositoryImpl())
 _reg(_data_sink := TortoiseParsedDataSink())
 _reg(_file_storage := LocalUploadFileStorage())
 _reg(_workbook_reader := OpenPyxlWorkbookReader())
+_reg(_ai_provider := HttpAIAnalysisProvider())
+_reg(_analytics_repo := TortoiseAnalyticsRepository(_ai_provider))
 
 # ── interface bindings (abstract → concrete) ─────────────────────────────
 
@@ -214,21 +258,36 @@ from contexts.auth.domain.repositories import (  # noqa: E402
 from contexts.data.domain.repositories import DataQueryRepository  # noqa: E402
 from contexts.parsing.application.file_storage import FileStorage  # noqa: E402
 from contexts.parsing.domain.data_sink import ParsedDataSink  # noqa: E402
-from contexts.parsing.domain.repositories import ParseJobRepository  # noqa: E402
+from contexts.parsing.domain.repositories import (  # noqa: E402
+    ParseJobRepository,
+    UploadPreviewRepository,
+)
 from contexts.parsing.domain.workbook import WorkbookReader  # noqa: E402
-from contexts.project.domain.repositories import ProjectRepository  # noqa: E402
+from contexts.project.domain.repositories import (  # noqa: E402
+    ProjectDataCleanup,
+    ProjectNotificationPort,
+    ProjectRepository,
+    UserDirectory,
+)
 from contexts.template.domain.repositories import TemplateCatalog  # noqa: E402
 
 _bind(UserRepository, _user_repo)
 _bind(RoleRepository, _role_repo)
+_bind(ProjectAccessRepository, _project_access_repo)
 _bind(ProjectRepository, _project_repo)
+_bind(ProjectDataCleanup, _project_cleanup)
+_bind(UserDirectory, _user_directory)
+_bind(ProjectNotificationPort, _project_notifications)
 _bind(TemplateCatalog, _template_catalog)
 _bind(DataQueryRepository, _data_repo)
 _bind(ParseJobRepository, _parse_job_repo)
+_bind(UploadPreviewRepository, _preview_repo)
 _bind(ParsedDataSink, _data_sink)
 _bind(FileStorage, _file_storage)
 _bind(WorkbookReader, _workbook_reader)
 _bind(EventPublisher, domain_event_bus)
+_bind(AIAnalysisPort, _ai_provider)
+_bind(AnalyticsRepository, _analytics_repo)
 
 # ── application services (auto-wired via inspect) ────────────────────────
 
@@ -238,6 +297,8 @@ container.register_factory(DataApplicationService)
 container.register_factory(UploadApplicationService)
 container.register_factory(RoleApplicationService)
 container.register_factory(UserApplicationService)
+container.register_factory(ProjectAccessPolicy)
+container.register_factory(AnalyticsApplicationService)
 
 # Jwt-dependent — deferred to configure()
 _container_auth: list[type] = [AuthApplicationService, AuthorizationApplicationService]

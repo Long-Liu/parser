@@ -18,6 +18,28 @@ class UserStatusChanged(DomainEvent):
 
 
 @dataclass(frozen=True)
+class UserDeleted(DomainEvent):
+    username: str = ""
+
+
+@dataclass(frozen=True)
+class UserProfileUpdated(DomainEvent):
+    username: str = ""
+    changed_fields: list[str] = ()
+
+
+@dataclass(frozen=True)
+class UserPasswordReset(DomainEvent):
+    username: str = ""
+
+
+@dataclass(frozen=True)
+class UserRolesAssigned(DomainEvent):
+    username: str = ""
+    role_count: int = 0
+
+
+@dataclass(frozen=True)
 class RoleCreated(DomainEvent):
     code: str = ""
     name: str = ""
