@@ -3,19 +3,23 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from tortoise.expressions import Q
-
 from contexts.alert.domain.alert import Alert, AlertLevel, AlertRule, AlertStatus
-from contexts.alert.domain.repositories import AlertMetricProvider, AlertRepository, RowPage
+from contexts.alert.domain.repositories import AlertMetricProvider, AlertRepository
 from contexts.alert.infrastructure.tables import (
-    AlertEventModel, AlertModel, AlertOutboxModel, AlertRuleModel, AlertRuleStateModel,
+    AlertEventModel,
+    AlertModel,
+    AlertOutboxModel,
+    AlertRuleModel,
+    AlertRuleStateModel,
 )
 from contexts.analytics.infrastructure.analytics_repository import _or_default
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
-from contexts.shared.infrastructure.database.tables import DataDynamicIndicator, DataGrossProfit
-
+from contexts.shared.infrastructure.database.tables import (
+    DataDynamicIndicator,
+    DataGrossProfit,
+)
 
 DEFAULT_RULES = (
     ("COST_DEVIATION_HIGH", "成本偏差过高", "cost_deviation_rate", "gt", "10", "warning"),
@@ -83,7 +87,7 @@ class TortoiseAlertRepository(AlertRepository):
             auto_resolve=row.auto_resolve,
         ) for row in rows]
 
-    async def rule_records(self, pagination: Pagination) -> RowPage:
+    async def rule_records(self, pagination: Pagination) -> tuple[list, int]:
         await self.rules()  # installs defaults on first use
         query = AlertRuleModel.all()
         total = await query.count()
@@ -172,8 +176,8 @@ class TortoiseAlertRepository(AlertRepository):
             project_id=alert.project_id, payload=_payload(row),
         )
 
-    async def list(self, *, project_ids: list[int] | None, status: str,
-                   level: str, pagination: Pagination) -> RowPage:
+    async def find(self, *, project_ids: list[int] | None, status: str,
+                   level: str, pagination: Pagination) -> tuple[list, int]:
         query = AlertModel.all()
         if project_ids is not None:
             query = query.filter(project_id__in=project_ids)
@@ -187,7 +191,7 @@ class TortoiseAlertRepository(AlertRepository):
         ).limit(pagination.size)
         return [_payload(row) for row in rows], total
 
-    async def events(self, alert_id: int, pagination: Pagination) -> RowPage:
+    async def events(self, alert_id: int, pagination: Pagination) -> tuple[list, int]:
         query = AlertEventModel.filter(alert_id=alert_id)
         total = await query.count()
         rows = await query.order_by("-id").offset(pagination.offset).limit(pagination.size)

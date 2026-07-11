@@ -63,7 +63,7 @@ class AlertController(BaseController):
     @require_permission("data:view")
     async def list_alerts(self, request):
         p = pagination_from(request)
-        return self.json(await self.alert_svc.list(
+        return self.json(await self.alert_svc.find(
             project_ids=await self._scope(request),
             status=request.args.get("status", ""),
             level=request.args.get("level", ""), page=p.page, size=p.size,

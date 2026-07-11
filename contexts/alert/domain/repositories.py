@@ -2,19 +2,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from decimal import Decimal
-from typing import TypeAlias
 
 from contexts.alert.domain.alert import Alert, AlertRule
 from contexts.shared.domain.pagination import Pagination
-
-RowPage: TypeAlias = tuple[list[dict[str, object]], int]
 
 
 class AlertRepository(ABC):
     @abstractmethod
     async def rules(self) -> list[AlertRule]: ...
     @abstractmethod
-    async def rule_records(self, pagination: Pagination) -> RowPage: ...
+    async def rule_records(self, pagination: Pagination) -> tuple[list[dict], int]: ...
     @abstractmethod
     async def update_rule(self, rule_id: int, values: dict) -> dict | None: ...
     @abstractmethod
@@ -38,10 +35,10 @@ class AlertRepository(ABC):
     async def add_outbox(self, alert: Alert, event_type: str) -> None:
         pass
     @abstractmethod
-    async def list(self, *, project_ids: list[int] | None, status: str,
-                   level: str, pagination: Pagination) -> RowPage: ...
+    async def find(self, *, project_ids: list[int] | None, status: str,
+                   level: str, pagination: Pagination) -> tuple[list[dict], int]: ...
     @abstractmethod
-    async def events(self, alert_id: int, pagination: Pagination) -> RowPage: ...
+    async def events(self, alert_id: int, pagination: Pagination) -> tuple[list[dict], int]: ...
     @abstractmethod
     async def summary(self, project_ids: list[int] | None) -> dict: ...
     @abstractmethod

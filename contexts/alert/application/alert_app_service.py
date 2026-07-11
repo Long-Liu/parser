@@ -69,12 +69,12 @@ class AlertApplicationService:
         return {"project_id": project_id, "ym": period,
                 "triggered": triggered, "resolved": resolved}
 
-    async def list(self, *, project_ids: list[int] | None, status: str = "",
+    async def find(self, *, project_ids: list[int] | None, status: str = "",
                    level: str = "", page: int = 1, size: int = 20) -> dict:
         if status and status not in {item.value for item in AlertStatus}:
             raise ValidationError("invalid alert status")
         pagination = Pagination(page, size, max_size=100)
-        rows, total = await self._repository.list(
+        rows, total = await self._repository.find(
             project_ids=project_ids, status=status, level=level,
             pagination=pagination,
         )
