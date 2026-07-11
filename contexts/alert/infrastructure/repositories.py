@@ -163,6 +163,8 @@ class TortoiseAlertRepository(AlertRepository):
             await AlertModel.filter(id=alert.id).update(**updates)
 
     async def add_outbox(self, alert: Alert, event_type: str) -> None:
+        """Queue an outbox entry for the given alert.  Uses in-memory alert data
+        plus the just-persisted auto_now fields from AlertModel."""
         row = await AlertModel.get(id=alert.id)
         await AlertOutboxModel.create(
             event_type=f"alert.{event_type}", aggregate_id=alert.id,
@@ -236,8 +238,8 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
         if batch:
             gross = await DataGrossProfit.filter(batch_id=batch.id).first()
             if gross:
-                revenue = Decimal(gross.actual_revenue or gross.contract_price or 0)
-                profit = Decimal(gross.actual_profit or gross.gross_profit_net or 0)
+                revenue = Decimal(_or_default(gross.actual_revenue, gross.contract_price) or 0)
+                profit = Decimal(_or_default(gross.actual_profit, gross.gross_profit_net) or 0)
                 metrics["gross_profit_rate"] = (
                     profit / revenue * 100 if revenue else Decimal("0")
                 )

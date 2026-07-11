@@ -51,15 +51,13 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
         if self._lock.locked():
             return
         async with self._lock:
+            from tortoise.expressions import Q
             now = datetime.now(timezone.utc)
-            rows = await AlertOutboxModel.filter(status="pending").filter(
-                next_retry_at__lte=now
+            rows = await AlertOutboxModel.filter(
+                Q(status="pending"),
+                Q(next_retry_at__lte=now) | Q(next_retry_at=None),
             ).order_by("id").limit(100)
-            # NULL retry timestamps are not matched by LTE, include fresh rows.
-            fresh = await AlertOutboxModel.filter(
-                status="pending", next_retry_at=None
-            ).order_by("id").limit(max(0, 100 - len(rows)))
-            for row in [*rows, *fresh]:
+            for row in rows:
                 try:
                     await self._hub.publish(row.project_id, {
                         "event": row.event_type, "event_id": row.id,

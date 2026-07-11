@@ -25,11 +25,15 @@ class AlertRepository(ABC):
     async def detail(self, alert_id: int) -> dict | None: ...
     @abstractmethod
     async def save(self, alert: Alert) -> None: ...
-    @abstractmethod
+
+    # Infrastructure convenience — not abstract. Default no-ops so test fakes
+    # don't need to implement event/outbox persistence.
     async def record_event(self, alert: Alert, event_type: str,
-                           actor_id: int | None = None, note: str = "") -> None: ...
-    @abstractmethod
-    async def add_outbox(self, alert: Alert, event_type: str) -> None: ...
+                           actor_id: int | None = None, note: str = "") -> None:
+        pass
+
+    async def add_outbox(self, alert: Alert, event_type: str) -> None:
+        pass
     @abstractmethod
     async def list(self, *, project_ids: list[int] | None, status: str,
                    level: str, pagination: Pagination) -> tuple[list[dict], int]: ...

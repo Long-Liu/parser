@@ -17,6 +17,7 @@ from contexts.shared.interface.rest_controller import rest_controller
 @rest_controller("/api")
 class AlertController(BaseController):
     name = "alerts"
+    _ALL_PROJECTS = -1  # sentinel for admins who can see all projects via websocket
 
     def __init__(self, alert_svc: AlertApplicationService,
                  access_policy: ProjectAccessPolicy,
@@ -143,7 +144,7 @@ class AlertController(BaseController):
             await ws.close(code=4001, reason="unauthorized")
             return
         if "admin:roles" in context.permissions or "user:manage" in context.permissions:
-            projects = [-1]
+            projects = [self._ALL_PROJECTS]
         else:
             projects = await self.access.accessible_project_ids(UserId(context.user_id))
         await self.hub.connect(context.user_id, ws, projects)

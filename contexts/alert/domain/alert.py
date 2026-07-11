@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import StrEnum
 
+from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.exceptions import ValidationError
 
 
@@ -46,7 +47,7 @@ class AlertRule:
         return operations[self.operator]
 
 
-class Alert:
+class Alert(AggregateRoot[int]):
     def __init__(self, *, alert_id: int | None, project_id: int, rule_code: str,
                  alert_type: str, level: AlertLevel, title: str, message: str,
                  metric_value: Decimal, threshold_value: Decimal,
@@ -55,6 +56,7 @@ class Alert:
                  trigger_count: int = 1,
                  first_triggered_at: datetime | None = None,
                  last_triggered_at: datetime | None = None) -> None:
+        super().__init__()
         self.id = alert_id
         self.project_id = project_id
         self.rule_code = rule_code
@@ -77,6 +79,8 @@ class Alert:
         return self.status in {AlertStatus.ACTIVE, AlertStatus.ACKNOWLEDGED}
 
     def retrigger(self, value: Decimal, level: AlertLevel, message: str) -> str:
+        """Update alert with new metric value. Returns the event type string
+        ('triggered', 'escalated', or 'reopened') for use in event recording."""
         previous = self.level
         self.metric_value = value
         self.level = level
