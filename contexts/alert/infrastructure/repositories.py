@@ -215,14 +215,15 @@ class TortoiseAlertRepository(AlertRepository):
         }
 
     async def delete_project(self, project_id: int) -> None:
-        alert_ids = list(await AlertModel.filter(project_id=project_id).values_list(
+        pid = project_id
+        alert_ids = list(await AlertModel.filter(project_id=pid).values_list(
             "id", flat=True
         ))
         if alert_ids:
             await AlertEventModel.filter(alert_id__in=alert_ids).delete()
-        await AlertOutboxModel.filter(project_id=project_id).delete()
-        await AlertRuleStateModel.filter(project_id=project_id).delete()
-        await AlertModel.filter(project_id=project_id).delete()
+        await AlertOutboxModel.filter(project_id=pid).delete()
+        await AlertRuleStateModel.filter(project_id=pid).delete()
+        await AlertModel.filter(project_id=pid).delete()
 
     async def missed_outbox(self, project_ids: list[int],
                             since: str | None) -> list[dict]:
