@@ -10,6 +10,7 @@ from contexts.alert.domain.repositories import AlertMetricProvider, AlertReposit
 from contexts.alert.infrastructure.tables import (
     AlertEventModel, AlertModel, AlertOutboxModel, AlertRuleModel, AlertRuleStateModel,
 )
+from contexts.analytics.infrastructure.analytics_repository import _or_default
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
@@ -82,7 +83,7 @@ class TortoiseAlertRepository(AlertRepository):
             auto_resolve=row.auto_resolve,
         ) for row in rows]
 
-    async def rule_records(self, pagination: Pagination) -> tuple[list[dict], int]:
+    async def rule_records(self, pagination: Pagination) -> tuple[list[dict[str, object]], int]:
         await self.rules()  # installs defaults on first use
         query = AlertRuleModel.all()
         total = await query.count()
@@ -172,7 +173,7 @@ class TortoiseAlertRepository(AlertRepository):
         )
 
     async def list(self, *, project_ids: list[int] | None, status: str,
-                   level: str, pagination: Pagination) -> tuple[list[dict], int]:
+                   level: str, pagination: Pagination) -> tuple[list[dict[str, object]], int]:
         query = AlertModel.all()
         if project_ids is not None:
             query = query.filter(project_id__in=project_ids)
@@ -186,7 +187,7 @@ class TortoiseAlertRepository(AlertRepository):
         ).limit(pagination.size)
         return [_payload(row) for row in rows], total
 
-    async def events(self, alert_id: int, pagination: Pagination) -> tuple[list[dict], int]:
+    async def events(self, alert_id: int, pagination: Pagination) -> tuple[list[dict[str, object]], int]:
         query = AlertEventModel.filter(alert_id=alert_id)
         total = await query.count()
         rows = await query.order_by("-id").offset(pagination.offset).limit(pagination.size)
