@@ -5,6 +5,8 @@ import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+from tortoise.transactions import atomic
+
 from contexts.alert.domain.repositories import AlertPushDispatcher
 from contexts.alert.infrastructure.tables import AlertOutboxModel
 
@@ -47,6 +49,7 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
         self._hub = hub
         self._lock = asyncio.Lock()
 
+    @atomic()
     async def dispatch_pending(self) -> None:
         if self._lock.locked():
             return

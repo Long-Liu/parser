@@ -73,13 +73,21 @@ register_all(app, container)
 
 
 async def _alert_outbox_worker(app):
-    # FIXME: Tortoise ContextVar doesn't propagate to asyncio background tasks
-    # in this version.  Needs context bridge or connection-pool-level dispatch.
-    # For now the outbox entries are persisted transactionally and can be
-    # dispatched on the next request-triggered cycle.
-    import warnings
-    warnings.warn("alert outbox worker disabled — Tortoise context not available in background task")
-    return
+    from tortoise.context import _current_context, _global_context
+
+    # asyncio tasks may not inherit ContextVar — restore from global fallback.
+    ctx = _global_context
+    if ctx is not None:
+        _current_context.set(ctx)
+
+    while True:
+        try:
+            await container.get(AlertPushDispatcher).dispatch_pending()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _logger.exception("alert outbox dispatch failed")
+        await asyncio.sleep(5)
 
 
 @app.after_server_start
