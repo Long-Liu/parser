@@ -311,7 +311,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
         rates = [max(0, min(100, item["current"]["profit_rate"] * 5))
                  for item in profits["projects"]]
-        def __avg(values):
+        def _avg(values):
             return round(sum(values) / len(values), 2) if values else 0
         warning_ratio = sum(p.status == "warning" for p in projects) / len(projects)
         progress = _avg([_number(p.progress) for p in projects])
