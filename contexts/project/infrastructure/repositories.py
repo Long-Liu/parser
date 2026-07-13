@@ -8,7 +8,6 @@ from contexts.project.domain.repositories import (
 )
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.project.infrastructure.tables import ProjectUser, ProjectMilestone
-from contexts.shared.infrastructure.database.queryset_helpers import fetch_values_list
 from contexts.auth.infrastructure.tables import User as OrmUser, Notification
 from contexts.parsing.infrastructure.tables import UploadBatch, UploadLog, UploadPreview
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
@@ -77,8 +76,8 @@ class ProjectRepositoryImpl(ProjectRepository):
                        offset: int = 0, limit: int = 20) -> tuple[list[Project], int]:
         query = OrmProject.all()
         if user_id is not None:
-            project_ids = await fetch_values_list(ProjectUser.filter(user_id=user_id.value),
-                "project_id", flat=True,
+            project_ids = await ProjectUser.filter(user_id=user_id.value).values_list(
+                "project_id", flat=True
             )
             query = query.filter(id__in=list(project_ids))
         if keyword:
@@ -119,9 +118,9 @@ class ProjectRepositoryImpl(ProjectRepository):
 
 class ProjectDataCleanupImpl(ProjectDataCleanup):
     async def delete_for_project(self, project_id: ProjectId) -> None:
-        batch_ids = list(await fetch_values_list(UploadBatch.filter(
-            project_id=project_id.value,
-        ), "id", flat=True))
+        batch_ids = list(await UploadBatch.filter(
+            project_id=project_id.value
+        ).values_list("id", flat=True))
         if not batch_ids:
             return
         for model in TEMPLATE_DATA_MODELS.values():

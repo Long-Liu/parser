@@ -13,7 +13,6 @@ from contexts.project.infrastructure.tables import Project
 from contexts.project.infrastructure.tables import ProjectMilestone
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
-from contexts.shared.infrastructure.database.queryset_helpers import fetch_values_list
 from contexts.shared.infrastructure.database.tables import (
     DataDynamicIndicator,
     DataGrossProfit,
@@ -54,8 +53,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         normal = await query.filter(status="normal").count()
         warning = await query.filter(status="warning").count()
         prices = sum(
-            (value or Decimal("0") for value in await fetch_values_list(query,
-                "contract_price", flat=True,
+            (value or Decimal("0") for value in await query.values_list(
+                "contract_price", flat=True
             )),
             Decimal("0"),
         )
@@ -68,9 +67,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
 
     async def monthly_data(self, project_id: int, pagination: Pagination) -> dict:
         await self._project(project_id)
-        months = list(await fetch_values_list(UploadBatch.filter(
+        months = list(await UploadBatch.filter(
             project_id=project_id, status="success",
-        ).order_by("-ym").distinct(), "ym", flat=True))
+        ).order_by("-ym").distinct().values_list("ym", flat=True))
         total = len(months)
         selected = months[pagination.offset:pagination.offset + pagination.size]
         items = []
@@ -326,9 +325,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         base = UploadBatch.filter(status="success")
         if project_ids is not None:
             base = base.filter(project_id__in=project_ids)
-        months = list(await fetch_values_list(base.order_by(
+        months = list(await base.order_by(
             "-ym"
-        ).distinct(), "ym", flat=True))[:12]
+        ).distinct().values_list("ym", flat=True))[:12]
         result = []
         for ym in reversed(months):
             batches = await base.filter(ym=ym)
@@ -375,10 +374,10 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         query = Notification.filter(Q(user_id=user_id) | Q(user_id=None))
         if project_ids is not None:
             query = query.filter(Q(project_id__in=project_ids) | Q(project_id=None))
-        all_ids = list(await fetch_values_list(query, "id", flat=True))
-        read_ids = set(await fetch_values_list(NotificationRead.filter(
+        all_ids = list(await query.values_list("id", flat=True))
+        read_ids = set(await NotificationRead.filter(
             user_id=user_id, notification_id__in=all_ids,
-        ), "notification_id", flat=True)) if all_ids else set()
+        ).values_list("notification_id", flat=True)) if all_ids else set()
         if unread_only:
             query = query.exclude(id__in=list(read_ids))
         total = await query.count()

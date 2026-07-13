@@ -1,14 +1,13 @@
 from contexts.auth.application.project_access import ProjectAccessRepository
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import ProjectUser
-from contexts.shared.infrastructure.database.queryset_helpers import fetch_values_list
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
 
 class TortoiseProjectAccessRepository(ProjectAccessRepository):
     async def projects_for_user(self, user_id: int) -> list[int]:
-        return list(await fetch_values_list(ProjectUser.filter(user_id=user_id),
-            "project_id", flat=True,
+        return list(await ProjectUser.filter(user_id=user_id).values_list(
+            "project_id", flat=True
         ))
 
     async def membership_role(self, user_id: int, project_id: int) -> str | None:

@@ -18,7 +18,6 @@ from contexts.parsing.infrastructure.tables import UploadLog as OrmLog
 from contexts.parsing.infrastructure.tables import UploadPreview
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
 from contexts.shared.domain.year_month import YearMonth
-from contexts.shared.infrastructure.database.queryset_helpers import fetch_values_list
 
 
 def _job_to_batch_values(job: ParseJob) -> dict:
@@ -168,9 +167,9 @@ class UploadPreviewRepositoryImpl(UploadPreviewRepository):
 
     async def cleanup_expired(self, max_age_hours: int = 24) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-        expired_ids = list(await fetch_values_list(UploadPreview.filter(
+        expired_ids = list(await UploadPreview.filter(
             status="pending", created_at__lt=cutoff,
-        ), "batch_id", flat=True))
+        ).values_list("batch_id", flat=True))
         if not expired_ids:
             return 0
         await UploadPreview.filter(batch_id__in=expired_ids).delete()

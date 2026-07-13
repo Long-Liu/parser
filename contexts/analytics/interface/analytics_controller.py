@@ -282,7 +282,8 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def dashboard_alerts(self, request):
-        result = await self.alert_svc.find(
+        p = pagination_from(request)
+        result = await self.alert_svc.list(
             project_ids=await self._project_scope(request),
             status=request.args.get("status", "active"),
             level=request.args.get("level", ""), pagination=pagination_from(request),
