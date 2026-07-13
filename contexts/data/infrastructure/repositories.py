@@ -3,6 +3,7 @@ from __future__ import annotations
 from contexts.data.domain.data_query import DataRow, FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.shared.domain.pagination import Pagination
+from contexts.shared.infrastructure.database.queryset_helpers import fetch_values
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 
@@ -34,14 +35,14 @@ class DataQueryRepositoryImpl(DataQueryRepository):
                 raise ValidationError(f"unsupported filter operator: {f.operator}")
 
         total = await qs.count()
-        rows = await qs.limit(pagination.size).offset(pagination.offset).values()
+        rows = await fetch_values(qs.limit(pagination.size).offset(pagination.offset))
         return [DataRow(fields=dict(row)) for row in rows], total
 
     async def get_by_id(self, template_id: str, row_id: int) -> DataRow | None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
             raise NotFoundError(f"template {template_id} not found")
-        row = await model.filter(id=row_id).values()
+        row = await fetch_values(model.filter(id=row_id))
         return DataRow(fields=dict(row[0])) if row else None
 
     async def delete_by_id(self, template_id: str, row_id: int) -> None:

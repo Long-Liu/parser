@@ -17,6 +17,10 @@ from contexts.project.infrastructure.tables import ProjectUser
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.shared.domain.identifiers import RoleId, UserId
 from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.infrastructure.database.queryset_helpers import (
+    fetch_values,
+    fetch_values_list,
+)
 
 
 def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
@@ -34,11 +38,11 @@ def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
 
 
 async def _load_roles(user_id: int) -> list[dict]:
-    role_ids = await UserRole.filter(user_id=user_id).values_list("role_id", flat=True)
+    role_ids = await fetch_values_list(UserRole.filter(user_id=user_id), "role_id", flat=True)
     if not role_ids:
         return []
     return list(
-        await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name")
+        await fetch_values(OrmRole.filter(id__in=list(role_ids)), "id", "code", "name")
     )
 
 
@@ -95,15 +99,15 @@ class UserRepositoryImpl(UserRepository):
         return users, total
 
     async def list_projects(self, user_id: UserId) -> list[dict]:
-        links = await ProjectUser.filter(user_id=user_id.value).values(
-            "project_id", "is_primary", "role"
+        links = await fetch_values(ProjectUser.filter(user_id=user_id.value),
+            "project_id", "is_primary", "role",
         )
         if not links:
             return []
         projects = {
-            p.id: p for p in await OrmProject.filter(
-                id__in=[link["project_id"] for link in links]
-            ).values("id", "code", "name")
+            p["id"]: p for p in await fetch_values(OrmProject.filter(
+                id__in=[link["project_id"] for link in links],
+            ), "id", "code", "name")
         }
         return [
             {**projects[link["project_id"]], "is_primary": bool(link["is_primary"]),
@@ -116,13 +120,13 @@ class UserRepositoryImpl(UserRepository):
         result = {user_id: [] for user_id in ids}
         if not ids:
             return result
-        links = await ProjectUser.filter(user_id__in=ids).values(
-            "user_id", "project_id", "is_primary", "role"
+        links = await fetch_values(ProjectUser.filter(user_id__in=ids),
+            "user_id", "project_id", "is_primary", "role",
         )
         project_ids = {link["project_id"] for link in links}
         projects = {
-            row["id"]: row for row in await OrmProject.filter(id__in=project_ids).values(
-                "id", "code", "name"
+            row["id"]: row for row in await fetch_values(OrmProject.filter(id__in=project_ids),
+                "id", "code", "name",
             )
         }
         for link in links:
@@ -151,9 +155,9 @@ class UserRepositoryImpl(UserRepository):
             raise ValidationError("each permission requires a valid numeric project_id") from None
         existing_ids = set()
         if deduped:
-            existing_ids = {row["id"] for row in await OrmProject.filter(
-                id__in=list(deduped.keys())
-            ).values("id")}
+            existing_ids = {row["id"] for row in await fetch_values(OrmProject.filter(
+                id__in=list(deduped.keys()),
+            ), "id")}
         missing = set(deduped.keys()) - existing_ids
         if missing:
             raise ValidationError(f"unknown project ids: {sorted(missing)}")
@@ -169,18 +173,18 @@ class UserRepositoryImpl(UserRepository):
             )
 
     async def get_permissions(self, user_id: UserId) -> set[str]:
-        role_ids = await UserRole.filter(user_id=user_id.value).values_list(
-            "role_id", flat=True
+        role_ids = await fetch_values_list(UserRole.filter(user_id=user_id.value),
+            "role_id", flat=True,
         )
         if not role_ids:
             return set()
-        permission_ids = await RolePermission.filter(
-            role_id__in=list(role_ids)
-        ).values_list("permission_id", flat=True)
+        permission_ids = await fetch_values_list(RolePermission.filter(
+            role_id__in=list(role_ids),
+        ), "permission_id", flat=True)
         if not permission_ids:
             return set()
-        codes = await OrmPermission.filter(id__in=list(permission_ids)).values_list(
-            "code", flat=True
+        codes = await fetch_values_list(OrmPermission.filter(id__in=list(permission_ids)),
+            "code", flat=True,
         )
         return set(codes)
 
@@ -287,8 +291,8 @@ async def _ensure_user_role(user_id: int, role_id: int) -> None:
 
 
 async def _load_permissions(role_id: int) -> list[OrmPermission]:
-    permission_ids = await RolePermission.filter(role_id=role_id).values_list(
-        "permission_id", flat=True
+    permission_ids = await fetch_values_list(RolePermission.filter(role_id=role_id),
+        "permission_id", flat=True,
     )
     if not permission_ids:
         return []

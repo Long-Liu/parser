@@ -13,6 +13,7 @@ from contexts.alert.infrastructure.tables import (
     AlertRuleStateModel,
 )
 from contexts.analytics.infrastructure.analytics_repository import _or_default
+from contexts.shared.infrastructure.database.queryset_helpers import fetch_values_list
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
@@ -215,8 +216,8 @@ class TortoiseAlertRepository(AlertRepository):
         }
 
     async def delete_project(self, project_id: int) -> None:
-        alert_ids = list(await AlertModel.filter(project_id=project_id).values_list(
-            "id", flat=True
+        alert_ids = list(await fetch_values_list(AlertModel.filter(project_id=project_id),
+            "id", flat=True,
         ))
         if alert_ids:
             await AlertEventModel.filter(alert_id__in=alert_ids).delete()
