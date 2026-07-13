@@ -128,7 +128,7 @@ class UserRepositoryImpl(UserRepository):
         for link in links:
             project = projects.get(link["project_id"])
             if project:
-                result[link["user_id"]].append({
+                result[int(link["user_id"])].append({
                     **project,
                     "is_primary": bool(link["is_primary"]),
                     "role": link["role"],
