@@ -205,7 +205,7 @@ class AnalyticsController(BaseController):
             ids = [int(v) for v in raw.split(",") if v.strip()]
             ids = await self._project_scope(request, ids or None)
             return self.json(await self.analytics_svc.cost_categories(
-                ids, request.args.get("ym"), p.page, p.size,
+                ids, request.args.get("ym"), pagination_from(request, max_size=100),
             ))
         except ValueError:
             raise ValidationError("invalid project_ids") from None
