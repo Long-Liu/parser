@@ -116,9 +116,9 @@ class UserRepositoryImpl(UserRepository):
         result = {user_id: [] for user_id in ids}
         if not ids:
             return result
-        links = list(await ProjectUser.filter(user_id__in=ids).values(
+        links = await ProjectUser.filter(user_id__in=ids).values(
             "user_id", "project_id", "is_primary", "role"
-        ))
+        )
         project_ids = {link["project_id"] for link in links}
         projects = {
             row["id"]: row for row in await OrmProject.filter(id__in=project_ids).values(
