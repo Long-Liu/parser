@@ -149,9 +149,9 @@ class UserRepositoryImpl(UserRepository):
                 deduped[int(item["project_id"])] = item.get("role", "none")
         except (ValueError, TypeError, KeyError):
             raise ValidationError("each permission requires a valid numeric project_id") from None
-        existing_ids = set(await OrmProject.filter(
+        existing_ids = {row["id"] for row in await OrmProject.filter(
             id__in=list(deduped.keys())
-        ).values_list("id", flat=True)) if deduped else set()
+        ).values("id")} if deduped else set()
         missing = set(deduped.keys()) - existing_ids
         if missing:
             raise ValidationError(f"unknown project ids: {sorted(missing)}")
