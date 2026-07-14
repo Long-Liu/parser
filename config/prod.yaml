@@ -1,15 +1,31 @@
-# Production — sensitive values loaded from environment variables
-# Set: DB_PASSWORD, JWT_SECRET (use strong random values)
+# Production — fill in real values before deploying.
+# db.password and jwt.secret must be strong; validation enforces minimum length.
 debug: false
+
+app:
+  env: prod
 
 db:
   host: 127.0.0.1
   port: 3306
   user: root
-  password: ""   # loaded from DB_PASSWORD env var
+  password: ""   # ← fill in real password
   database: excel_parser
   pool_size: 20
 
 jwt:
-  secret: ""     # loaded from JWT_SECRET env var
+  secret: "1e527e31b036c63249233e4347ba258930f8943c3ed9c6e9f5c91e1b578661d4"
   expiry_hours: 24
+
+cors:
+  origins: "*"
+
+upload:
+  dir: "uploads"
+
+ai_analysis:
+  url: ""
+  api_key: ""
+
+admin:
+  default_password: "112w3e4R"

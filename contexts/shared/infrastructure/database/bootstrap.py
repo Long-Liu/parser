@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # Application bootstrap: config → db.init → schema + seed + data tables.
 import logging
-import os
 from collections.abc import Callable
 
 from contexts.alert.domain.repositories import AlertPushDispatcher
@@ -26,7 +25,7 @@ def register(
         app.ctx.config = load_config()
         # Wire the JWT secret into the container once at startup
         container.configure(app.ctx.config.SECRET_KEY)
-        logger.info("env=%s debug=%s", os.getenv("APP_ENV", "local"), app.ctx.config.DEBUG)
+        logger.info("env=%s debug=%s", app.ctx.config.APP_ENV, app.ctx.config.DEBUG)
 
         await db_init(app.ctx.config)
 

@@ -1,15 +1,30 @@
-# Local development — values here are for local dev only
-# In production/CI, override via: DB_PASSWORD, JWT_SECRET environment variables
+# Local development — all values read from this file, no env-var overrides.
 debug: true
+
+app:
+  env: local
 
 db:
   host: 127.0.0.1
   port: 3306
   user: root
-  password: "1234"   # override with DB_PASSWORD env var in production
+  password: "1234"
   database: excel_parser
   pool_size: 5
 
 jwt:
-  secret: "local-dev-secret-change-me"  # override with JWT_SECRET env var in production
+  secret: "53d7b154e8cfa702d71a4f17f84982cd05e9ea52462c451b115902dfdd4f42ca"
   expiry_hours: 24
+
+cors:
+  origins: "*"
+
+upload:
+  dir: "uploads"
+
+ai_analysis:
+  url: ""
+  api_key: ""
+
+admin:
+  default_password: "admin123"

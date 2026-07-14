@@ -1,6 +1,9 @@
 # Copy this file to config/local.yaml before starting the service.
 debug: true
 
+app:
+  env: local
+
 db:
   host: 127.0.0.1
   port: 3306
@@ -12,3 +15,16 @@ db:
 jwt:
   secret: "local-development-secret-change-me"
   expiry_hours: 24
+
+cors:
+  origins: "http://localhost:3000,http://localhost:5173"
+
+upload:
+  dir: "uploads"
+
+ai_analysis:
+  url: ""
+  api_key: ""
+
+admin:
+  default_password: "admin123"

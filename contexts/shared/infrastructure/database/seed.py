@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # Seed default permissions, roles, and admin user on first startup.
 
-import os
 from collections.abc import Callable
 
 from tortoise.exceptions import IntegrityError
@@ -15,6 +14,7 @@ from contexts.auth.infrastructure.tables import (
     User,
     UserRole,
 )
+from contexts.shared.infrastructure.database.config import get_config
 
 
 PERMISSIONS = [
@@ -47,9 +47,8 @@ ROLES = {
 
 
 async def seed_defaults(password_hasher: Callable[[str], str]):
-    env = os.getenv("APP_ENV", "local")
-    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
-    if env != "local" and not admin_password:
+    admin_password = get_config("DEFAULT_ADMIN_PASSWORD")
+    if get_config("APP_ENV") != "local" and not admin_password:
         raise ValueError("DEFAULT_ADMIN_PASSWORD is required outside local environment")
     admin_password = admin_password or "admin123"
     await _do_seed(admin_password, password_hasher)
