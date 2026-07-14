@@ -13,12 +13,11 @@ from contexts.shared.domain.exceptions import (
 )
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.pagination import Pagination
+from contexts.shared.domain.password import Password
 
 
 class UserApplicationService:
     """Application service for the personnel-management view."""
-
-    MIN_PASSWORD_LENGTH = 8
 
     def __init__(
         self,
@@ -82,8 +81,6 @@ class UserApplicationService:
         phone: str = "",
         department: str = "",
     ) -> dict:
-        if len(password) < self.MIN_PASSWORD_LENGTH:
-            raise ValidationError("password must contain at least 8 characters")
         if await self._users.find_by_username(username):
             raise ConflictError("username already exists")
         if self._password_hasher is None:
@@ -91,7 +88,7 @@ class UserApplicationService:
         user = User.create(
             None,
             username,
-            self._password_hasher.hash(password),
+            self._password_hasher.hash(str(Password(password))),
             real_name,
             email,
             phone,
@@ -124,12 +121,10 @@ class UserApplicationService:
 
     @transactional
     async def reset_password(self, user_id: int, password: str) -> None:
-        if len(password) < self.MIN_PASSWORD_LENGTH:
-            raise ValidationError("password must contain at least 8 characters")
         user = await self._users.find_by_id(UserId(user_id))
         if user is None:
             raise NotFoundError(f"user {user_id} not found")
-        user.reset_password(self._password_hasher.hash(password))
+        user.reset_password(self._password_hasher.hash(str(Password(password))))
         await self._users.save(user)
         await self._publish_events(user)
 

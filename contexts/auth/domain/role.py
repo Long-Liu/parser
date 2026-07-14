@@ -6,6 +6,7 @@ from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import RoleId
+from contexts.shared.domain.name import Name
 from contexts.auth.domain.events import RoleCreated, RolePermissionsChanged
 
 
@@ -22,7 +23,7 @@ class Role(AggregateRoot[RoleId]):
         self,
         role_id: RoleId | None,
         code: str,
-        name: str,
+        name: Name,
         description: str = "",
         permissions: list[PermissionRef] | None = None,
     ) -> None:
@@ -41,7 +42,7 @@ class Role(AggregateRoot[RoleId]):
 
     @property
     def name(self) -> str:
-        return self._name
+        return str(self._name)
 
     @property
     def permissions(self) -> list[PermissionRef]:
@@ -53,23 +54,17 @@ class Role(AggregateRoot[RoleId]):
         permissions: list[PermissionRef] | None = None,
     ) -> "Role":
         code = code.strip()
-        name = name.strip()
         if not code:
             raise ValidationError("role code must not be empty")
-        if not name:
-            raise ValidationError("role name must not be empty")
         role = cls(
-            role_id=None, code=code, name=name,
+            role_id=None, code=code, name=Name(name),
             description=description.strip(), permissions=permissions,
         )
         role.record(RoleCreated(aggregate_id=None, code=code, name=name))
         return role
 
     def rename(self, name: str, description: str = "") -> None:
-        name = name.strip()
-        if not name:
-            raise ValidationError("role name must not be empty")
-        self._name = name
+        self._name = Name(name)
         self.description = description.strip()
 
     def has_permission(self, perm_code: str) -> bool:

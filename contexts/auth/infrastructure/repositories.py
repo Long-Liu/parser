@@ -3,6 +3,7 @@ from __future__ import annotations
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 
+from contexts.shared.domain.name import Name
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
 from contexts.auth.domain.user import RoleRef, User
@@ -219,7 +220,7 @@ class RoleRepositoryImpl(RoleRepository):
         return Role(
             role_id=RoleId(orm.id),
             code=orm.code,
-            name=orm.name,
+            name=Name(orm.name),
             description=orm.description or "",
             permissions=[PermissionRef(code=p.code, name=p.name) for p in perms],
         )
@@ -232,7 +233,7 @@ class RoleRepositoryImpl(RoleRepository):
                 Role(
                     role_id=RoleId(orm.id),
                     code=orm.code,
-                    name=orm.name,
+                    name=Name(orm.name),
                     description=orm.description or "",
                     permissions=[
                         PermissionRef(code=p.code, name=p.name) for p in perms
