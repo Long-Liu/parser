@@ -14,7 +14,7 @@ from contexts.auth.infrastructure.tables import (
     User,
     UserRole,
 )
-from contexts.shared.infrastructure.database.config import get_config
+from contexts.shared.infrastructure.config import Settings
 
 
 PERMISSIONS = [
@@ -46,9 +46,9 @@ ROLES = {
 }
 
 
-async def seed_defaults(password_hasher: Callable[[str], str]):
-    admin_password = get_config("DEFAULT_ADMIN_PASSWORD")
-    if get_config("APP_ENV") != "local" and not admin_password:
+async def seed_defaults(password_hasher: Callable[[str], str], settings: Settings):
+    admin_password = settings.admin.default_password
+    if settings.app.env != "local" and not admin_password:
         raise ValueError("DEFAULT_ADMIN_PASSWORD is required outside local environment")
     admin_password = admin_password or "admin123"
     await _do_seed(admin_password, password_hasher)

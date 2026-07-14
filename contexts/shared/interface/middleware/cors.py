@@ -5,31 +5,32 @@ from __future__ import annotations
 from sanic import Request
 from sanic.response import json
 
-from contexts.shared.infrastructure.database.config import get_config
+from contexts.shared.infrastructure.config import Settings
 
 
-def _allowed_origins() -> frozenset[str]:
-    raw = get_config("CORS_ORIGINS")
+def _allowed_origins(settings: Settings) -> frozenset[str]:
+    raw = settings.cors.origins
     return frozenset(o.strip() for o in raw.split(",") if o.strip())
 
 
-def _cors_origin(request: Request) -> str:
+def _cors_origin(request: Request, allowed: frozenset[str]) -> str:
     """Return the CORS origin value: '*' for wildcard, or matching request Origin."""
-    allowed = _allowed_origins()
     if "*" in allowed:
         return "*"
     origin = request.headers.get("Origin", "")
     return origin if origin in allowed else ""
 
 
-def register(app):
+def register(app, settings: Settings):
     """Register CORS middleware on a Sanic application."""
+
+    allowed = _allowed_origins(settings)
 
     @app.middleware("request")
     async def cors_preflight(request: Request):
         if request.method == "OPTIONS":
             return json({}, headers={
-                "Access-Control-Allow-Origin": _cors_origin(request),
+                "Access-Control-Allow-Origin": _cors_origin(request, allowed),
                 "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
                 "Access-Control-Allow-Headers": "Content-Type,Authorization",
                 "Access-Control-Max-Age": "3600",
@@ -37,7 +38,7 @@ def register(app):
 
     @app.middleware("response")
     async def cors_headers(request: Request, response):
-        origin = _cors_origin(request)
+        origin = _cors_origin(request, allowed)
         if origin:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"

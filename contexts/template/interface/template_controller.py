@@ -6,13 +6,11 @@ from contexts.auth.interface.auth_middleware import require_auth
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
-from contexts.shared.interface.rest_controller import rest_controller
 from contexts.template.application.template_app_service import (
     TemplateApplicationService,
 )
 
 
-@rest_controller("/api")
 class TemplatesController(BaseController):
     name = "template_ddd"
 

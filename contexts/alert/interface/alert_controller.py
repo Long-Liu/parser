@@ -11,10 +11,8 @@ from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
-from contexts.shared.interface.rest_controller import rest_controller
 
 
-@rest_controller("/api")
 class AlertController(BaseController):
     name = "alerts"
     _ALL_PROJECTS = -1  # sentinel for admins who can see all projects via websocket

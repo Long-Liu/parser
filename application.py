@@ -1,69 +1,69 @@
-"""Sanic application assembly and configuration."""
+"""Sanic application factory and deployment entry point."""
 
 import logging
 
 from sanic import Sanic
 from sanic_ext import Extend
 
-# ── import controllers so @rest_controller decorators fire ───────────────────
-import contexts.analytics.interface.analytics_controller  # noqa: F401
-import contexts.alert.interface.alert_controller  # noqa: F401
-import contexts.auth.interface.auth_controller  # noqa: F401
-import contexts.auth.interface.role_controller  # noqa: F401
-import contexts.auth.interface.user_controller  # noqa: F401
-import contexts.data.interface.data_controller  # noqa: F401
-import contexts.parsing.interface.batch_controller  # noqa: F401
-import contexts.parsing.interface.upload_controller  # noqa: F401
-import contexts.project.interface.project_controller  # noqa: F401
-import contexts.template.interface.template_controller  # noqa: F401
-from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
-from contexts.container import container
+from contexts.container import build_container, build_controllers
 from contexts.shared.domain.exceptions import DomainError
+from contexts.shared.infrastructure.config import Settings, load_settings
 from contexts.shared.infrastructure.database.bootstrap import register as register_db
-from contexts.shared.infrastructure.database.config import load_config
 from contexts.shared.infrastructure.logging import setup as setup_logging
 from contexts.shared.interface.base_controller import error_to_response
 from contexts.shared.interface.health_controller import bp as health_bp
 from contexts.shared.interface.middleware.cors import register as register_cors
 from contexts.shared.interface.middleware.logging import register as register_logging
-from contexts.shared.interface.rest_controller import register_all
-from contexts.template.infrastructure.config_loader import (
-    list_configs as list_template_configs,
-)
+from contexts.shared.interface.controller_registration import register_controllers
+from contexts.shared.interface.request_services import RequestServices
+from contexts.template.infrastructure.config_loader import list_configs
+
 _logger = logging.getLogger("sanic.error")
 
-app = Sanic("excel_parser")
-app.config.FALLBACK_ERROR_FORMAT = "json"
 
-app.config.API_TITLE = "Excel Parser API"
-app.config.API_VERSION = "1.0.0"
-app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
-Extend(app)
+def create_app(settings: Settings | None = None) -> Sanic:
+    """Create a fully composed, independently testable application instance."""
+    settings = settings or load_settings()
+    components = build_container(settings)
 
-setup_logging()
-register_logging(app)
-register_cors(app)
-register_db(
-    app,
-    template_config_provider=list_template_configs,
-    password_hasher=BCryptPasswordHasher().hash,
-)
+    app = Sanic("excel_parser")
+    app.ctx.settings = settings
+    app.ctx.config = settings  # compatibility for existing extensions
+    app.ctx.services = RequestServices(
+        authorization=components.authorization_service,
+        project_access=components.project_access_policy,
+    )
+    app.config.FALLBACK_ERROR_FORMAT = "json"
+    app.config.API_TITLE = "Excel Parser API"
+    app.config.API_VERSION = "1.0.0"
+    app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
+    Extend(app)
 
-# ── global error handlers — no try/except needed in any controller ────────────
-@app.exception(DomainError)
-async def on_domain_error(request, exception: DomainError):
-    return error_to_response(exception)
+    setup_logging()
+    register_logging(app)
+    register_cors(app, settings)
+    register_controllers(app, build_controllers(components))
+    register_db(
+        app,
+        settings,
+        components.alert_dispatcher,
+        template_config_provider=list_configs,
+        password_hasher=components.password_hasher.hash,
+    )
+    app.blueprint(health_bp)
+
+    @app.exception(DomainError)
+    async def on_domain_error(request, exception: DomainError):
+        return error_to_response(exception)
+
+    @app.exception(Exception)
+    async def on_unhandled_error(request, exception: Exception):
+        _logger.exception("unhandled exception on %s %s", request.method, request.path)
+        from sanic.response import json
+        return json({"error": "internal server error"}, status=500)
+
+    return app
 
 
-@app.exception(Exception)
-async def on_unhandled_error(request, exception: Exception):
-    _logger.exception("unhandled exception on %s %s", request.method, request.path)
-    from sanic.response import json
-
-    return json({"error": "internal server error"}, status=500)
-
-
-# ── mount all @rest_controller blueprints ────────────────────────────────────
-container.configure(load_config().SECRET_KEY)
-app.blueprint(health_bp)
-register_all(app, container)
+# WSGI/ASGI and the existing ``python main.py`` entry points import this name.
+app = create_app()

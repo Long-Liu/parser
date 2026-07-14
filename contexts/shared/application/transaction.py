@@ -19,19 +19,20 @@ class NoopTransactionManager(TransactionManager):
         yield
 
 
-_manager: TransactionManager = NoopTransactionManager()
 _after_commit: ContextVar[list[Callable[[], Awaitable[None]]] | None] = ContextVar(
     "after_commit", default=None
 )
 
 
-def configure_transaction_manager(manager: TransactionManager) -> None:
-    global _manager
-    _manager = manager
+class TransactionalService:
+    """Base for services with explicitly injected transaction boundaries."""
 
+    def __init__(self, transaction_manager: TransactionManager | None = None) -> None:
+        self._transaction_manager = transaction_manager or NoopTransactionManager()
 
-def get_transaction_manager() -> TransactionManager:
-    return _manager
+    @property
+    def transaction_manager(self) -> TransactionManager:
+        return self._transaction_manager
 
 
 def defer_after_commit(callback: Callable[[], Awaitable[None]]) -> bool:
@@ -46,12 +47,15 @@ def transactional(function: Callable):
     """Application transaction boundary independent of the selected ORM."""
     @wraps(function)
     async def wrapped(*args, **kwargs):
+        if not args or not isinstance(args[0], TransactionalService):
+            raise RuntimeError("@transactional requires a TransactionalService method")
+        manager = args[0]._transaction_manager
         if _after_commit.get() is not None:
             return await function(*args, **kwargs)
         callbacks: list[Callable[[], Awaitable[None]]] = []
         token = _after_commit.set(callbacks)
         try:
-            async with _manager.transaction():
+            async with manager.transaction():
                 result = await function(*args, **kwargs)
         finally:
             _after_commit.reset(token)

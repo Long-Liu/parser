@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from contexts.shared.domain.exceptions import NotFoundError
-from contexts.shared.application.transaction import transactional
+from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.shared.domain.pagination import Pagination
 
 
-class DataApplicationService:
-    def __init__(self, repo: DataQueryRepository) -> None:
+class DataApplicationService(TransactionalService):
+    def __init__(self, repo: DataQueryRepository,
+                 transaction_manager: TransactionManager | None = None) -> None:
+        super().__init__(transaction_manager)
         self._repo = repo
 
     async def query(

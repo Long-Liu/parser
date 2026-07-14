@@ -6,14 +6,18 @@ from contexts.alert.domain.alert import Alert, AlertStatus
 from contexts.alert.domain.repositories import (
     AlertMetricProvider, AlertPushDispatcher, AlertRepository,
 )
-from contexts.shared.application.transaction import defer_after_commit, transactional
+from contexts.shared.application.transaction import (
+    TransactionManager, TransactionalService, defer_after_commit, transactional,
+)
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
 
 
-class AlertApplicationService:
+class AlertApplicationService(TransactionalService):
     def __init__(self, repository: AlertRepository, metrics: AlertMetricProvider,
-                 dispatcher: AlertPushDispatcher) -> None:
+                 dispatcher: AlertPushDispatcher,
+                 transaction_manager: TransactionManager | None = None) -> None:
+        super().__init__(transaction_manager)
         self._repository = repository
         self._metrics = metrics
         self._dispatcher = dispatcher

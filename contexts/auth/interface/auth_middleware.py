@@ -8,7 +8,7 @@ from contexts.auth.application.authorization_app_service import AuthorizationApp
 from contexts.shared.domain.exceptions import AuthenticationError, AuthorizationError, DomainError
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.shared.domain.identifiers import UserId
-from contexts.container import container
+from contexts.shared.interface.request_services import RequestServices
 
 
 def require_auth(f):
@@ -18,7 +18,8 @@ def require_auth(f):
         if not auth_header.startswith("Bearer "):
             return json({"error": "missing token"}, status=401)
         token = auth_header[7:]
-        auth = container.get(AuthorizationApplicationService)
+        services: RequestServices = request.app.ctx.services
+        auth: AuthorizationApplicationService = services.authorization
         try:
             ctx = await auth.authenticate(token)
         except AuthenticationError as e:
@@ -58,7 +59,9 @@ def require_project_access(*, roles: set[str] | None = None):
             if raw is None:
                 raw = request.args.get("project_id") or request.form.get("project_id")
             try:
-                await container.get(ProjectAccessPolicy).require(
+                services: RequestServices = request.app.ctx.services
+                policy: ProjectAccessPolicy = services.project_access
+                await policy.require(
                     UserId(int(request.ctx.user_id)), int(raw), roles,
                 )
             except (TypeError, ValueError):
@@ -78,7 +81,9 @@ def require_batch_access(*, roles: set[str] | None = None):
             if "admin:roles" in permissions or "user:manage" in permissions:
                 return await f(request, *args, **kwargs)
             try:
-                await container.get(ProjectAccessPolicy).require_batch(
+                services: RequestServices = request.app.ctx.services
+                policy: ProjectAccessPolicy = services.project_access
+                await policy.require_batch(
                     UserId(int(request.ctx.user_id)), int(kwargs["batch_id"]), roles,
                 )
             except AuthorizationError as exc:

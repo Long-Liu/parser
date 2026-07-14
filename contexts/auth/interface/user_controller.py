@@ -4,10 +4,8 @@ from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
-from contexts.shared.interface.rest_controller import rest_controller
 
 
-@rest_controller("/api")
 class UsersController(BaseController):
     name = "users"
 

@@ -11,7 +11,6 @@ from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from contexts.shared.interface.rest_controller import rest_controller
 
 def _project_details(data: dict) -> dict:
     result = {}
@@ -35,7 +34,6 @@ def _project_details(data: dict) -> dict:
     return result
 
 
-@rest_controller("/api")
 class ProjectsController(BaseController):
     name = "project_ddd"
 

@@ -17,7 +17,6 @@ from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
-from contexts.shared.interface.rest_controller import rest_controller
 
 
 def _xlsx(workbook: Workbook, filename: str):
@@ -27,7 +26,6 @@ def _xlsx(workbook: Workbook, filename: str):
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     ), headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
-@rest_controller("/api")
 class AnalyticsController(BaseController):
     name = "analytics"
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contexts.shared.application.transaction import transactional
+from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.domain.user import User
@@ -16,7 +16,7 @@ from contexts.shared.domain.pagination import Pagination
 from contexts.shared.domain.password import Password
 
 
-class UserApplicationService:
+class UserApplicationService(TransactionalService):
     """Application service for the personnel-management view."""
 
     def __init__(
@@ -24,7 +24,9 @@ class UserApplicationService:
         users: UserRepository,
         password_hasher: PasswordHasher | None = None,
         event_publisher: EventPublisher | None = None,
+        transaction_manager: TransactionManager | None = None,
     ) -> None:
+        super().__init__(transaction_manager)
         self._users = users
         self._password_hasher = password_hasher
         self._event_publisher = event_publisher

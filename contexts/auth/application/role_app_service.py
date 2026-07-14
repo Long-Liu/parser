@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contexts.shared.application.transaction import transactional
+from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
@@ -13,13 +13,15 @@ from contexts.shared.domain.identifiers import RoleId, UserId
 from contexts.shared.domain.pagination import Pagination
 
 
-class RoleApplicationService:
+class RoleApplicationService(TransactionalService):
     def __init__(
         self,
         repo: RoleRepository,
         event_publisher: EventPublisher | None = None,
         users: UserRepository | None = None,
+        transaction_manager: TransactionManager | None = None,
     ) -> None:
+        super().__init__(transaction_manager)
         self._repo = repo
         self._event_publisher = event_publisher
         self._users = users

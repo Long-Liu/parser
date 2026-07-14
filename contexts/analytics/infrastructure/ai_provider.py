@@ -5,7 +5,7 @@ import json
 from urllib.request import Request, urlopen
 
 from contexts.analytics.domain.ports import AIAnalysisPort
-from contexts.shared.infrastructure.database.config import get_config
+from contexts.shared.infrastructure.config import AiAnalysisConfig
 
 
 class HttpAIAnalysisProvider(AIAnalysisPort):
@@ -16,16 +16,18 @@ class HttpAIAnalysisProvider(AIAnalysisPort):
     application service falls back to its deterministic domain analysis.
     """
 
+    def __init__(self, config: AiAnalysisConfig) -> None:
+        self._url = config.url.strip()
+        self._api_key = config.api_key.strip()
+
     async def analyze(self, payload: dict) -> dict | None:
-        url = get_config("AI_ANALYSIS_URL").strip()
-        if not url:
+        if not self._url:
             return None
-        return await asyncio.to_thread(self._request, url, payload)
+        return await asyncio.to_thread(self._request, self._url, self._api_key, payload)
 
     @staticmethod
-    def _request(url: str, payload: dict) -> dict:
+    def _request(url: str, api_key: str, payload: dict) -> dict:
         headers = {"Content-Type": "application/json"}
-        api_key = get_config("AI_ANALYSIS_API_KEY").strip()
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         request = Request(

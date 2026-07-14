@@ -1,21 +1,17 @@
 import pytest
 
-from contexts.shared.infrastructure.database.config import load_config
+from contexts.shared.infrastructure.config import load_config
 
 
-def test_prod_config_requires_strong_jwt_secret(monkeypatch):
-    monkeypatch.setenv("DB_PASSWORD", "not-empty")
-    monkeypatch.setenv("JWT_SECRET", "short")
-
-    with pytest.raises(ValueError, match="JWT_SECRET"):
+def test_prod_config_rejects_empty_db_password():
+    with pytest.raises(ValueError, match="db.password"):
         load_config("prod")
 
 
-def test_prod_config_accepts_env_secrets(monkeypatch):
-    monkeypatch.setenv("DB_PASSWORD", "not-empty")
-    monkeypatch.setenv("JWT_SECRET", "x" * 32)
+def test_local_config_loads_with_defaults():
+    cfg = load_config("local")
 
-    cfg = load_config("prod")
-
-    assert cfg.DB_PASSWORD == "not-empty"
-    assert cfg.SECRET_KEY == "x" * 32
+    assert cfg.app.env == "local"
+    assert cfg.db.host == "127.0.0.1"
+    assert cfg.db.port == 3306
+    assert isinstance(cfg.debug, bool)

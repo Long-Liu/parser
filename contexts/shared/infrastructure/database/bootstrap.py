@@ -5,8 +5,7 @@ import logging
 from collections.abc import Callable
 
 from contexts.alert.domain.repositories import AlertPushDispatcher
-from contexts.container import container
-from contexts.shared.infrastructure.database.config import load_config
+from contexts.shared.infrastructure.config import Settings
 from contexts.shared.infrastructure.database.engine import close as db_close
 from contexts.shared.infrastructure.database.engine import init as db_init
 from contexts.shared.infrastructure.database.schema import create_data_table, migrate_db
@@ -17,29 +16,28 @@ logger = logging.getLogger("parser")
 
 def register(
     app,
+    settings: Settings,
+    alert_dispatcher: AlertPushDispatcher,
     template_config_provider: Callable[[], list[dict]] | None = None,
     password_hasher: Callable[[str], str] | None = None,
 ):
     @app.listener("before_server_start")
     async def startup(app):
-        app.ctx.config = load_config()
-        # Wire the JWT secret into the container once at startup
-        container.configure(app.ctx.config.SECRET_KEY)
-        logger.info("env=%s debug=%s", app.ctx.config.APP_ENV, app.ctx.config.DEBUG)
+        logger.info("env=%s debug=%s", settings.app.env, settings.debug)
 
-        await db_init(app.ctx.config)
+        await db_init(settings)
 
-        await migrate_db(app.ctx.config)
+        await migrate_db(settings)
         logger.info("db migrations applied")
 
         if password_hasher is None:
             raise RuntimeError("password_hasher is required for database seed")
-        await seed_defaults(password_hasher)
+        await seed_defaults(password_hasher, settings)
         logger.info("db seed done")
 
         # Drain any stale alert outbox entries (context is active here)
         try:
-            await container.get(AlertPushDispatcher).dispatch_pending()
+            await alert_dispatcher.dispatch_pending()
         except Exception:
             logger.debug("startup outbox drain skipped", exc_info=True)
 

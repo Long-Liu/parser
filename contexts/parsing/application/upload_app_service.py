@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from contexts.shared.application.transaction import transactional
+from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
@@ -32,7 +32,7 @@ from contexts.alert.application.alert_app_service import AlertApplicationService
 logger = logging.getLogger("parser.upload")
 
 
-class UploadApplicationService:
+class UploadApplicationService(TransactionalService):
     def __init__(
         self,
         repo: ParseJobRepository,
@@ -44,7 +44,9 @@ class UploadApplicationService:
         project_repo: ProjectRepository,
         preview_repo: UploadPreviewRepository | None = None,
         alert_svc: AlertApplicationService | None = None,
+        transaction_manager: TransactionManager | None = None,
     ) -> None:
+        super().__init__(transaction_manager)
         self._repo = repo
         self._template_repo = template_repo
         self._data_sink = data_sink

@@ -15,7 +15,6 @@ from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.year_month import YearMonth
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
-from contexts.shared.interface.rest_controller import rest_controller
 from contexts.parsing.domain.upload_constraints import (
     ALLOWED_EXTENSIONS,
     ALLOWED_MIME_TYPES,
@@ -23,7 +22,6 @@ from contexts.parsing.domain.upload_constraints import (
 )
 
 
-@rest_controller("/api")
 class UploadsController(BaseController):
     name = "upload_ddd"
 

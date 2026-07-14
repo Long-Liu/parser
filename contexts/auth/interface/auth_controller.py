@@ -7,10 +7,8 @@ from contexts.auth.application.dto import LoginCommand, RegisterCommand
 from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.interface.auth_middleware import require_auth
 from contexts.shared.interface.base_controller import BaseController
-from contexts.shared.interface.rest_controller import rest_controller
 
 
-@rest_controller("/api")
 class AuthController(BaseController):
     name = "auth_ddd"
 

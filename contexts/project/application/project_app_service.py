@@ -3,7 +3,7 @@ from __future__ import annotations
 from contexts.shared.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.pagination import Pagination
-from contexts.shared.application.transaction import transactional
+from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import (
     ProjectRepository, ProjectDataCleanup, UserDirectory, ProjectNotificationPort,
@@ -11,12 +11,14 @@ from contexts.project.domain.repositories import (
 from contexts.alert.application.alert_app_service import AlertApplicationService
 
 
-class ProjectApplicationService:
+class ProjectApplicationService(TransactionalService):
     def __init__(self, repo: ProjectRepository,
                  cleanup: ProjectDataCleanup | None = None,
                  users: UserDirectory | None = None,
                  notifications: ProjectNotificationPort | None = None,
-                 alert_svc: AlertApplicationService | None = None) -> None:
+                 alert_svc: AlertApplicationService | None = None,
+                 transaction_manager: TransactionManager | None = None) -> None:
+        super().__init__(transaction_manager)
         self._repo = repo
         self._cleanup = cleanup
         self._users = users

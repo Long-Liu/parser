@@ -1,322 +1,207 @@
+"""Explicit application composition root.
+
+This module defines the strongly typed application component graph, but
+deliberately does not create it at import time. ``build_container`` is the only
+place where production implementations and object lifetimes are selected.
+"""
+
 from __future__ import annotations
 
-import typing
-from typing import Generic, TypeVar, get_origin
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
+from contexts.alert.application.alert_app_service import AlertApplicationService
+from contexts.alert.composition import build_alert_service
+from contexts.alert.domain.repositories import AlertPushDispatcher
+from contexts.alert.infrastructure.push import AlertWebSocketHub, TortoiseAlertOutboxDispatcher
+from contexts.alert.infrastructure.repositories import TortoiseAlertMetricProvider, TortoiseAlertRepository
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.infrastructure.ai_provider import HttpAIAnalysisProvider
 from contexts.analytics.infrastructure.analytics_repository import TortoiseAnalyticsRepository
-from contexts.analytics.domain.repositories import AnalyticsRepository
-from contexts.alert.application.alert_app_service import AlertApplicationService
-from contexts.alert.domain.repositories import (
-    AlertMetricProvider, AlertPushDispatcher, AlertRepository,
-)
-from contexts.alert.infrastructure.repositories import (
-    TortoiseAlertMetricProvider, TortoiseAlertRepository,
-)
-from contexts.alert.infrastructure.push import AlertWebSocketHub, TortoiseAlertOutboxDispatcher
 from contexts.auth.application.auth_app_service import AuthApplicationService
-from contexts.auth.application.authorization_app_service import (
-    AuthorizationApplicationService,
-)
+from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
+from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.application.role_app_service import RoleApplicationService
-from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.application.user_app_service import UserApplicationService
-from contexts.auth.application.project_access import ProjectAccessPolicy, ProjectAccessRepository
-from contexts.auth.domain.auth_service import AuthenticationService
+from contexts.auth.composition import build_auth_components
+from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
-from contexts.auth.infrastructure.repositories import (
-    RoleRepositoryImpl,
-    UserRepositoryImpl,
-)
 from contexts.auth.infrastructure.project_access_repository import TortoiseProjectAccessRepository
+from contexts.auth.infrastructure.repositories import RoleRepositoryImpl, UserRepositoryImpl
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
 from contexts.parsing.application.upload_app_service import UploadApplicationService
+from contexts.parsing.composition import build_upload_service
+from contexts.parsing.application.file_storage import FileStorage
 from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.parsing.infrastructure.file_storage import LocalUploadFileStorage
-from contexts.parsing.infrastructure.repositories import (
-    ParseJobRepositoryImpl,
-    UploadPreviewRepositoryImpl,
-)
+from contexts.parsing.infrastructure.repositories import ParseJobRepositoryImpl, UploadPreviewRepositoryImpl
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
 from contexts.project.application.project_app_service import ProjectApplicationService
+from contexts.project.composition import build_project_service
 from contexts.project.infrastructure.repositories import (
     ProjectDataCleanupImpl,
     ProjectNotificationAdapter,
     ProjectRepositoryImpl,
     TortoiseUserDirectory,
 )
-from contexts.shared.domain.event_publisher import EventPublisher
-from contexts.shared.infrastructure.domain_event_bus import domain_event_bus
-from contexts.shared.application.transaction import configure_transaction_manager
+from contexts.shared.infrastructure.config import Settings
 from contexts.shared.infrastructure.database.transaction import TortoiseTransactionManager
-from contexts.template.application.template_app_service import (
-    TemplateApplicationService,
-)
+from contexts.shared.application.transaction import TransactionManager
+from contexts.shared.infrastructure.domain_event_bus import domain_event_bus
+from contexts.template.application.template_app_service import TemplateApplicationService
 from contexts.template.infrastructure.repositories import YamlTemplateCatalog
+from contexts.parsing.domain.repositories import ParseJobRepository
+from contexts.project.domain.repositories import ProjectRepository
 
-T = TypeVar("T")
+if TYPE_CHECKING:
+    from contexts.shared.interface.base_controller import BaseController
 
+@dataclass(frozen=True, slots=True)
+class ApplicationComponents:
+    """Strongly typed application graph exposed to the outer composition layer."""
 
-class CircularDependencyError(RuntimeError):
-    """Raised when auto-wire detects unresolvable dependencies."""
-
-
-class Container:
-    """Stdlib-only DI container — Spring-style ``get(Cls)`` with auto-wiring.
-
-    Constructor params are resolved by type from the registry via
-    ``inspect.signature``.  Non-class values (module singletons, factories)
-    are pre-registered explicitly.
-
-    Usage::
-
-        # register singletons & interface bindings
-        container.register_instance(my_instance)
-        container.bind(AbstractRepo, MyRepoImpl)
-
-        # queue a class for auto-wire construction
-        container.register_factory(MyApplicationService)
-
-        # build everything at startup
-        container.wire()
-
-        # retrieve anywhere
-        svc = container.get(MyApplicationService)
-    """
-
-    def __init__(self) -> None:
-        self._registry: dict[type, object] = {}
-        self._pending: list[type] = []
-
-    # ── public API ────────────────────────────────────────────────────────
-
-    def register_instance(self, instance: object) -> None:
-        """Register *instance* under its concrete type."""
-        self._registry[type(instance)] = instance
-
-    def bind(self, abstract: type, instance: object) -> None:
-        """Register *instance* under an abstract type or interface."""
-        self._registry[abstract] = instance
-
-    def register_factory(self, cls: type) -> None:
-        """Queue *cls* for auto-wire construction during ``wire()``."""
-        self._pending.append(cls)
-
-    def wire(self) -> None:
-        """Construct all pending factories, resolving constructor deps from the registry.
-
-        Iterates until all are built or no progress is made (circular dep).
-        """
-        remaining = list(self._pending)
-        self._pending.clear()
-        while remaining:
-            progress = False
-            retry = []
-            for cls in remaining:
-                if self._try_construct(cls):
-                    progress = True
-                else:
-                    retry.append(cls)
-            if not progress:
-                names = ", ".join(c.__name__ for c in retry)
-                raise CircularDependencyError(
-                    f"Cannot resolve dependencies for: {names}"
-                )
-            remaining = retry
-
-    def configure(self, secret_key: str) -> None:
-        """Called once at startup — registers JWT-dependent services and wires them."""
-        jwt = JwtService(secret_key)
-        self.register_instance(jwt)
-        self.bind(TokenService, jwt)
-        for cls in _container_auth:
-            self.register_factory(cls)
-        self.wire()
-
-    def get(self, cls: type[T]) -> T:
-        """Return the singleton registered for *cls*."""
-        try:
-            return self._registry[cls]  # type: ignore[return-value]
-        except KeyError:
-            raise KeyError(
-                f"{cls.__name__} not registered. "
-                f"Ensure container.wire() has been called."
-            ) from None
-
-    def resolve(self, cls: type[T]) -> T:
-        """Auto-wire and return an instance of *cls*.
-
-        Unlike ``get()``, this constructs *cls* on the spot, resolving its
-        constructor arguments from the registry.  The instance is cached so
-        repeated calls return the same singleton.
-        """
-        existing = self._registry.get(cls)
-        if existing is not None:
-            return existing  # type: ignore[return-value]
-        if not self._try_construct(cls):
-            raise KeyError(
-                f"Cannot resolve {cls.__name__} — missing dependencies"
-            )
-        return self._registry[cls]  # type: ignore[return-value]
-
-    # ── internal ──────────────────────────────────────────────────────────
-
-    def _try_construct(self, cls: type) -> bool:
-        """Attempt to build *cls*; return True on success, False if deps missing."""
-        try:
-            kwargs = self._resolve_deps(cls)
-        except _Missing:
-            return False
-        self._registry[cls] = cls(**kwargs)
-        return True
-
-    def _resolve_deps(self, cls: type) -> dict[str, object]:
-        """Return kwargs dict for *cls*'s ``__init__``, resolved from registry.
-
-        Uses ``typing.get_type_hints`` to resolve string annotations (PEP 563).
-        """
-        kwargs: dict[str, object] = {}
-        try:
-            hints = typing.get_type_hints(cls.__init__, include_extras=True)
-        except Exception:
-            hints = {}
-        for name, ann in hints.items():
-            if name == "return":
-                continue
-            dep = self._lookup(ann)
-            if dep is None:
-                raise _Missing(ann)
-            kwargs[name] = dep
-        return kwargs
-
-    def _lookup(self, ann: type) -> object | None:
-        """Resolve a type annotation to a registered instance.
-
-        1. Exact match.
-        2. Union ``X | None`` — take the non-None arm.
-        """
-        # 1. Exact match
-        result = self._registry.get(ann)
-        if result is not None:
-            return result
-
-        # 2. Union X | None → try X
-        origin = get_origin(ann)
-        if origin is not None and origin is not Generic:
-            args = getattr(ann, "__args__", ())
-            for arg in args:
-                if arg is not type(None):  # noqa: E721
-                    result = self._registry.get(arg)
-                    if result is not None:
-                        return result
-        return None
+    password_hasher: BCryptPasswordHasher
+    alert_dispatcher: AlertPushDispatcher
+    alert_hub: AlertWebSocketHub
+    authorization_service: AuthorizationApplicationService
+    project_access_policy: ProjectAccessPolicy
+    auth_service: AuthApplicationService
+    user_service: UserApplicationService
+    role_service: RoleApplicationService
+    project_service: ProjectApplicationService
+    template_service: TemplateApplicationService
+    data_service: DataApplicationService
+    upload_service: UploadApplicationService
+    analytics_service: AnalyticsApplicationService
+    alert_service: AlertApplicationService
+    parse_job_repository: ParseJobRepository
+    project_repository: ProjectRepository
 
 
-class _Missing(Exception):
-    """Internal sentinel — dependency not yet available."""
+@dataclass(frozen=True, slots=True)
+class ComponentOverrides:
+    """Typed test/deployment substitutions for external infrastructure."""
+
+    transaction_manager: TransactionManager | None = None
+    user_repository: UserRepository | None = None
+    file_storage: FileStorage | None = None
+    ai_provider: AIAnalysisPort | None = None
+
+def build_container(
+    settings: Settings,
+    overrides: ComponentOverrides | None = None,
+) -> ApplicationComponents:
+    """Build the complete production dependency graph in one pass."""
+    overrides = overrides or ComponentOverrides()
+    transaction_manager = overrides.transaction_manager or TortoiseTransactionManager()
+
+    password_hasher = BCryptPasswordHasher()
+    jwt_service = JwtService(settings.jwt.secret, settings.jwt.expiry_hours)
+    user_repo = overrides.user_repository or UserRepositoryImpl()
+    role_repo = RoleRepositoryImpl()
+    project_access_repo = TortoiseProjectAccessRepository()
+    project_repo = ProjectRepositoryImpl()
+    project_cleanup = ProjectDataCleanupImpl()
+    user_directory = TortoiseUserDirectory()
+    project_notifications = ProjectNotificationAdapter()
+    template_catalog = YamlTemplateCatalog()
+    data_repo = DataQueryRepositoryImpl()
+    parse_job_repo = ParseJobRepositoryImpl()
+    preview_repo = UploadPreviewRepositoryImpl()
+    data_sink = TortoiseParsedDataSink()
+    file_storage = overrides.file_storage or LocalUploadFileStorage(settings.upload)
+    workbook_reader = OpenPyxlWorkbookReader()
+    ai_provider = overrides.ai_provider or HttpAIAnalysisProvider(settings.ai_analysis)
+    analytics_repo = TortoiseAnalyticsRepository(ai_provider)
+    alert_repo = TortoiseAlertRepository()
+    alert_metrics = TortoiseAlertMetricProvider()
+    alert_hub = AlertWebSocketHub()
+    alert_dispatcher = TortoiseAlertOutboxDispatcher(alert_hub)
+
+    alert_service = build_alert_service(
+        alert_repo, alert_metrics, alert_dispatcher, transaction_manager,
+    )
+    auth = build_auth_components(
+        user_repo, role_repo, project_access_repo, password_hasher, jwt_service,
+        domain_event_bus, transaction_manager,
+    )
+    project_service = build_project_service(
+        project_repo, project_cleanup, user_directory, project_notifications, alert_service,
+        transaction_manager,
+    )
+    template_service = TemplateApplicationService(template_catalog)
+    data_service = DataApplicationService(data_repo, transaction_manager)
+    upload_service = build_upload_service(
+        parse_job_repo, template_catalog, data_sink, domain_event_bus,
+        file_storage, workbook_reader, project_repo, preview_repo, alert_service,
+        transaction_manager,
+    )
+    analytics_service = AnalyticsApplicationService(analytics_repo)
+
+    return ApplicationComponents(
+        password_hasher=password_hasher,
+        alert_dispatcher=alert_dispatcher,
+        alert_hub=alert_hub,
+        authorization_service=auth.authorization,
+        project_access_policy=auth.project_access,
+        auth_service=auth.auth,
+        user_service=auth.users,
+        role_service=auth.roles,
+        project_service=project_service,
+        template_service=template_service,
+        data_service=data_service,
+        upload_service=upload_service,
+        analytics_service=analytics_service,
+        alert_service=alert_service,
+        parse_job_repository=parse_job_repo,
+        project_repository=project_repo,
+    )
 
 
-# ── module-level singleton ───────────────────────────────────────────────
+def build_controllers(components: ApplicationComponents) -> tuple["BaseController", ...]:
+    """Explicitly compose the HTTP adapters; no scanning or reflection involved."""
+    from contexts.alert.interface.alert_controller import AlertController
+    from contexts.analytics.interface.analytics_controller import AnalyticsController
+    from contexts.auth.interface.auth_controller import AuthController
+    from contexts.auth.interface.role_controller import RolesController
+    from contexts.auth.interface.user_controller import UsersController
+    from contexts.data.interface.data_controller import DataController
+    from contexts.parsing.interface.batch_controller import BatchesController
+    from contexts.parsing.interface.upload_controller import UploadsController
+    from contexts.project.interface.project_controller import ProjectsController
+    from contexts.template.interface.template_controller import TemplatesController
 
-container = Container()
-configure_transaction_manager(TortoiseTransactionManager())
-
-
-def _reg(instance: object) -> None:
-    container.register_instance(instance)
-
-
-def _bind(abstract: type, concrete: object) -> None:
-    container.bind(abstract, concrete)
-
-
-# ── infrastructure singletons ────────────────────────────────────────────
-
-_container_pw = BCryptPasswordHasher()
-_reg(_container_pw)
-_bind(PasswordHasher, _container_pw)
-_reg(AuthenticationService(_container_pw))
-_reg(_user_repo := UserRepositoryImpl())
-_reg(_role_repo := RoleRepositoryImpl())
-_reg(_project_access_repo := TortoiseProjectAccessRepository())
-_reg(_project_repo := ProjectRepositoryImpl())
-_reg(_project_cleanup := ProjectDataCleanupImpl())
-_reg(_user_directory := TortoiseUserDirectory())
-_reg(_project_notifications := ProjectNotificationAdapter())
-_reg(_template_catalog := YamlTemplateCatalog())
-_reg(_data_repo := DataQueryRepositoryImpl())
-_reg(_parse_job_repo := ParseJobRepositoryImpl())
-_reg(_preview_repo := UploadPreviewRepositoryImpl())
-_reg(_data_sink := TortoiseParsedDataSink())
-_reg(_file_storage := LocalUploadFileStorage())
-_reg(_workbook_reader := OpenPyxlWorkbookReader())
-_reg(_ai_provider := HttpAIAnalysisProvider())
-_reg(_analytics_repo := TortoiseAnalyticsRepository(_ai_provider))
-_reg(_alert_repo := TortoiseAlertRepository())
-_reg(_alert_metrics := TortoiseAlertMetricProvider())
-_reg(_alert_hub := AlertWebSocketHub())
-_reg(_alert_dispatcher := TortoiseAlertOutboxDispatcher(_alert_hub))
-
-# ── interface bindings (abstract → concrete) ─────────────────────────────
-
-from contexts.auth.domain.repositories import (  # noqa: E402
-    RoleRepository,
-    UserRepository,
-)
-from contexts.data.domain.repositories import DataQueryRepository  # noqa: E402
-from contexts.parsing.application.file_storage import FileStorage  # noqa: E402
-from contexts.parsing.domain.data_sink import ParsedDataSink  # noqa: E402
-from contexts.parsing.domain.repositories import (  # noqa: E402
-    ParseJobRepository,
-    UploadPreviewRepository,
-)
-from contexts.parsing.domain.workbook import WorkbookReader  # noqa: E402
-from contexts.project.domain.repositories import (  # noqa: E402
-    ProjectDataCleanup,
-    ProjectNotificationPort,
-    ProjectRepository,
-    UserDirectory,
-)
-from contexts.template.domain.repositories import TemplateCatalog  # noqa: E402
-
-_bind(UserRepository, _user_repo)
-_bind(RoleRepository, _role_repo)
-_bind(ProjectAccessRepository, _project_access_repo)
-_bind(ProjectRepository, _project_repo)
-_bind(ProjectDataCleanup, _project_cleanup)
-_bind(UserDirectory, _user_directory)
-_bind(ProjectNotificationPort, _project_notifications)
-_bind(TemplateCatalog, _template_catalog)
-_bind(DataQueryRepository, _data_repo)
-_bind(ParseJobRepository, _parse_job_repo)
-_bind(UploadPreviewRepository, _preview_repo)
-_bind(ParsedDataSink, _data_sink)
-_bind(FileStorage, _file_storage)
-_bind(WorkbookReader, _workbook_reader)
-_bind(EventPublisher, domain_event_bus)
-_bind(AIAnalysisPort, _ai_provider)
-_bind(AnalyticsRepository, _analytics_repo)
-_bind(AlertRepository, _alert_repo)
-_bind(AlertMetricProvider, _alert_metrics)
-_bind(AlertPushDispatcher, _alert_dispatcher)
-
-# ── application services (auto-wired via inspect) ────────────────────────
-
-container.register_factory(ProjectApplicationService)
-container.register_factory(AlertApplicationService)
-container.register_factory(TemplateApplicationService)
-container.register_factory(DataApplicationService)
-container.register_factory(UploadApplicationService)
-container.register_factory(RoleApplicationService)
-container.register_factory(UserApplicationService)
-container.register_factory(ProjectAccessPolicy)
-container.register_factory(AnalyticsApplicationService)
-
-# Jwt-dependent — deferred to configure()
-_container_auth: list[type] = [AuthApplicationService, AuthorizationApplicationService]
-
-container.wire()
+    return (
+        AnalyticsController(
+            components.analytics_service,
+            components.project_access_policy,
+            components.alert_service,
+        ),
+        AlertController(
+            components.alert_service,
+            components.project_access_policy,
+            components.authorization_service,
+            components.alert_hub,
+        ),
+        AuthController(
+            components.auth_service,
+            components.user_service,
+        ),
+        RolesController(components.role_service),
+        UsersController(components.user_service),
+        DataController(
+            components.data_service,
+            components.project_access_policy,
+        ),
+        BatchesController(
+            components.parse_job_repository,
+            components.project_repository,
+            components.project_access_policy,
+        ),
+        UploadsController(components.upload_service),
+        ProjectsController(components.project_service),
+        TemplatesController(components.template_service),
+    )

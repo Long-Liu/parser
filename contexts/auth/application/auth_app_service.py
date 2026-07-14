@@ -4,7 +4,7 @@ import logging
 
 from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
 from contexts.shared.domain.event_publisher import EventPublisher
-from contexts.shared.application.transaction import transactional
+from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 from contexts.auth.domain.user import User
 from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.domain.auth_service import AuthenticationService
@@ -14,11 +14,13 @@ from contexts.auth.application.dto import LoginCommand, LoginResult, RegisterCom
 logger = logging.getLogger("parser.auth")
 
 
-class AuthApplicationService:
+class AuthApplicationService(TransactionalService):
     def __init__(self, user_repo: UserRepository, auth_service: AuthenticationService,
                  jwt_service: TokenService,
                  password_hasher: PasswordHasher,
-                 event_publisher: EventPublisher | None = None) -> None:
+                 event_publisher: EventPublisher | None = None,
+                 transaction_manager: TransactionManager | None = None) -> None:
+        super().__init__(transaction_manager)
         self._users = user_repo
         self._auth = auth_service
         self._jwt = jwt_service
