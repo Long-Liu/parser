@@ -16,7 +16,7 @@ from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.shared.domain.year_month import YearMonth
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
 from contexts.template.domain.template import (
     ColumnMapping,

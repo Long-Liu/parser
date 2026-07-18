@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 
-from contexts.auth.application.security import TokenService
+from contexts.auth.domain.ports import TokenService
+from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.domain.identifiers import UserId
 
 JWT_ALGORITHM = "HS256"
@@ -21,5 +22,10 @@ class JwtService(TokenService):
         return jwt.encode(payload, self.secret, algorithm=JWT_ALGORITHM)
 
     def verify(self, token: str) -> dict:
-        return jwt.decode(token, self.secret, algorithms=[JWT_ALGORITHM])
+        try:
+            return jwt.decode(token, self.secret, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise AuthenticationError("token expired") from None
+        except jwt.InvalidTokenError:
+            raise AuthenticationError("invalid token") from None
 

@@ -7,9 +7,9 @@ from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_entity import Entity
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.shared.domain.year_month import YearMonth
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.parsing.domain.events import (
-    ParseJobSubmitted, ParseJobCompleted, ParseJobFailed,
+    ParseJobSubmitted, ParseJobCompleted, ParseJobConfirmed, ParseJobFailed,
     SheetMatched, SheetSkipped, SheetExtracted, SheetValidated,
 )
 
@@ -148,6 +148,7 @@ class ParseJob(AggregateRoot[JobId]):
         self.uploaded_by = uploaded_by
         self.status = JobStatus.SUBMITTED
         self._sheets: dict[str, SheetResult] = {}
+        self._is_preview = False
 
     @property
     def sheets(self) -> list[SheetResult]:
@@ -212,9 +213,11 @@ class ParseJob(AggregateRoot[JobId]):
         self.file_info = file_info
 
     def mark_as_previewed(self) -> None:
-        """Indicate this job was a preview upload — status is informational only."""
+        """Indicate this job was a preview upload — status is informational only.
+        Marks the job so complete() records ParseJobCompleted with is_preview=True."""
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before marking previewed")
+        self._is_preview = True
         self.status = JobStatus.DONE
 
     def confirm(self) -> None:
@@ -222,6 +225,11 @@ class ParseJob(AggregateRoot[JobId]):
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before confirming")
         self.status = JobStatus.DONE
+        self.record(ParseJobConfirmed(
+            aggregate_id=self.id.value,
+            project_id=self.project_id.value,
+            year_month=str(self.year_month),
+        ))
 
     def cancel(self) -> None:
         """Cancel a preview batch."""
@@ -295,9 +303,11 @@ class ParseJob(AggregateRoot[JobId]):
         self.record(ParseJobCompleted(
             aggregate_id=self.id.value,
             project_id=self.project_id.value,
+            year_month=str(self.year_month),
             total_sheets=total_sheets,
             matched_sheets=matched,
             total_rows=total_rows,
+            is_preview=self._is_preview,
         ))
 
     def fail(self, reason: str) -> None:

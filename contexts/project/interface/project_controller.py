@@ -3,12 +3,12 @@ from __future__ import annotations
 from sanic_ext import openapi
 
 from contexts.auth.interface.auth_middleware import require_auth, require_permission, require_project_access
+from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.shared.domain.identifiers import UserId, ProjectId
 from contexts.shared.domain.exceptions import ValidationError
-from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
-from contexts.shared.interface.controller_helpers import parse_int
+from contexts.shared.interface.controller_helpers import pagination_from
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -35,18 +35,18 @@ def _project_details(data: dict) -> dict:
 
 
 class ProjectsController(BaseController):
-    name = "project_ddd"
+    name = "project"
 
     def __init__(self, project_svc: ProjectApplicationService):
         super().__init__()
         self.svc = project_svc
 
     def setup(self):
-        self.bp.add_route(self.list_projects,   "/projects",                                    methods=["GET"])
-        self.bp.add_route(self.create_project,  "/projects",                                    methods=["POST"])
-        self.bp.add_route(self.get_project,     "/projects/<project_id:int>",                   methods=["GET"])
-        self.bp.add_route(self.update_project,  "/projects/<project_id:int>",                   methods=["PUT"])
-        self.bp.add_route(self.delete_project,  "/projects/<project_id:int>",                   methods=["DELETE"])
+        self.bp.add_route(self.list_projects,   "/projects",                                      methods=["GET"])
+        self.bp.add_route(self.create_project,  "/projects",                                      methods=["POST"])
+        self.bp.add_route(self.get_project,     "/projects/<project_id:int>",                     methods=["GET"])
+        self.bp.add_route(self.update_project,  "/projects/<project_id:int>",                     methods=["PUT"])
+        self.bp.add_route(self.delete_project,  "/projects/<project_id:int>",                     methods=["DELETE"])
         self.bp.add_route(self.assign_user,     "/projects/<project_id:int>/users/<user_id:int>", methods=["POST"])
         self.bp.add_route(self.remove_user,     "/projects/<project_id:int>/users/<user_id:int>", methods=["DELETE"])
 
@@ -57,13 +57,12 @@ class ProjectsController(BaseController):
     async def list_projects(self, request):
             permissions = set(request.ctx.permissions or set())
             scoped_user_id = None
-            if "admin:roles" not in permissions and "user:manage" not in permissions:
+            if not ProjectAccessPolicy.has_elevated_permission(permissions):
                 scoped_user_id = UserId(request.ctx.user_id)
             result = await self.svc.list_all(
                 keyword=request.args.get("keyword", ""),
                 status=request.args.get("status", ""),
-                pagination=Pagination(parse_int(request.args.get("page"), 1),
-                                      parse_int(request.args.get("size"), 20), max_size=100),
+                pagination=pagination_from(request),
                 user_id=scoped_user_id,
             )
             return self.json(result)

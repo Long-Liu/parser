@@ -19,7 +19,7 @@ async def migrate_db(config):
     )
 
 
-async def create_data_table(template_id: str):
+async def validate_data_table(template_id: str):
     """Validate that a template data table model is registered.
 
     This hook is kept for the existing bootstrap flow and fails fast on unknown

@@ -1,6 +1,5 @@
 """Parsing bounded-context composition."""
 
-from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.parsing.application.file_storage import FileStorage
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.domain.data_sink import ParsedDataSink
@@ -21,10 +20,9 @@ def build_upload_service(
     workbooks: WorkbookReader,
     projects: ProjectRepository,
     previews: UploadPreviewRepository,
-    alerts: AlertApplicationService,
     transactions: TransactionManager,
 ) -> UploadApplicationService:
     return UploadApplicationService(
         jobs, templates, sink, events, storage, workbooks, projects,
-        previews, alerts, transactions,
+        previews, transactions,
     )

@@ -6,7 +6,7 @@ from contexts.shared.domain.exceptions import AuthenticationError, ConflictError
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
 from contexts.auth.domain.user import User
-from contexts.auth.application.security import PasswordHasher, TokenService
+from contexts.auth.domain.ports import PasswordHasher, TokenService
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.application.dto import LoginCommand, LoginResult, RegisterCommand

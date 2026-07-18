@@ -12,7 +12,7 @@ from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId, UserId
-from contexts.shared.domain.year_month import YearMonth
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import parse_int
 from contexts.parsing.domain.upload_constraints import (
@@ -23,7 +23,7 @@ from contexts.parsing.domain.upload_constraints import (
 
 
 class UploadsController(BaseController):
-    name = "upload_ddd"
+    name = "upload"
 
     def __init__(self, upload_svc: UploadApplicationService):
         super().__init__()

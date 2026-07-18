@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from contexts.alert.application.alert_app_service import AlertApplicationService
+from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.infrastructure.push import AlertWebSocketHub
 from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
 from contexts.auth.application.project_access import ProjectAccessPolicy
@@ -15,7 +16,6 @@ from contexts.shared.interface.controller_helpers import pagination_from
 
 class AlertController(BaseController):
     name = "alerts"
-    _ALL_PROJECTS = -1  # sentinel for admins who can see all projects via websocket
 
     def __init__(self, alert_svc: AlertApplicationService,
                  access_policy: ProjectAccessPolicy,
@@ -42,7 +42,7 @@ class AlertController(BaseController):
 
     async def _scope(self, request) -> list[int] | None:
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" in permissions or "user:manage" in permissions:
+        if ProjectAccessPolicy.has_elevated_permission(permissions):
             return None
         return await self.access.accessible_project_ids(UserId(request.ctx.user_id))
 
@@ -50,7 +50,7 @@ class AlertController(BaseController):
                                manager: bool = False) -> None:
         project_id = await self.alert_svc.project_id(alert_id)
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" in permissions or "user:manage" in permissions:
+        if ProjectAccessPolicy.has_elevated_permission(permissions):
             return
         await self.access.require(
             UserId(request.ctx.user_id), project_id,
@@ -120,7 +120,7 @@ class AlertController(BaseController):
     @require_permission("data:upload")
     async def evaluate(self, request, project_id: int):
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" not in permissions and "user:manage" not in permissions:
+        if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access.require(UserId(request.ctx.user_id), project_id, {"manager"})
         return self.json(await self.alert_svc.evaluate(
             project_id, (request.json or {}).get("ym")))
@@ -139,8 +139,8 @@ class AlertController(BaseController):
         except AuthenticationError:
             await ws.close(code=4001, reason="unauthorized")
             return
-        if "admin:roles" in context.permissions or "user:manage" in context.permissions:
-            projects = [self._ALL_PROJECTS]
+        if ProjectAccessPolicy.has_elevated_permission(context.permissions):
+            projects = [ALL_PROJECTS]
         else:
             projects = await self.access.accessible_project_ids(UserId(context.user_id))
         await self.hub.connect(context.user_id, ws, projects)

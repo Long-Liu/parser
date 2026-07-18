@@ -25,9 +25,8 @@ from contexts.project.domain.repositories import ProjectRepository
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
-from contexts.shared.domain.year_month import YearMonth
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
-from contexts.alert.application.alert_app_service import AlertApplicationService
 
 logger = logging.getLogger("parser.upload")
 
@@ -43,7 +42,6 @@ class UploadApplicationService(TransactionalService):
         workbook_reader: WorkbookReader,
         project_repo: ProjectRepository,
         preview_repo: UploadPreviewRepository | None = None,
-        alert_svc: AlertApplicationService | None = None,
         transaction_manager: TransactionManager | None = None,
     ) -> None:
         super().__init__(transaction_manager)
@@ -55,7 +53,6 @@ class UploadApplicationService(TransactionalService):
         self._workbook_reader = workbook_reader
         self._project_repo = project_repo
         self._preview_repo = preview_repo
-        self._alert_svc = alert_svc
         self._unmerger = CellUnmerger()
         self._flattener = HeaderFlattener()
         self._stop_detector = StopDetector()
@@ -83,9 +80,9 @@ class UploadApplicationService(TransactionalService):
             stored_file = await self._file_storage.save(f"{batch_no}.xlsx", file.body)
             job.file_info = FileInfo(filename=file.name, size=stored_file.size)
             sheet_results = await self._process_workbook(stored_file.path, job)
+            # Alert evaluation is event-driven: the alert context subscribes to
+            # ParseJobCompleted and evaluates after the write transaction commits.
             await self._event_publisher.publish(job.pull_events())
-            if self._alert_svc and job.id:
-                await self._alert_svc.evaluate(project_id.value, str(ym))
             status = job.result_status
         except Exception:
             logger.exception("upload failed for %s", batch_no)
@@ -131,8 +128,8 @@ class UploadApplicationService(TransactionalService):
             await self._repo.save(job)
             job.confirm_submitted()
             payload, summary = await self._collect_preview_sheets(job, stored_file.path)
-            job.complete()
             job.mark_as_previewed()
+            job.complete()
             await self._event_publisher.publish(job.pull_events())
             await self._repo.save(job)
             await self._preview_repo.save(job.id.value, payload, summary)
@@ -176,8 +173,9 @@ class UploadApplicationService(TransactionalService):
         job.confirm()
         await self._repo.save(job)
         await self._preview_repo.delete(batch_id)
-        if self._alert_svc:
-            await self._alert_svc.evaluate(job.project_id.value, str(job.year_month))
+        # ParseJobConfirmed is published after commit; the alert context
+        # subscribes to it and evaluates alerts for this project/period.
+        await self._event_publisher.publish(job.pull_events())
         return {"batch_id": batch_id, "status": "success", "sheets": preview["summary"]}
 
     @transactional

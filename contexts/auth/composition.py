@@ -6,7 +6,7 @@ from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
 from contexts.auth.application.project_access import ProjectAccessPolicy, ProjectAccessRepository
 from contexts.auth.application.role_app_service import RoleApplicationService
-from contexts.auth.application.security import PasswordHasher, TokenService
+from contexts.auth.domain.ports import PasswordHasher, TokenService
 from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.domain.repositories import RoleRepository, UserRepository

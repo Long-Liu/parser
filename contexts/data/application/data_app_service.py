@@ -15,9 +15,11 @@ class DataApplicationService(TransactionalService):
 
     async def query(
         self, template_id: str, batch_id: int | None = None,
-        pagination: Pagination = Pagination(1, 200, max_size=500),
+        pagination: Pagination | None = None,
         filters: list[FilterCriterion] | None = None,
     ) -> dict:
+        if pagination is None:
+            pagination = Pagination(1, 200, max_size=500)
         rows, total = await self._repo.query(
             template_id, batch_id, filters or [], pagination,
         )

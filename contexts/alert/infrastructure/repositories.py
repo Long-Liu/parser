@@ -12,7 +12,7 @@ from contexts.alert.infrastructure.tables import (
     AlertRuleModel,
     AlertRuleStateModel,
 )
-from contexts.analytics.infrastructure.analytics_repository import _or_default
+from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
@@ -20,6 +20,7 @@ from contexts.shared.infrastructure.database.tables import (
     DataDynamicIndicator,
     DataGrossProfit,
 )
+from contexts.shared.infrastructure.values import or_default
 
 DEFAULT_RULES = (
     ("COST_DEVIATION_HIGH", "成本偏差过高", "cost_deviation_rate", "gt", "10", "warning"),
@@ -228,8 +229,7 @@ class TortoiseAlertRepository(AlertRepository):
                             since: str | None) -> list[dict]:
         from datetime import datetime, timedelta, timezone
         query = AlertOutboxModel.filter(status="sent")
-        # -1 is the _ALL_PROJECTS sentinel for admins
-        if -1 not in project_ids:
+        if ALL_PROJECTS not in project_ids:
             query = query.filter(project_id__in=project_ids)
         if since:
             try:
@@ -263,8 +263,8 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
         if batch:
             gross = await DataGrossProfit.filter(batch_id=batch.id).first()
             if gross:
-                revenue = Decimal(_or_default(gross.actual_revenue, gross.contract_price) or 0)
-                profit = Decimal(_or_default(gross.actual_profit, gross.gross_profit_net) or 0)
+                revenue = Decimal(or_default(gross.actual_revenue, gross.contract_price) or 0)
+                profit = Decimal(or_default(gross.actual_profit, gross.gross_profit_net) or 0)
                 metrics["gross_profit_rate"] = (
                     profit / revenue * 100 if revenue else Decimal("0")
                 )

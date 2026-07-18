@@ -2,33 +2,31 @@ from __future__ import annotations
 
 from decimal import Decimal
 import asyncio
-from tortoise.transactions import atomic
 
 from tortoise.expressions import Q
 from contexts.auth.infrastructure.tables import User
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
+from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
-from contexts.parsing.infrastructure.tables import UploadLog
 from contexts.project.infrastructure.tables import Project
 from contexts.project.infrastructure.tables import ProjectMilestone
+from contexts.shared.application.transaction import (
+    NoopTransactionManager,
+    TransactionManager,
+)
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.tables import (
     DataDynamicIndicator,
     DataGrossProfit,
 )
-from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
+from contexts.shared.infrastructure.values import or_default
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
 
 
 def _number(value) -> float:
     return float(value) if value is not None else 0.0
-
-
-def _or_default(value, default):
-    """Return value if it is not None, otherwise default. Unlike `or`, treats 0/0.0/Decimal('0') as real values."""
-    return value if value is not None else default
 
 
 def _rate(profit: float, revenue: float) -> float:
@@ -42,8 +40,12 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         {"type": "report", "id": "dashboard", "title": "数据大屏", "subtitle": "经营监控中心"},
     ]
 
-    def __init__(self, ai_provider: AIAnalysisPort | None = None) -> None:
+    def __init__(self, ai_provider: AIAnalysisPort | None = None,
+                 data_cleanup: ParsedDataCleanup | None = None,
+                 transaction_manager: TransactionManager | None = None) -> None:
         self._ai_provider = ai_provider
+        self._data_cleanup = data_cleanup or ParsedDataCleanup()
+        self._tx = transaction_manager or NoopTransactionManager()
 
     async def project_summary(self, project_ids: list[int] | None = None) -> dict:
         query = Project.all()
@@ -105,20 +107,14 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         profits = await self._profits_for_ids(project_ids, ym)
         return {"cost_categories": costs["projects"], "profits": profits}
 
-    @atomic()
     async def delete_monthly_data(self, project_id: int, ym: str) -> None:
-        await self._project(project_id)
-        batches = await UploadBatch.filter(project_id=project_id, ym=ym)
-        batch_ids = [batch.id for batch in batches]
-        if not batch_ids:
-            raise NotFoundError(f"monthly data {ym} not found")
-        for model in TEMPLATE_DATA_MODELS.values():
-            await model.filter(batch_id__in=batch_ids).delete()
-        await UploadLog.filter(batch_id__in=batch_ids).delete()
-        await UploadBatch.filter(id__in=batch_ids).delete()
-        # Clean up any preview records for these batches
-        from contexts.parsing.infrastructure.tables import UploadPreview
-        await UploadPreview.filter(batch_id__in=batch_ids).delete()
+        async with self._tx.transaction():
+            await self._project(project_id)
+            batches = await UploadBatch.filter(project_id=project_id, ym=ym)
+            batch_ids = [batch.id for batch in batches]
+            if not batch_ids:
+                raise NotFoundError(f"monthly data {ym} not found")
+            await self._data_cleanup.delete_for_batches(batch_ids)
 
     async def cost_categories(self, project_ids: list[int], ym: str | None,
                               pagination: Pagination) -> dict:
@@ -193,42 +189,42 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "pagination": result["pagination"],
         }
 
-    @atomic()
     async def create_milestone(self, project_id: int, data: dict) -> dict:
-        await self._project(project_id)
-        if not data.get("ym") or not data.get("title"):
-            raise ValidationError("ym and title are required")
-        row = await ProjectMilestone.create(
-            project_id=project_id, ym=data["ym"], title=data["title"].strip(),
-            progress=Decimal(str(data.get("progress", 0))),
-            description=data.get("description", ""),
-            completed_at=data.get("completed_at") or None,
-        )
-        return self._milestone(row)
+        async with self._tx.transaction():
+            await self._project(project_id)
+            if not data.get("ym") or not data.get("title"):
+                raise ValidationError("ym and title are required")
+            row = await ProjectMilestone.create(
+                project_id=project_id, ym=data["ym"], title=data["title"].strip(),
+                progress=Decimal(str(data.get("progress", 0))),
+                description=data.get("description", ""),
+                completed_at=data.get("completed_at") or None,
+            )
+            return self._milestone(row)
 
-    @atomic()
     async def update_milestone(self, project_id: int, milestone_id: int,
                                data: dict) -> dict:
-        row = await ProjectMilestone.get_or_none(
-            id=milestone_id, project_id=project_id,
-        )
-        if row is None:
-            raise NotFoundError(f"milestone {milestone_id} not found")
-        for field in ("ym", "title", "description", "completed_at"):
-            if field in data:
-                setattr(row, field, data[field] or None)
-        if "progress" in data:
-            row.progress = Decimal(str(data["progress"]))
-        await row.save()
-        return self._milestone(row)
+        async with self._tx.transaction():
+            row = await ProjectMilestone.get_or_none(
+                id=milestone_id, project_id=project_id,
+            )
+            if row is None:
+                raise NotFoundError(f"milestone {milestone_id} not found")
+            for field in ("ym", "title", "description", "completed_at"):
+                if field in data:
+                    setattr(row, field, data[field] or None)
+            if "progress" in data:
+                row.progress = Decimal(str(data["progress"]))
+            await row.save()
+            return self._milestone(row)
 
-    @atomic()
     async def delete_milestone(self, project_id: int, milestone_id: int) -> None:
-        deleted = await ProjectMilestone.filter(
-            id=milestone_id, project_id=project_id,
-        ).delete()
-        if not deleted:
-            raise NotFoundError(f"milestone {milestone_id} not found")
+        async with self._tx.transaction():
+            deleted = await ProjectMilestone.filter(
+                id=milestone_id, project_id=project_id,
+            ).delete()
+            if not deleted:
+                raise NotFoundError(f"milestone {milestone_id} not found")
 
     async def project_profits(self, ym: str | None, pagination: Pagination,
                               project_ids: list[int] | None = None) -> dict:
@@ -259,15 +255,15 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     def _profit_item(self, project, batch_map, profit_map, ym) -> dict:
         batch = batch_map.get(project.id)
         row = profit_map.get(batch.id) if batch else None
-        revenue = _number(_or_default(row.actual_revenue, row.contract_price)) if row else _number(project.contract_price)
-        profit = _number(_or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
+        revenue = _number(or_default(row.actual_revenue, row.contract_price)) if row else _number(project.contract_price)
+        profit = _number(or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
         cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
-        f_rev = _number(_or_default(row.forecast_revenue, row.estimated_completion_price)) if row else revenue
-        f_prf = _number(_or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else profit
-        b_rev = _number(_or_default(row.bid_revenue, row.contract_price)) if row else revenue
-        b_prf = _number(_or_default(row.bid_profit, row.gross_profit_total)) if row else 0.0
-        i_rev = _number(_or_default(row.indicator_revenue, row.contract_price)) if row else revenue
-        i_prf = _number(_or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
+        f_rev = _number(or_default(row.forecast_revenue, row.estimated_completion_price)) if row else revenue
+        f_prf = _number(or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else profit
+        b_rev = _number(or_default(row.bid_revenue, row.contract_price)) if row else revenue
+        b_prf = _number(or_default(row.bid_profit, row.gross_profit_total)) if row else 0.0
+        i_rev = _number(or_default(row.indicator_revenue, row.contract_price)) if row else revenue
+        i_prf = _number(or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
         return {
             "project_id": project.id, "project_code": project.code,
             "project_name": project.name, "ym": batch.ym if batch else ym,
@@ -356,21 +352,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         return [{"name": name, "amount": round(amount, 2)}
                 for name, amount in sorted(totals.items(), key=lambda item: -item[1])]
 
-    async def alerts(self, pagination: Pagination,
-                     project_ids: list[int] | None = None) -> dict:
-        query = Project.filter(status="warning")
-        if project_ids is not None:
-            query = query.filter(id__in=project_ids)
-        total = await query.count()
-        rows = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
-        return {"alerts": [{"type": "project_warning", "project_id": p.id,
-                            "title": p.name, "message": "项目处于预警状态"} for p in rows],
-                "pagination": {"page":pagination.page, "size": pagination.size, "total": total}}
-
     async def notifications(self, user_id: int, pagination: Pagination,
                             unread_only: bool = False,
                             project_ids: list[int] | None = None) -> dict:
-        from tortoise.expressions import Q
         query = Notification.filter(Q(user_id=user_id) | Q(user_id=None))
         if project_ids is not None:
             query = query.filter(Q(project_id__in=project_ids) | Q(project_id=None))
@@ -390,29 +374,28 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 "unread": len(all_ids) - len(read_ids),
                 "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
-    @atomic()
     async def create_notification(self, data: dict) -> dict:
-        if not data.get("title") or not data.get("message"):
-            raise ValidationError("title and message are required")
-        row = await Notification.create(
-            user_id=data.get("user_id"),
-            notification_type=data.get("type", "system"),
-            title=data["title"], message=data["message"],
-            project_id=data.get("project_id"),
-        )
-        return {"id": row.id, "title": row.title}
+        async with self._tx.transaction():
+            if not data.get("title") or not data.get("message"):
+                raise ValidationError("title and message are required")
+            row = await Notification.create(
+                user_id=data.get("user_id"),
+                notification_type=data.get("type", "system"),
+                title=data["title"], message=data["message"],
+                project_id=data.get("project_id"),
+            )
+            return {"id": row.id, "title": row.title}
 
-    @atomic()
     async def mark_notification_read(self, user_id: int, notification_id: int) -> None:
-        from tortoise.expressions import Q
-        exists = await Notification.filter(id=notification_id).filter(
-            Q(user_id=user_id) | Q(user_id=None)
-        ).exists()
-        if not exists:
-            raise NotFoundError(f"notification {notification_id} not found")
-        await NotificationRead.get_or_create(
-            notification_id=notification_id, user_id=user_id,
-        )
+        async with self._tx.transaction():
+            exists = await Notification.filter(id=notification_id).filter(
+                Q(user_id=user_id) | Q(user_id=None)
+            ).exists()
+            if not exists:
+                raise NotFoundError(f"notification {notification_id} not found")
+            await NotificationRead.get_or_create(
+                notification_id=notification_id, user_id=user_id,
+            )
 
     async def ai_analysis(self, project_id: int, ym: str | None) -> dict:
         project = await self._project(project_id)

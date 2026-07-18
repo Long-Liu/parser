@@ -8,7 +8,8 @@ from contexts.auth.application.authorization_app_service import AuthorizationApp
 from contexts.shared.domain.exceptions import AuthenticationError, AuthorizationError, DomainError
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.shared.domain.identifiers import UserId
-from contexts.shared.interface.request_services import RequestServices
+from contexts.shared.interface.base_controller import error_to_response
+from contexts.auth.interface.request_services import RequestServices
 
 
 def require_auth(f):
@@ -53,7 +54,7 @@ def require_project_access(*, roles: set[str] | None = None):
         @wraps(f)
         async def decorated(request, *args, **kwargs):
             permissions = set(getattr(request.ctx, "permissions", set()) or set())
-            if "admin:roles" in permissions or "user:manage" in permissions:
+            if ProjectAccessPolicy.has_elevated_permission(permissions):
                 return await f(request, *args, **kwargs)
             raw = kwargs.get("project_id")
             if raw is None:
@@ -78,18 +79,25 @@ def require_batch_access(*, roles: set[str] | None = None):
         @wraps(f)
         async def decorated(request, *args, **kwargs):
             permissions = set(getattr(request.ctx, "permissions", set()) or set())
-            if "admin:roles" in permissions or "user:manage" in permissions:
+            if ProjectAccessPolicy.has_elevated_permission(permissions):
                 return await f(request, *args, **kwargs)
+            raw = kwargs.get("batch_id")
+            if raw is None:
+                raw = request.args.get("batch_id") or request.form.get("batch_id")
+            if raw is None:
+                return json({"error": "batch_id is required"}, status=400)
             try:
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require_batch(
-                    UserId(int(request.ctx.user_id)), int(kwargs["batch_id"]), roles,
+                    UserId(int(request.ctx.user_id)), int(raw), roles,
                 )
+            except (TypeError, ValueError):
+                return json({"error": "valid batch_id is required"}, status=400)
             except AuthorizationError as exc:
                 return json({"error": str(exc)}, status=403)
             except DomainError as exc:
-                return json({"error": str(exc)}, status=404)
+                return error_to_response(exc)
             return await f(request, *args, **kwargs)
         return decorated
     return decorator

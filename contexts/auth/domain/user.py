@@ -12,10 +12,10 @@ from contexts.auth.domain.events import (
 )
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
-from contexts.shared.domain.email import Email
+from contexts.auth.domain.email import Email
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
-from contexts.shared.domain.phone import Phone
+from contexts.auth.domain.phone import Phone
 
 
 @dataclass(frozen=True)
@@ -154,20 +154,3 @@ class User(AggregateRoot[UserId]):
             username=username, real_name=real_name.strip(),
         ))
         return user
-
-
-def _demo():
-    uid = UserId(1)
-    user = User.create(uid, "alice", "hash123", real_name="Alice")
-    assert user.username == "alice"
-    assert user.is_active is True
-    assert len(user.pull_events()) == 1  # UserRegistered
-    user.disable()
-    assert user.is_active is False
-    assert len(user.pull_events()) == 1  # UserStatusChanged
-    assert len(user.pull_events()) == 0  # drained
-    print("user: OK")
-
-
-if __name__ == "__main__":
-    _demo()

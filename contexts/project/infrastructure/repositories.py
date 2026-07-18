@@ -9,8 +9,7 @@ from contexts.project.domain.repositories import (
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.project.infrastructure.tables import ProjectUser, ProjectMilestone
 from contexts.auth.infrastructure.tables import User as OrmUser, Notification
-from contexts.parsing.infrastructure.tables import UploadBatch, UploadLog, UploadPreview
-from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
+from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.shared.domain.identifiers import ProjectId, UserId
 
 
@@ -33,7 +32,7 @@ def _to_entity(orm: OrmProject) -> Project:
     )
 
 
-class ProjectRepositoryImpl(ProjectRepository):
+class TortoiseProjectRepository(ProjectRepository):
     async def save(self, project: Project) -> None:
         values = {
             "code": project.code,
@@ -116,18 +115,14 @@ class ProjectRepositoryImpl(ProjectRepository):
         ).delete()
 
 
-class ProjectDataCleanupImpl(ProjectDataCleanup):
+class TortoiseProjectDataCleanup(ProjectDataCleanup):
+    """Delegates parsed-data deletion to the parsing context's cleanup port."""
+
+    def __init__(self, parsed_data_cleanup: ParsedDataCleanup) -> None:
+        self._parsed_data_cleanup = parsed_data_cleanup
+
     async def delete_for_project(self, project_id: ProjectId) -> None:
-        batch_ids = list(await UploadBatch.filter(
-            project_id=project_id.value
-        ).values_list("id", flat=True))
-        if not batch_ids:
-            return
-        for model in TEMPLATE_DATA_MODELS.values():
-            await model.filter(batch_id__in=batch_ids).delete()
-        await UploadPreview.filter(batch_id__in=batch_ids).delete()
-        await UploadLog.filter(batch_id__in=batch_ids).delete()
-        await UploadBatch.filter(id__in=batch_ids).delete()
+        await self._parsed_data_cleanup.delete_for_project(project_id.value)
 
 
 class TortoiseUserDirectory(UserDirectory):

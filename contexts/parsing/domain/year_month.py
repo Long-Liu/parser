@@ -25,18 +25,7 @@ class YearMonth(ValueObject):
         parts = value.strip().split("-")
         if len(parts) != 2:
             raise ValidationError(f"Invalid YearMonth format: {value}")
-        return cls(year=int(parts[0]), month=int(parts[1]))
-
-
-def _demo():
-    assert YearMonth.parse("2025-06") == YearMonth(2025, 6)
-    try:
-        YearMonth(2025, 13)
-        assert False, "should reject month 13"
-    except ValidationError:
-        pass
-    print("year_month: OK")
-
-
-if __name__ == "__main__":
-    _demo()
+        try:
+            return cls(year=int(parts[0]), month=int(parts[1]))
+        except ValueError:
+            raise ValidationError(f"Invalid YearMonth format: {value}") from None

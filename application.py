@@ -6,6 +6,7 @@ from sanic import Sanic
 from sanic_ext import Extend
 
 from contexts.container import build_container, build_controllers
+from contexts.auth.infrastructure.seed import seed_defaults
 from contexts.shared.domain.exceptions import DomainError
 from contexts.shared.infrastructure.config import Settings, load_settings
 from contexts.shared.infrastructure.database.bootstrap import register as register_db
@@ -15,8 +16,8 @@ from contexts.shared.interface.health_controller import bp as health_bp
 from contexts.shared.interface.middleware.cors import register as register_cors
 from contexts.shared.interface.middleware.logging import register as register_logging
 from contexts.shared.interface.controller_registration import register_controllers
-from contexts.shared.interface.request_services import RequestServices
-from contexts.template.infrastructure.config_loader import list_configs
+from contexts.auth.interface.request_services import RequestServices
+from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 _logger = logging.getLogger("sanic.error")
 
@@ -39,7 +40,7 @@ def create_app(settings: Settings | None = None) -> Sanic:
     app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
     Extend(app)
 
-    setup_logging()
+    setup_logging(debug=settings.debug)
     register_logging(app)
     register_cors(app, settings)
     register_controllers(app, build_controllers(components))
@@ -47,8 +48,8 @@ def create_app(settings: Settings | None = None) -> Sanic:
         app,
         settings,
         components.alert_dispatcher,
-        template_config_provider=list_configs,
-        password_hasher=components.password_hasher.hash,
+        template_config_provider=YamlTemplateLoader().template_ids,
+        seeder=lambda: seed_defaults(components.password_hasher.hash, settings),
     )
     app.blueprint(health_bp)
 

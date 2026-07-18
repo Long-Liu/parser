@@ -1,11 +1,11 @@
 """Project bounded-context composition."""
 
-from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.domain.repositories import (
     ProjectDataCleanup, ProjectNotificationPort, ProjectRepository, UserDirectory,
 )
 from contexts.shared.application.transaction import TransactionManager
+from contexts.shared.domain.event_publisher import EventPublisher
 
 
 def build_project_service(
@@ -13,9 +13,9 @@ def build_project_service(
     cleanup: ProjectDataCleanup,
     users: UserDirectory,
     notifications: ProjectNotificationPort,
-    alerts: AlertApplicationService,
+    events: EventPublisher,
     transactions: TransactionManager,
 ) -> ProjectApplicationService:
     return ProjectApplicationService(
-        repository, cleanup, users, notifications, alerts, transactions,
+        repository, cleanup, users, notifications, events, transactions,
     )

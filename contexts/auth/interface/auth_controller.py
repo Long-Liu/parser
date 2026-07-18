@@ -10,7 +10,7 @@ from contexts.shared.interface.base_controller import BaseController
 
 
 class AuthController(BaseController):
-    name = "auth_ddd"
+    name = "auth"
 
     def __init__(
         self, auth_svc: AuthApplicationService, user_svc: UserApplicationService

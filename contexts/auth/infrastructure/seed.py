@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # Seed default permissions, roles, and admin user on first startup.
 
+import logging
 from collections.abc import Callable
 
 from tortoise.exceptions import IntegrityError
@@ -15,6 +16,12 @@ from contexts.auth.infrastructure.tables import (
     UserRole,
 )
 from contexts.shared.infrastructure.config import Settings
+
+logger = logging.getLogger("parser")
+
+# Weak fallback allowed for local development only; other environments must
+# configure ``admin.default_password`` explicitly (see seed_defaults below).
+DEFAULT_ADMIN_PASSWORD = "admin123"
 
 
 PERMISSIONS = [
@@ -48,9 +55,14 @@ ROLES = {
 
 async def seed_defaults(password_hasher: Callable[[str], str], settings: Settings):
     admin_password = settings.admin.default_password
-    if settings.app.env != "local" and not admin_password:
-        raise ValueError("DEFAULT_ADMIN_PASSWORD is required outside local environment")
-    admin_password = admin_password or "admin123"
+    if not admin_password:
+        if settings.app.env != "local":
+            raise ValueError("admin.default_password is required outside local environment")
+        logger.warning(
+            "admin.default_password not configured; seeding weak local fallback "
+            "password — set it in config/%s.yaml", settings.app.env,
+        )
+        admin_password = DEFAULT_ADMIN_PASSWORD
     await _do_seed(admin_password, password_hasher)
 
 

@@ -17,7 +17,7 @@ from contexts.parsing.infrastructure.tables import UploadBatch as OrmBatch
 from contexts.parsing.infrastructure.tables import UploadLog as OrmLog
 from contexts.parsing.infrastructure.tables import UploadPreview
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.shared.domain.year_month import YearMonth
+from contexts.parsing.domain.year_month import YearMonth
 
 
 def _job_to_batch_values(job: ParseJob) -> dict:
@@ -78,7 +78,7 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
     )
 
 
-class ParseJobRepositoryImpl(ParseJobRepository):
+class TortoiseParseJobRepository(ParseJobRepository):
     async def save(self, job: ParseJob) -> None:
         batch_values = _job_to_batch_values(job)
         if job.id is None:
@@ -114,19 +114,22 @@ class ParseJobRepositoryImpl(ParseJobRepository):
         batches = await OrmBatch.filter(project_id=project_id.value).order_by(
             "-id"
         ).limit(limit).offset(offset)
-        jobs = []
-        for batch in batches:
-            logs = await OrmLog.filter(batch_id=batch.id)
-            jobs.append(_orm_to_job(batch, list(logs)))
-        return jobs
+        return await self._jobs_with_logs(batches)
 
     async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]:
         batches = await OrmBatch.all().order_by("-id").limit(limit).offset(offset)
-        jobs = []
-        for batch in batches:
-            logs = await OrmLog.filter(batch_id=batch.id)
-            jobs.append(_orm_to_job(batch, list(logs)))
-        return jobs
+        return await self._jobs_with_logs(batches)
+
+    @staticmethod
+    async def _jobs_with_logs(batches) -> list[ParseJob]:
+        """Assemble jobs with a single batched log query (avoids N+1)."""
+        if not batches:
+            return []
+        logs = await OrmLog.filter(batch_id__in=[batch.id for batch in batches])
+        grouped: dict[int, list[OrmLog]] = {}
+        for log in logs:
+            grouped.setdefault(log.batch_id, []).append(log)
+        return [_orm_to_job(batch, grouped.get(batch.id, [])) for batch in batches]
 
     async def count(self, project_id: ProjectId | None = None) -> int:
         query = OrmBatch.all()
@@ -134,7 +137,7 @@ class ParseJobRepositoryImpl(ParseJobRepository):
             query = query.filter(project_id=project_id.value)
         return await query.count()
 
-class UploadPreviewRepositoryImpl(UploadPreviewRepository):
+class TortoiseUploadPreviewRepository(UploadPreviewRepository):
     async def save(self, batch_id: int, payload: list[dict], summary: list[dict]) -> None:
         from tortoise.exceptions import IntegrityError
         existing = await UploadPreview.get_or_none(batch_id=batch_id)

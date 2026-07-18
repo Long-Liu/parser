@@ -7,7 +7,7 @@ from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 
 
-class DataQueryRepositoryImpl(DataQueryRepository):
+class TortoiseDataQueryRepository(DataQueryRepository):
     async def query(
         self,
         template_id: str,

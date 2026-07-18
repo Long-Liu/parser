@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bcrypt
 
-from contexts.auth.application.security import PasswordHasher
+from contexts.auth.domain.ports import PasswordHasher
 
 
 class BCryptPasswordHasher(PasswordHasher):

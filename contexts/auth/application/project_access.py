@@ -23,8 +23,16 @@ class ProjectAccessRepository(ABC):
 class ProjectAccessPolicy:
     """Enforces permissions that are scoped to one project."""
 
+    #: Permissions that bypass project/batch scope checks entirely.
+    ELEVATED_PERMISSIONS = frozenset({"admin:roles", "user:manage"})
+
     def __init__(self, repository: ProjectAccessRepository) -> None:
         self._repository = repository
+
+    @classmethod
+    def has_elevated_permission(cls, permissions) -> bool:
+        """True when the permission set may skip project/batch scope checks."""
+        return bool(cls.ELEVATED_PERMISSIONS & set(permissions or ()))
 
     async def require(
         self, user_id: UserId, project_id: int, allowed_roles: set[str] | None = None,

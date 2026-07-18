@@ -4,11 +4,20 @@ from contexts.shared.domain.exceptions import ConflictError, NotFoundError, Vali
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
+from contexts.shared.domain.base_domain_event import DomainEvent
+from contexts.shared.domain.event_publisher import EventPublisher
+from contexts.project.domain.events import ProjectCreated, ProjectDeleted, ProjectUpdated
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import (
     ProjectRepository, ProjectDataCleanup, UserDirectory, ProjectNotificationPort,
 )
-from contexts.alert.application.alert_app_service import AlertApplicationService
+
+
+class _NullEventPublisher(EventPublisher):
+    """Default publisher for tests/adapters that do not wire domain events."""
+
+    async def publish(self, events: list[DomainEvent]) -> None:
+        return None
 
 
 class ProjectApplicationService(TransactionalService):
@@ -16,14 +25,14 @@ class ProjectApplicationService(TransactionalService):
                  cleanup: ProjectDataCleanup | None = None,
                  users: UserDirectory | None = None,
                  notifications: ProjectNotificationPort | None = None,
-                 alert_svc: AlertApplicationService | None = None,
+                 event_publisher: EventPublisher | None = None,
                  transaction_manager: TransactionManager | None = None) -> None:
         super().__init__(transaction_manager)
         self._repo = repo
         self._cleanup = cleanup
         self._users = users
         self._notifications = notifications
-        self._alert_svc = alert_svc
+        self._event_publisher = event_publisher or _NullEventPublisher()
 
     @transactional
     async def create(self, code: str, name: str, created_by: UserId | None = None,
@@ -38,8 +47,12 @@ class ProjectApplicationService(TransactionalService):
             await self._notifications.publish_warning(project.id, project.name)
         if project.id is None:
             raise RuntimeError("project repository did not assign an id")
-        if self._alert_svc:
-            await self._alert_svc.evaluate(project.id.value)
+        # Alert evaluation is event-driven: the alert context subscribes to
+        # ProjectCreated and evaluates after this transaction commits.
+        project.record(ProjectCreated(
+            aggregate_id=project.id.value, code=project.code, name=project.name,
+        ))
+        await self._event_publisher.publish(project.pull_events())
         return self._serialize(project)
 
     async def list_all(self, *, keyword: str = "", status: str = "",
@@ -73,20 +86,25 @@ class ProjectApplicationService(TransactionalService):
         await self._repo.save(project)
         if project.status == "warning" and self._notifications:
             await self._notifications.publish_warning(project.id, project.name)
-        if self._alert_svc:
-            await self._alert_svc.evaluate(project_id)
+        project.record(ProjectUpdated(
+            aggregate_id=project_id, changed_fields=tuple(sorted(details)),
+        ))
+        await self._event_publisher.publish(project.pull_events())
         return self._serialize(project)
 
     @transactional
     async def delete(self, project_id: int) -> None:
-        if await self._repo.find_by_id(ProjectId(project_id)) is None:
+        project = await self._repo.find_by_id(ProjectId(project_id))
+        if project is None:
             raise NotFoundError(f"project {project_id} not found")
         pid = ProjectId(project_id)
-        if self._alert_svc:
-            await self._alert_svc.delete_project(project_id)
+        # ProjectDeleted is published after commit; the alert context subscribes
+        # to it and cleans up its own alert data for this project.
+        project.record(ProjectDeleted(aggregate_id=project_id, code=project.code))
         if self._cleanup:
             await self._cleanup.delete_for_project(pid)
         await self._repo.delete(pid)
+        await self._event_publisher.publish(project.pull_events())
 
     @transactional
     async def assign_user(self, project_id: int, user_id: int,

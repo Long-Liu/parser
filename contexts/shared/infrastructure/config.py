@@ -3,9 +3,28 @@
 from __future__ import annotations
 
 import os
+import re
 
 import yaml
 from pydantic import BaseModel, Field
+
+_ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _expand_env_vars(value):
+    """Recursively expand ``${ENV_VAR}`` placeholders in string values.
+
+    Unset variables expand to an empty string so that the existing non-local
+    validation (``db.password`` / ``jwt.secret`` / ``admin.default_password``)
+    fails fast instead of silently running with a literal placeholder.
+    """
+    if isinstance(value, dict):
+        return {key: _expand_env_vars(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_env_vars(item) for item in value]
+    if isinstance(value, str):
+        return _ENV_VAR_PATTERN.sub(lambda m: os.getenv(m.group(1), ""), value)
+    return value
 
 
 class AppConfig(BaseModel):
@@ -59,21 +78,35 @@ class Settings(BaseModel):
     def from_yaml(cls, path: str) -> "Settings":
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        return cls(**data)
+        return cls(**_expand_env_vars(data or {}))
 
 
 # ── loader ──────────────────────────────────────────────────────────────────
 
 
 def _discover_config_dir() -> str:
-    """Walk up from this file to find the project root ``config/`` directory."""
-    candidate = os.path.dirname(__file__)
-    for _ in range(8):
-        candidate = os.path.dirname(candidate)
-        path = os.path.join(candidate, "config")
-        if os.path.isdir(path):
-            return path
-    raise FileNotFoundError("Cannot locate config/ directory")
+    """Locate the ``config/`` directory deterministically.
+
+    Priority:
+    1. ``APP_CONFIG_DIR`` environment variable (explicit override).
+    2. Anchored at this file: ``contexts/shared/infrastructure/config.py``
+       sits exactly 4 levels below the project root, so the root ``config/``
+       directory is resolved without walking arbitrary parents.
+    """
+    env_dir = os.getenv("APP_CONFIG_DIR")
+    if env_dir:
+        config_dir = os.path.abspath(env_dir)
+        if os.path.isdir(config_dir):
+            return config_dir
+        raise FileNotFoundError(f"APP_CONFIG_DIR does not exist: {config_dir}")
+
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+    config_dir = os.path.join(project_root, "config")
+    if os.path.isdir(config_dir):
+        return config_dir
+    raise FileNotFoundError(f"Cannot locate config/ directory at {config_dir}")
 
 
 def load_config(env: str | None = None) -> Settings:

@@ -15,6 +15,7 @@ from contexts.auth.interface.auth_middleware import (
 )
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
+from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
 
@@ -31,12 +32,12 @@ class AnalyticsController(BaseController):
 
     def __init__(
         self,
-        analytics_analytics_svc: AnalyticsApplicationService,
+        analytics_svc: AnalyticsApplicationService,
         access_policy: ProjectAccessPolicy,
         alert_svc: AlertApplicationService,
     ):
         super().__init__()
-        self.analytics_svc = analytics_analytics_svc
+        self.analytics_svc = analytics_svc
         self.access_policy = access_policy
         self.alert_svc = alert_svc
 
@@ -44,7 +45,7 @@ class AnalyticsController(BaseController):
         self, request, requested: list[int] | None = None
     ) -> list[int] | None:
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" in permissions or "user:manage" in permissions:
+        if ProjectAccessPolicy.has_elevated_permission(permissions):
             return requested
         accessible = set(
             await self.access_policy.accessible_project_ids(UserId(request.ctx.user_id))
@@ -152,7 +153,7 @@ class AnalyticsController(BaseController):
         p = pagination_from(request)
         return self.json(
             await self.analytics_svc.cost_details(
-                project_id, request.args.get("ym"), p.page, p.size
+                project_id, request.args.get("ym"), p
             )
         )
 
@@ -215,8 +216,7 @@ class AnalyticsController(BaseController):
         return self.json(
             await self.analytics_svc.project_profits(
                 request.args.get("ym"),
-                p.page,
-                p.size,
+                p,
                 await self._project_scope(request),
             )
         )
@@ -280,8 +280,7 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def dashboard_alerts(self, request):
-        p = pagination_from(request)
-        result = await self.alert_svc.list(
+        result = await self.alert_svc.find(
             project_ids=await self._project_scope(request),
             status=request.args.get("status", "active"),
             level=request.args.get("level", ""), pagination=pagination_from(request),
@@ -295,8 +294,7 @@ class AnalyticsController(BaseController):
         return self.json(
             await self.analytics_svc.notifications(
                 request.ctx.user_id,
-                p.page,
-                p.size,
+                p,
                 request.args.get("unread_only", "false").lower() == "true",
                 await self._project_scope(request),
             )
@@ -330,10 +328,9 @@ class AnalyticsController(BaseController):
         return self.json(
             await self.analytics_svc.global_search(
                 request.args.get("keyword", ""),
-                p.page,
-                p.size,
+                p,
                 await self._project_scope(request),
-                "user:manage" in permissions or "admin:roles" in permissions,
+                ProjectAccessPolicy.has_elevated_permission(permissions),
             )
         )
 
@@ -347,7 +344,8 @@ class AnalyticsController(BaseController):
     @require_permission("data:export")
     async def export_profits(self, request):
         result = await self.analytics_svc.project_profits(
-            request.args.get("ym"), 1, 100, await self._project_scope(request)
+            request.args.get("ym"), Pagination(1, 100, max_size=100),
+            await self._project_scope(request)
         )
         wb = Workbook()
         ws = wb.active
@@ -365,7 +363,9 @@ class AnalyticsController(BaseController):
         try:
             ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v]
             ids = await self._project_scope(request, ids or None)
-            result = await self.analytics_svc.cost_categories(ids, request.args.get("ym"), 1, 100)
+            result = await self.analytics_svc.cost_categories(
+                ids, request.args.get("ym"), Pagination(1, 100, max_size=100)
+            )
         except ValueError:
             raise ValidationError("invalid project_ids") from None
         wb = Workbook()

@@ -12,7 +12,7 @@ from contexts.template.application.template_app_service import (
 
 
 class TemplatesController(BaseController):
-    name = "template_ddd"
+    name = "template"
 
     def __init__(self, template_svc: TemplateApplicationService):
         super().__init__()
