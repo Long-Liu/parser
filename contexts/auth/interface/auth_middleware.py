@@ -2,6 +2,7 @@
 
 from functools import wraps
 
+from sanic.request import Request
 from sanic.response import json
 
 from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
@@ -12,9 +13,22 @@ from contexts.shared.interface.base_controller import error_to_response
 from contexts.auth.interface.request_services import RequestServices
 
 
+def _extract_request(args: tuple) -> Request:
+    """Return the Sanic request from view arguments.
+
+    Supports both function views ``handler(request, ...)`` and class-based
+    views ``handler(self, request, ...)``.
+    """
+    for arg in args[:2]:
+        if isinstance(arg, Request):
+            return arg
+    raise RuntimeError("auth decorator could not locate the request argument")
+
+
 def require_auth(f):
     @wraps(f)
-    async def decorated(request, *args, **kwargs):
+    async def decorated(*args, **kwargs):
+        request = _extract_request(args)
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return json({"error": "missing token"}, status=401)
@@ -28,14 +42,15 @@ def require_auth(f):
         request.ctx.user_id = ctx.user_id
         request.ctx.username = ctx.username
         request.ctx.permissions = ctx.permissions
-        return await f(request, *args, **kwargs)
+        return await f(*args, **kwargs)
     return decorated
 
 
 def require_permission(perm_code: str):
     def decorator(f):
         @wraps(f)
-        async def decorated(request, *args, **kwargs):
+        async def decorated(*args, **kwargs):
+            request = _extract_request(args)
             permissions = getattr(request.ctx, "permissions", None)
             if permissions is None:
                 return json({"error": "not authenticated"}, status=401)
@@ -43,7 +58,7 @@ def require_permission(perm_code: str):
                 return json(
                     {"error": f"missing permission: {perm_code}"}, status=403
                 )
-            return await f(request, *args, **kwargs)
+            return await f(*args, **kwargs)
         return decorated
     return decorator
 
@@ -52,10 +67,11 @@ def require_project_access(*, roles: set[str] | None = None):
     """Require membership of the project identified by route, query or form."""
     def decorator(f):
         @wraps(f)
-        async def decorated(request, *args, **kwargs):
+        async def decorated(*args, **kwargs):
+            request = _extract_request(args)
             permissions = set(getattr(request.ctx, "permissions", set()) or set())
             if ProjectAccessPolicy.has_elevated_permission(permissions):
-                return await f(request, *args, **kwargs)
+                return await f(*args, **kwargs)
             raw = kwargs.get("project_id")
             if raw is None:
                 raw = request.args.get("project_id") or request.form.get("project_id")
@@ -69,7 +85,7 @@ def require_project_access(*, roles: set[str] | None = None):
                 return json({"error": "valid project_id is required"}, status=400)
             except AuthorizationError as exc:
                 return json({"error": str(exc)}, status=403)
-            return await f(request, *args, **kwargs)
+            return await f(*args, **kwargs)
         return decorated
     return decorator
 
@@ -77,10 +93,11 @@ def require_project_access(*, roles: set[str] | None = None):
 def require_batch_access(*, roles: set[str] | None = None):
     def decorator(f):
         @wraps(f)
-        async def decorated(request, *args, **kwargs):
+        async def decorated(*args, **kwargs):
+            request = _extract_request(args)
             permissions = set(getattr(request.ctx, "permissions", set()) or set())
             if ProjectAccessPolicy.has_elevated_permission(permissions):
-                return await f(request, *args, **kwargs)
+                return await f(*args, **kwargs)
             raw = kwargs.get("batch_id")
             if raw is None:
                 raw = request.args.get("batch_id") or request.form.get("batch_id")
@@ -98,6 +115,6 @@ def require_batch_access(*, roles: set[str] | None = None):
                 return json({"error": str(exc)}, status=403)
             except DomainError as exc:
                 return error_to_response(exc)
-            return await f(request, *args, **kwargs)
+            return await f(*args, **kwargs)
         return decorated
     return decorator
