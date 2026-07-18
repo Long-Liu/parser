@@ -1,10 +1,10 @@
 template_id: dynamic_indicator
-sheet_pattern: "动态指标"
+sheet_pattern: "*动态指标*"
 description: "动态指标总表"
 
 headers:
-  rows: [3, 4]
-  data_start_row: 5
+  rows: [2, 3]
+  data_start_row: 6
 
 hierarchy:
   column_name: "序号"
@@ -77,5 +77,5 @@ columns:
     match_header: ["现执行预算"]
     type: decimal(15,2)
   - db_field: incurred_cost
-    match_header: ["截止目前已发生成本"]
+    match_header: ["截止"]
     type: decimal(15,2)
