@@ -1,0 +1,47 @@
+template_id: budget_adjustment_internal
+sheet_pattern: "表10.1*"
+description: "内部预算调整明细表"
+
+headers:
+  rows: [2]
+  data_start_row: 4
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^合\\s*计"]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 1
+
+columns:
+  - db_field: adjustment_count
+    match_header: ["预算调整次数"]
+    type: varchar(50)
+  - db_field: request_no
+    match_header: ["请示编号"]
+    type: varchar(100)
+  - db_field: request_name
+    match_header: ["请示名称"]
+    type: varchar(300)
+  - db_field: project_name
+    match_header: ["项目名称"]
+    type: varchar(300)
+  - db_field: bid_price
+    match_header: ["定标价"]
+    type: decimal(15,2)
+  - db_field: budget_before
+    match_header: ["调整前预算"]
+    type: decimal(15,2)
+  - db_field: adjustment_amount
+    match_header: ["调整情况"]
+    type: decimal(15,2)
+  - db_field: budget_after
+    match_header: ["调整后预算"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

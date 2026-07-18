@@ -1,0 +1,50 @@
+template_id: budget_increase
+sheet_pattern: "表10.2*"
+description: "预算调增明细表"
+
+headers:
+  rows: [2]
+  data_start_row: 4
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^合\\s*计"]
+    columns: ["B"]
+  - type: consecutive_empty_rows
+    count: 3
+
+columns:
+  - db_field: increase_count
+    match_header: ["预算调增次数"]
+    type: varchar(50)
+  - db_field: upstream_amount
+    match_header: ["上游结算金额"]
+    type: decimal(15,2)
+  - db_field: upstream_doc_no
+    match_header: ["上游结算文件编码"]
+    type: varchar(100)
+  - db_field: upstream_doc_name
+    match_header: ["上游结算文件名称"]
+    type: varchar(300)
+  - db_field: report_no
+    match_header: ["预算调增报告编号"]
+    type: varchar(100)
+  - db_field: increase_project
+    match_header: ["预算调增项目"]
+    type: varchar(300)
+  - db_field: eas_increase
+    match_header: ["EAS系统增加部分"]
+    type: decimal(15,2)
+  - db_field: writeoff_amount
+    match_header: ["核销金额"]
+    type: decimal(15,2)
+  - db_field: remaining_quota
+    match_header: ["剩余可使用额度"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

@@ -2,13 +2,16 @@
 
 Uses the project's own domain pipeline (unmerge -> flatten -> extract ->
 validate) with YamlTemplateLoader configs against the two real Excel files
-tracked under excel/. Guards the template adaptations made for the
-电源A dynamic-cost workbook format:
+under excel/ (the old样式 workbook is git-tracked; the 0714 workbook is a
+local fixture that is not committed). Guards the template adaptations made
+for the 电源A dynamic-cost workbook format:
 
 - every expected sheet matches a template and yields non-zero valid rows
 - no validation errors on the new workbook
 - key fields are actually populated (not just header-matched on paper)
-- stop rules terminate extraction (no 65k-row runaway on 表5, 总计 cut on 表9)
+- stop rules terminate extraction (no 65k-row runaway on 表5, 总计 cut on 表9,
+  合计 cut on 表10/表10.1/表10.2/表10.3)
+- retired sheets (毛利/表1-1/表9-1/表9-2/表9-3) are skipped on the old workbook
 """
 
 from __future__ import annotations
@@ -40,7 +43,29 @@ EXPECTED_NEW = {
     "installation_dynamic": "project_name",
     "other_items": "item_name",
     "material_cost": "budget_category",
+    "budget_adjustment_summary": "item_name",
+    "budget_adjustment_internal": "request_no",
+    "budget_increase": "increase_project",
+    "budget_lease": "budget_subject",
+    "settlement_output": "indicator_name",
 }
+
+# Exact data-row counts verified against the 0714 workbook; total rows
+# (表10 项目成本合计, 表10.1/10.2/10.3 合计) must never leak into data rows.
+EXPECTED_NEW_ROW_COUNTS = {
+    "budget_adjustment_summary": 67,
+    "budget_adjustment_internal": 3,
+    "budget_increase": 3,
+    "budget_lease": 1,
+    "settlement_output": 14,
+}
+
+# Sheets that existed in the old workbook but lost their templates with the
+# format change; they must now be skipped instead of parsed.
+RETIRED_TEMPLATES = (
+    "gross_profit", "labor_cost_summary", "concrete_ledger",
+    "rebar_ledger", "installation_material",
+)
 
 
 async def _run_pipeline(path: Path):
@@ -73,6 +98,23 @@ async def test_new_workbook_all_expected_sheets_extract():
         assert len(valid) > 0, f"{template_id}: 0 valid rows"
         filled = sum(1 for r in valid if r.fields.get(key_field) not in (None, ""))
         assert filled > 0, f"{template_id}: key field {key_field} never filled"
+
+
+@pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
+async def test_new_workbook_budget_and_settlement_sheets_exact_rows():
+    results = await _run_pipeline(NEW_WORKBOOK)
+    for template_id, expected in EXPECTED_NEW_ROW_COUNTS.items():
+        valid, errors = results[template_id]
+        assert not errors, f"{template_id}: validation errors: {errors[:3]}"
+        assert len(valid) == expected, (
+            f"{template_id}: {len(valid)} rows, expected {expected}"
+        )
+    # the 项目成本合计 grand-total row must be cut by the stop rule
+    summary_rows, _ = results["budget_adjustment_summary"]
+    assert all(
+        not str(r.fields.get("item_name") or "").startswith("项目成本合计")
+        for r in summary_rows
+    )
 
 
 @pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
@@ -123,6 +165,14 @@ async def test_old_workbook_still_parses():
         assert len(valid) > 0, f"{template_id}: 0 valid rows on old workbook"
     # the 表5 runaway must be fixed for the old workbook too
     assert len(results["bid_comparison"][0]) < 100
-    # legacy sheets only present in the old workbook still extract
-    assert len(results["gross_profit"][0]) > 0
-    assert len(results["labor_cost_summary"][0]) > 0
+
+
+@pytest.mark.skipif(not OLD_WORKBOOK.exists(), reason="old workbook not present")
+async def test_old_workbook_retired_sheets_are_skipped():
+    """毛利/表1-1/表9-1/表9-2/表9-3 lost their templates with the format
+    change; on the old workbook they must now be skipped, not parsed."""
+    results = await _run_pipeline(OLD_WORKBOOK)
+    for template_id in RETIRED_TEMPLATES:
+        assert template_id not in results, (
+            f"{template_id} unexpectedly matched a sheet on the old workbook"
+        )

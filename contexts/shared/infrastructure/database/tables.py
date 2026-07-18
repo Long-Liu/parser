@@ -183,32 +183,6 @@ class DataGrossProfit(Model):
         indexes = (("batch_id",), ("hierarchy_code",))
 
 
-class DataLaborCostSummary(Model):
-    id = fields.IntField(primary_key=True)
-    batch_id = fields.IntField()
-    hierarchy_code = fields.CharField(max_length=50, null=True)
-    total_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    planned_progress = fields.DecimalField(max_digits=10, decimal_places=4, null=True)
-    planned_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    actual_progress = fields.DecimalField(max_digits=10, decimal_places=4, null=True)
-    actual_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    planned_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
-    planned_labor_indicator = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    actual_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
-    actual_labor_indicator = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    indicator_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
-    indicator_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    completed_person_months = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
-    completed_labor = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    remark = fields.TextField(null=True)
-    monthly_data = fields.JSONField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta:
-        table = "data_labor_cost_summary"
-        indexes = (("batch_id",), ("hierarchy_code",))
-
-
 class DataBidComparison(Model):
     id = fields.IntField(primary_key=True)
     batch_id = fields.IntField()
@@ -356,77 +330,116 @@ class DataMaterialCost(Model):
         indexes = (("batch_id",), ("hierarchy_code",))
 
 
-class DataConcreteLedger(Model):
+class DataBudgetAdjustmentSummary(Model):
     id = fields.IntField(primary_key=True)
     batch_id = fields.IntField()
     hierarchy_code = fields.CharField(max_length=50, null=True)
-    pour_number = fields.CharField(max_length=100, null=True)
-    application_date = fields.CharField(max_length=50, null=True)
-    drawing_unit_name = fields.CharField(max_length=300, null=True)
-    drawing_number = fields.CharField(max_length=100, null=True)
-    drawing_name = fields.CharField(max_length=300, null=True)
-    usage_location = fields.CharField(max_length=500, null=True)
-    concrete_grade = fields.CharField(max_length=100, null=True)
-    unit = fields.CharField(max_length=50, null=True)
-    design_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    pour_applied_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    contract_scope = fields.CharField(max_length=200, null=True)
-    indicator_budget_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    upstream_settlement_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    actual_pour_date = fields.CharField(max_length=50, null=True)
-    actual_pour_hours = fields.CharField(max_length=50, null=True)
-    actual_pour_method = fields.CharField(max_length=100, null=True)
-    actual_pour_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    settlement_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    supplier_name = fields.CharField(max_length=200, null=True)
-    monthly_data = fields.JSONField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta:
-        table = "data_concrete_ledger"
-        indexes = (("batch_id",), ("hierarchy_code",))
-
-
-class DataRebarLedger(Model):
-    id = fields.IntField(primary_key=True)
-    batch_id = fields.IntField()
-    hierarchy_code = fields.CharField(max_length=50, null=True)
-    drawing_number = fields.CharField(max_length=100, null=True)
-    drawing_name = fields.CharField(max_length=300, null=True)
-    rebar_diameter = fields.CharField(max_length=50, null=True)
-    rebar_length = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    rebar_count = fields.IntField(null=True)
-    unit_weight = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
-    total_weight = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    connection_qty = fields.IntField(null=True)
+    item_name = fields.CharField(max_length=300, null=True)
+    indicator_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_tax_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
+    indicator_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    indicator_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment_1 = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment_2 = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment_n = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    current_budget = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     remark = fields.TextField(null=True)
     monthly_data = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
-        table = "data_rebar_ledger"
+        table = "data_budget_adjustment_summary"
         indexes = (("batch_id",), ("hierarchy_code",))
 
 
-class DataInstallationMaterial(Model):
+class DataBudgetAdjustmentInternal(Model):
     id = fields.IntField(primary_key=True)
     batch_id = fields.IntField()
     hierarchy_code = fields.CharField(max_length=50, null=True)
-    project_category = fields.CharField(max_length=300, null=True)
-    project_feature = fields.TextField(null=True)
-    unit = fields.CharField(max_length=50, null=True)
-    drawing_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    budget_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
-    budget_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    contract_qty = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    contract_unit_price = fields.DecimalField(max_digits=15, decimal_places=4, null=True)
-    contract_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment_count = fields.CharField(max_length=50, null=True)
+    request_no = fields.CharField(max_length=100, null=True)
+    request_name = fields.CharField(max_length=300, null=True)
+    project_name = fields.CharField(max_length=300, null=True)
+    bid_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    budget_before = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    budget_after = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     remark = fields.TextField(null=True)
     monthly_data = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
-        table = "data_installation_material"
+        table = "data_budget_adjustment_internal"
+        indexes = (("batch_id",), ("hierarchy_code",))
+
+
+class DataBudgetIncrease(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    increase_count = fields.CharField(max_length=50, null=True)
+    upstream_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    upstream_doc_no = fields.CharField(max_length=100, null=True)
+    upstream_doc_name = fields.CharField(max_length=300, null=True)
+    report_no = fields.CharField(max_length=100, null=True)
+    increase_project = fields.CharField(max_length=300, null=True)
+    eas_increase = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    writeoff_amount = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remaining_quota = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remark = fields.TextField(null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_budget_increase"
+        indexes = (("batch_id",), ("hierarchy_code",))
+
+
+class DataBudgetLease(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    request_name = fields.CharField(max_length=300, null=True)
+    lease_date = fields.CharField(max_length=50, null=True)
+    budget_subject = fields.CharField(max_length=300, null=True)
+    budget_before = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    lease_bid = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    lease_active = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    lease_passive = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    lease_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    budget_after = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    writeoff_bid = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    writeoff_active = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    writeoff_passive = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    writeoff_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    lease_status = fields.TextField(null=True)
+    remaining_bid = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remaining_active = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    remaining_passive = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    planned_writeoff_date = fields.CharField(max_length=50, null=True)
+    actual_writeoff_date = fields.CharField(max_length=50, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_budget_lease"
+        indexes = (("batch_id",), ("hierarchy_code",))
+
+
+class DataSettlementOutput(Model):
+    id = fields.IntField(primary_key=True)
+    batch_id = fields.IntField()
+    hierarchy_code = fields.CharField(max_length=50, null=True)
+    indicator_name = fields.CharField(max_length=200, null=True)
+    cumulative_value = fields.DecimalField(max_digits=20, decimal_places=6, null=True)
+    indicator_desc = fields.TextField(null=True)
+    data_source = fields.CharField(max_length=300, null=True)
+    monthly_data = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "data_settlement_output"
         indexes = (("batch_id",), ("hierarchy_code",))
 
 
@@ -437,15 +450,16 @@ TEMPLATE_DATA_MODELS: dict[str, type[Model]] = {
     "dynamic_indicator": DataDynamicIndicator,
     "labor_cost": DataLaborCost,
     "gross_profit": DataGrossProfit,
-    "labor_cost_summary": DataLaborCostSummary,
     "bid_comparison": DataBidComparison,
     "construction_dynamic": DataConstructionDynamic,
     "installation_dynamic": DataInstallationDynamic,
     "other_items": DataOtherItems,
     "material_cost": DataMaterialCost,
-    "concrete_ledger": DataConcreteLedger,
-    "rebar_ledger": DataRebarLedger,
-    "installation_material": DataInstallationMaterial,
+    "budget_adjustment_summary": DataBudgetAdjustmentSummary,
+    "budget_adjustment_internal": DataBudgetAdjustmentInternal,
+    "budget_increase": DataBudgetIncrease,
+    "budget_lease": DataBudgetLease,
+    "settlement_output": DataSettlementOutput,
 }
 
 

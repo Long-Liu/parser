@@ -1,0 +1,53 @@
+template_id: budget_adjustment_summary
+sheet_pattern: "表10预算调整总表"
+description: "预算调整总表"
+
+headers:
+  rows: [2, 3]
+  data_start_row: 5
+
+hierarchy:
+  column_name: "序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^项目成本合计"]
+    columns: ["B"]
+  - type: consecutive_empty_rows
+    count: 3
+
+columns:
+  - db_field: item_name
+    match_header: ["名称"]
+    type: varchar(300)
+  - db_field: indicator_ex_tax
+    match_header: ["不含增值税指标"]
+    type: decimal(15,2)
+  - db_field: indicator_tax_rate
+    match_header: ["增值税税率"]
+    type: decimal(15,10)
+  - db_field: indicator_tax
+    match_header: ["增值税税金"]
+    type: decimal(15,2)
+  - db_field: indicator_with_tax
+    match_header: ["含税指标"]
+    type: decimal(15,2)
+  - db_field: adjustment_1
+    match_header: ["第一次调整"]
+    type: decimal(15,2)
+  - db_field: adjustment_2
+    match_header: ["第二次调整"]
+    type: decimal(15,2)
+  - db_field: adjustment_n
+    match_header: ["第N次调整"]
+    type: decimal(15,2)
+  - db_field: adjustment_total
+    match_header: ["调整总额"]
+    type: decimal(15,2)
+  - db_field: current_budget
+    match_header: ["现执行预算"]
+    type: decimal(15,2)
+  - db_field: remark
+    match_header: ["备注"]
+    type: text

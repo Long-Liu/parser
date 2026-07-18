@@ -258,10 +258,12 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
             "manual_warning": Decimal("1" if project.status == "warning" else "0"),
             "progress_delay": self._progress_delay(project),
             "cost_deviation_rate": Decimal("0"),
-            "gross_profit_rate": Decimal("100"),
         }
         if batch:
             gross = await DataGrossProfit.filter(batch_id=batch.id).first()
+            # Only emit gross_profit_rate when a gross-profit row exists; with
+            # the 毛利 sheet retired, new batches have none and the rule must
+            # stay silent instead of evaluating a fabricated default.
             if gross:
                 revenue = Decimal(or_default(gross.actual_revenue, gross.contract_price) or 0)
                 profit = Decimal(or_default(gross.actual_profit, gross.gross_profit_net) or 0)

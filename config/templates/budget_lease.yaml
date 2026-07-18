@@ -1,0 +1,77 @@
+template_id: budget_lease
+sheet_pattern: "表10.3*"
+description: "预算租借明细表"
+
+headers:
+  rows: [2, 3]
+  data_start_row: 5
+
+hierarchy:
+  column_name: "租借序号"
+  separator: "."
+
+stop_rules:
+  - type: cell_match
+    patterns: ["^合\\s*计"]
+    columns: ["A"]
+  - type: consecutive_empty_rows
+    count: 1
+
+columns:
+  - db_field: request_name
+    match_header: ["请示报告名称"]
+    type: varchar(300)
+  - db_field: lease_date
+    match_header: ["租借日期"]
+    type: varchar(50)
+  - db_field: budget_subject
+    match_header: ["租借预算科目"]
+    type: varchar(300)
+  - db_field: budget_before
+    match_header: ["租借前预算"]
+    type: decimal(15,2)
+  - db_field: lease_bid
+    match_header: ["租借金额", "定标租借"]
+    type: decimal(15,2)
+  - db_field: lease_active
+    match_header: ["租借金额", "有源租借"]
+    type: decimal(15,2)
+  - db_field: lease_passive
+    match_header: ["租借金额", "无源租借"]
+    type: decimal(15,2)
+  - db_field: lease_total
+    match_header: ["租借合计"]
+    type: decimal(15,2)
+  - db_field: budget_after
+    match_header: ["租借后预算"]
+    type: decimal(15,2)
+  - db_field: writeoff_bid
+    match_header: ["已核销金额", "定标租借"]
+    type: decimal(15,2)
+  - db_field: writeoff_active
+    match_header: ["已核销金额", "有源租借"]
+    type: decimal(15,2)
+  - db_field: writeoff_passive
+    match_header: ["已核销金额", "无源租借"]
+    type: decimal(15,2)
+  - db_field: writeoff_total
+    match_header: ["核销合计"]
+    type: decimal(15,2)
+  - db_field: lease_status
+    match_header: ["核销后预算"]
+    type: text
+  - db_field: remaining_bid
+    match_header: ["剩余未核销金额", "定标租借"]
+    type: decimal(15,2)
+  - db_field: remaining_active
+    match_header: ["剩余未核销金额", "有源租借"]
+    type: decimal(15,2)
+  - db_field: remaining_passive
+    match_header: ["剩余未核销金额", "无源租借"]
+    type: decimal(15,2)
+  - db_field: planned_writeoff_date
+    match_header: ["计划核"]
+    type: varchar(50)
+  - db_field: actual_writeoff_date
+    match_header: ["实际核"]
+    type: varchar(50)
