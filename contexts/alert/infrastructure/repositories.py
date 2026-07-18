@@ -17,10 +17,10 @@ from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.tables import (
+    SETTLE_CURRENT_PROFIT_RATE,
     DataDynamicIndicator,
-    DataGrossProfit,
+    DataSettlementOutput,
 )
-from contexts.shared.infrastructure.values import or_default
 
 DEFAULT_RULES = (
     ("COST_DEVIATION_HIGH", "成本偏差过高", "cost_deviation_rate", "gt", "10", "warning"),
@@ -260,16 +260,20 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
             "cost_deviation_rate": Decimal("0"),
         }
         if batch:
-            gross = await DataGrossProfit.filter(batch_id=batch.id).first()
-            # Only emit gross_profit_rate when a gross-profit row exists; with
-            # the 毛利 sheet retired, new batches have none and the rule must
-            # stay silent instead of evaluating a fabricated default.
-            if gross:
-                revenue = Decimal(or_default(gross.actual_revenue, gross.contract_price) or 0)
-                profit = Decimal(or_default(gross.actual_profit, gross.gross_profit_net) or 0)
-                metrics["gross_profit_rate"] = (
-                    profit / revenue * 100 if revenue else Decimal("0")
-                )
+            settlement = await DataSettlementOutput.filter(batch_id=batch.id)
+            indicators = {
+                row.indicator_name: row.cumulative_value
+                for row in settlement
+                if row.indicator_name
+            }
+            # gross_profit_rate comes from 表11 结算产值表「截至当期毛利率」,
+            # stored as a ratio (0.x) and converted to a percent so it matches
+            # the rule threshold scale. When the indicator row is missing the
+            # metric stays absent so the rule keeps skipping instead of
+            # evaluating a fabricated default.
+            rate = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
+            if rate is not None:
+                metrics["gross_profit_rate"] = Decimal(rate) * 100
             rows = await DataDynamicIndicator.filter(batch_id=batch.id)
             indicator = sum((Decimal(row.indicator_with_tax or 0) for row in rows), Decimal("0"))
             actual = sum((Decimal(row.incurred_cost or 0) for row in rows), Decimal("0"))

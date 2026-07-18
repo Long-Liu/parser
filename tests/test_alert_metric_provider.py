@@ -1,8 +1,10 @@
-"""Alert metric provider must not fabricate gross_profit_rate.
+"""Alert metric provider reads gross_profit_rate from the settlement sheet.
 
-The 毛利 sheet was retired from the import format, so new batches have no
-data_gross_profit rows. TortoiseAlertMetricProvider.snapshot() must then omit
-the gross_profit_rate metric entirely (rules skip missing metrics) instead of
+The 毛利 sheet was retired and data_gross_profit dropped. Gross-profit
+reporting now comes from 表11 结算产值表 (data_settlement_output): the
+「截至当期毛利率」 row holds a ratio (0.x) which snapshot() converts to a
+percent for the GROSS_PROFIT_LOW rule. When that indicator row is missing
+the metric must be omitted entirely (rules skip missing metrics) instead of
 emitting a fabricated default.
 """
 
@@ -38,7 +40,11 @@ class _FakeQuery:
         return _resolve().__await__()
 
 
-def _patch_models(monkeypatch, *, gross_row, indicator_rows=()):
+def _settlement_row(name, value):
+    return SimpleNamespace(indicator_name=name, cumulative_value=value)
+
+
+def _patch_models(monkeypatch, *, settlement_rows=(), indicator_rows=()):
     project = SimpleNamespace(
         id=1, status="normal", progress=0, start_date=None, end_date=None,
     )
@@ -50,7 +56,9 @@ def _patch_models(monkeypatch, *, gross_row, indicator_rows=()):
         alert_repositories.UploadBatch, "filter", lambda **kw: _FakeQuery(batch)
     )
     monkeypatch.setattr(
-        alert_repositories.DataGrossProfit, "filter", lambda **kw: _FakeQuery(gross_row)
+        alert_repositories.DataSettlementOutput,
+        "filter",
+        lambda **kw: _FakeQuery(list(settlement_rows)),
     )
     monkeypatch.setattr(
         alert_repositories.DataDynamicIndicator,
@@ -60,8 +68,8 @@ def _patch_models(monkeypatch, *, gross_row, indicator_rows=()):
 
 
 @pytest.mark.asyncio
-async def test_snapshot_omits_gross_profit_rate_when_no_rows(monkeypatch):
-    _patch_models(monkeypatch, gross_row=None)
+async def test_snapshot_omits_gross_profit_rate_when_no_settlement_rows(monkeypatch):
+    _patch_models(monkeypatch)
 
     ym, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
 
@@ -72,13 +80,22 @@ async def test_snapshot_omits_gross_profit_rate_when_no_rows(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_snapshot_computes_gross_profit_rate_when_row_exists(monkeypatch):
-    gross = SimpleNamespace(
-        actual_revenue=Decimal("200"), contract_price=None,
-        actual_profit=Decimal("20"), gross_profit_net=None,
-    )
-    _patch_models(monkeypatch, gross_row=gross)
+async def test_snapshot_omits_gross_profit_rate_when_rate_row_missing(monkeypatch):
+    _patch_models(monkeypatch, settlement_rows=[
+        _settlement_row("截至当期毛利", Decimal("106716.415051")),
+    ])
 
     _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
 
-    assert metrics["gross_profit_rate"] == Decimal("10")
+    assert "gross_profit_rate" not in metrics
+
+
+@pytest.mark.asyncio
+async def test_snapshot_converts_settlement_rate_to_percent(monkeypatch):
+    _patch_models(monkeypatch, settlement_rows=[
+        _settlement_row("截至当期毛利率", Decimal("0.106968")),
+    ])
+
+    _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
+
+    assert metrics["gross_profit_rate"] == Decimal("0.106968") * 100

@@ -17,10 +17,19 @@ from contexts.shared.application.transaction import (
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.tables import (
+    SETTLE_CONTRACT_PRICE,
+    SETTLE_CUMULATIVE_COST,
+    SETTLE_CUMULATIVE_OUTPUT,
+    SETTLE_CURRENT_PROFIT,
+    SETTLE_CURRENT_PROFIT_RATE,
+    SETTLE_FORECAST_COST,
+    SETTLE_FORECAST_PROFIT,
+    SETTLE_FORECAST_PROFIT_RATE,
+    SETTLE_FORECAST_REVENUE,
     DataDynamicIndicator,
-    DataGrossProfit,
+    DataSettlementOutput,
+    settlement_indicator_map,
 )
-from contexts.shared.infrastructure.values import or_default
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
 
@@ -31,6 +40,24 @@ def _number(value) -> float:
 
 def _rate(profit: float, revenue: float) -> float:
     return round(profit / revenue * 100, 2) if revenue else 0.0
+
+
+def _settle(indicators: dict, *names: str) -> float:
+    """First non-None cumulative_value among the given settlement indicators."""
+    for name in names:
+        value = indicators.get(name)
+        if value is not None:
+            return float(value)
+    return 0.0
+
+
+def _settle_rate(indicators: dict, name: str, profit: float, revenue: float) -> float:
+    """Settlement rate indicators are stored as ratios (0.x); the API reports
+    percents, so convert. Fall back to profit/revenue when the row is absent."""
+    value = indicators.get(name)
+    if value is not None:
+        return round(float(value) * 100, 2)
+    return _rate(profit, revenue)
 
 
 class TortoiseAnalyticsRepository(AnalyticsRepository):
@@ -245,38 +272,43 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batch_map = {}
         for batch in await batch_query.order_by("project_id", "-ym", "-id"):
             batch_map.setdefault(batch.project_id, batch)
-        profit_map = {
-            row.batch_id: row
-            for row in await DataGrossProfit.filter(
-                batch_id__in=[b.id for b in batch_map.values()])
-        }
+        settlement_rows = await DataSettlementOutput.filter(
+            batch_id__in=[b.id for b in batch_map.values()])
+        profit_map = {}
+        for row in settlement_rows:
+            profit_map.setdefault(row.batch_id, {})[row.indicator_name] = row.cumulative_value
         return batch_map, profit_map
 
     def _profit_item(self, project, batch_map, profit_map, ym) -> dict:
         batch = batch_map.get(project.id)
-        row = profit_map.get(batch.id) if batch else None
-        revenue = _number(or_default(row.actual_revenue, row.contract_price)) if row else _number(project.contract_price)
-        profit = _number(or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
-        cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
-        f_rev = _number(or_default(row.forecast_revenue, row.estimated_completion_price)) if row else revenue
-        f_prf = _number(or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else profit
-        b_rev = _number(or_default(row.bid_revenue, row.contract_price)) if row else revenue
-        b_prf = _number(or_default(row.bid_profit, row.gross_profit_total)) if row else 0.0
-        i_rev = _number(or_default(row.indicator_revenue, row.contract_price)) if row else revenue
-        i_prf = _number(or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
+        indicators = profit_map.get(batch.id) if batch else None
+        indicators = indicators or {}
+        # Profit figures come from 表11 结算产值表 (data_settlement_output);
+        # the old 毛利 sheet was retired and data_gross_profit dropped.
+        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
+        if indicators:
+            cost = _settle(indicators, SETTLE_CUMULATIVE_COST)
+        else:
+            revenue = revenue or _number(project.contract_price)
+            cost = revenue - profit
+        f_rev = _settle(indicators, SETTLE_FORECAST_REVENUE) if indicators else revenue
+        f_prf = _settle(indicators, SETTLE_FORECAST_PROFIT) if indicators else profit
+        f_cost = _settle(indicators, SETTLE_FORECAST_COST) if indicators else f_rev - f_prf
+        # The settlement sheet has no bid / target-indicator split, so the
+        # legacy bid/indicator blocks keep their shape but report zeros.
         return {
             "project_id": project.id, "project_code": project.code,
             "project_name": project.name, "ym": batch.ym if batch else ym,
-            "bid": {"revenue": b_rev,
-                    "cost": _number(row.bid_cost) if row and row.bid_cost is not None else b_rev - b_prf,
-                    "profit": b_prf, "profit_rate": _rate(b_prf, b_rev)},
-            "indicator": {"revenue": i_rev,
-                          "cost": _number(row.indicator_cost) if row and row.indicator_cost is not None else i_rev - i_prf,
-                          "profit": i_prf, "profit_rate": _rate(i_prf, i_rev)},
+            "bid": {"revenue": 0.0, "cost": 0.0, "profit": 0.0, "profit_rate": 0.0},
+            "indicator": {"revenue": 0.0, "cost": 0.0, "profit": 0.0,
+                          "profit_rate": 0.0},
             "current": {"revenue": revenue, "cost": cost, "profit": profit,
-                        "profit_rate": _rate(profit, revenue)},
-            "forecast": {"revenue": f_rev, "cost": f_rev - f_prf,
-                         "profit": f_prf, "profit_rate": _rate(f_prf, f_rev)},
+                        "profit_rate": _settle_rate(
+                            indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue)},
+            "forecast": {"revenue": f_rev, "cost": f_cost,
+                         "profit": f_prf, "profit_rate": _settle_rate(
+                             indicators, SETTLE_FORECAST_PROFIT_RATE, f_prf, f_rev)},
         }
 
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
@@ -472,22 +504,28 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 "last_synced_at": latest.created_at.isoformat() if latest else None}
 
     async def _monthly_item(self, batch: UploadBatch) -> dict:
-        row = await DataGrossProfit.filter(batch_id=batch.id).first()
-        revenue = _number(row.contract_price) if row else 0.0
-        profit = _number(row.gross_profit_net) if row else 0.0
-        cost = revenue - profit
+        rows = await DataSettlementOutput.filter(batch_id=batch.id)
+        indicators = settlement_indicator_map(rows)
+        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
+        cost = _settle(indicators, SETTLE_CUMULATIVE_COST) if indicators else revenue - profit
         return {"batch_id": batch.id, "ym": batch.ym, "file_name": batch.file_name,
                 "status": batch.status, "uploaded_at": batch.created_at.isoformat(),
                 "revenue": revenue, "cost": cost, "profit": profit,
-                "profit_rate": _rate(profit, revenue)}
+                "profit_rate": _settle_rate(
+                    indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue)}
 
     async def _profit_for(self, project_id: int, ym: str | None) -> dict:
         batch = await self._batch(project_id, ym)
-        row = None if batch is None else await DataGrossProfit.filter(batch_id=batch.id).first()
-        revenue = _number(row.contract_price) if row else 0.0
-        profit = _number(row.gross_profit_net) if row else 0.0
+        indicators = {}
+        if batch is not None:
+            rows = await DataSettlementOutput.filter(batch_id=batch.id)
+            indicators = settlement_indicator_map(rows)
+        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
         return {"ym": batch.ym if batch else ym, "profit": profit,
-                "profit_rate": _rate(profit, revenue)}
+                "profit_rate": _settle_rate(
+                    indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue)}
 
     async def _profits_for_ids(self, project_ids: list[int], ym: str | None) -> list[dict]:
         result = []

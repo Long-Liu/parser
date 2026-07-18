@@ -141,48 +141,6 @@ class DataLaborCost(Model):
         indexes = (("batch_id",), ("hierarchy_code",))
 
 
-class DataGrossProfit(Model):
-    id = fields.IntField(primary_key=True)
-    batch_id = fields.IntField()
-    hierarchy_code = fields.CharField(max_length=50, null=True)
-    item_name = fields.CharField(max_length=200, null=True)
-    contract_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    estimated_completion_price = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    economic_assessment = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    estimated_quantity = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    gross_profit_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    gross_profit_mgmt_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    gross_profit_net = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    gross_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
-    estimated_gross_profit_total = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    estimated_gross_profit_mgmt_fee = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    estimated_gross_profit_net = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    estimated_gross_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
-    bid_revenue = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    bid_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    bid_profit = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    bid_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
-    indicator_revenue = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    indicator_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    indicator_profit = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    indicator_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
-    actual_revenue = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    actual_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    actual_profit = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    actual_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
-    forecast_revenue = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    forecast_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    forecast_profit = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    forecast_profit_rate = fields.DecimalField(max_digits=15, decimal_places=10, null=True)
-    remark = fields.TextField(null=True)
-    monthly_data = fields.JSONField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta:
-        table = "data_gross_profit"
-        indexes = (("batch_id",), ("hierarchy_code",))
-
-
 class DataBidComparison(Model):
     id = fields.IntField(primary_key=True)
     batch_id = fields.IntField()
@@ -443,13 +401,37 @@ class DataSettlementOutput(Model):
         indexes = (("batch_id",), ("hierarchy_code",))
 
 
+# Indicator names stored as vertical rows in data_settlement_output (表11
+# 结算产值表): one row per indicator_name with its cumulative_value.
+# Gross-profit reporting and the GROSS_PROFIT_LOW alert rule read these rows
+# since the old 毛利 sheet (data_gross_profit) was retired and dropped.
+SETTLE_CONTRACT_PRICE = "合同总价"
+SETTLE_CUMULATIVE_OUTPUT = "累计结算产值"
+SETTLE_CUMULATIVE_COST = "累计发生总成本"
+SETTLE_FORECAST_REVENUE = "预计完工收入"
+SETTLE_FORECAST_COST = "预计完工成本"
+SETTLE_CURRENT_PROFIT = "截至当期毛利"
+SETTLE_CURRENT_PROFIT_RATE = "截至当期毛利率"
+SETTLE_FORECAST_PROFIT = "预计毛利"
+SETTLE_FORECAST_PROFIT_RATE = "预计毛利率"
+
+# Rate indicators are stored as ratios (0.x); consumers that report percents
+# multiply by 100.
+def settlement_indicator_map(rows) -> dict:
+    """Index settlement_output rows into {indicator_name: cumulative_value}."""
+    return {
+        row.indicator_name: row.cumulative_value
+        for row in rows
+        if row.indicator_name
+    }
+
+
 TEMPLATE_DATA_MODELS: dict[str, type[Model]] = {
     "social_insurance": DataSocialInsurance,
     "site_management": DataSiteManagement,
     "machinery": DataMachinery,
     "dynamic_indicator": DataDynamicIndicator,
     "labor_cost": DataLaborCost,
-    "gross_profit": DataGrossProfit,
     "bid_comparison": DataBidComparison,
     "construction_dynamic": DataConstructionDynamic,
     "installation_dynamic": DataInstallationDynamic,
