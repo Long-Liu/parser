@@ -42,6 +42,7 @@ class DataController(BaseController):
         self.bp.add_route(self.query,   "/data/<template_id:str>",            methods=["GET"])
         self.bp.add_route(self.get_row, "/data/<template_id:str>/<row_id:int>", methods=["GET"])
         self.bp.add_route(self.delete,  "/data/<template_id:str>/<row_id:int>", methods=["DELETE"])
+        self.bp.add_route(self.update,  "/data/<template_id:str>/<row_id:int>", methods=["PUT"])
 
     @require_auth
     @require_permission("data:view")
@@ -84,3 +85,19 @@ class DataController(BaseController):
             )
         await self.svc.delete_by_id(template_id, row_id)
         return self.json_ok()
+
+    @require_auth
+    @require_permission("data:upload")
+    @openapi.tag("Data")
+    @openapi.summary("Update data row fields")
+    async def update(self, request, template_id: str, row_id: int):
+        permissions = set(request.ctx.permissions or set())
+        if "admin:roles" not in permissions and "user:manage" not in permissions:
+            await self.access_policy.require_data_row(
+                UserId(request.ctx.user_id), template_id, row_id, {"manager"},
+            )
+        body = request.json if isinstance(request.json, dict) else {}
+        fields = body.get("fields")
+        if not isinstance(fields, dict):
+            raise ValidationError('request body must contain a "fields" object')
+        return self.json(await self.svc.update_by_id(template_id, row_id, fields))

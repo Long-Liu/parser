@@ -18,3 +18,11 @@ class DataQueryRepository(ABC):
 
     @abstractmethod
     async def delete_by_id(self, template_id: str, row_id: int) -> None: ...
+
+    @abstractmethod
+    async def field_types(self, template_id: str) -> dict[str, str]: ...
+
+    @abstractmethod
+    async def update_by_id(
+        self, template_id: str, row_id: int, updates: dict
+    ) -> None: ...

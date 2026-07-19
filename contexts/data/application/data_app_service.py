@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
+from contexts.data.domain.data_row_update import build_updates
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.shared.domain.pagination import Pagination
@@ -38,3 +39,22 @@ class DataApplicationService(TransactionalService):
         if row is None:
             raise NotFoundError(f"row {row_id} not found in {template_id}")
         await self._repo.delete_by_id(template_id, row_id)
+
+
+    @transactional
+    async def update_by_id(
+        self, template_id: str, row_id: int, fields: dict,
+    ) -> dict:
+        field_types = await self._repo.field_types(template_id)
+        updates = build_updates(field_types, fields)
+        row = await self._repo.get_by_id(template_id, row_id)
+        if row is None:
+            raise NotFoundError(f"row {row_id} not found in {template_id}")
+        if "monthly_data" in updates:
+            # Merge into the existing JSON object instead of replacing it, so
+            # the frontend can patch single monthly keys.
+            existing = row.fields.get("monthly_data") or {}
+            updates["monthly_data"] = {**existing, **updates["monthly_data"]}
+        await self._repo.update_by_id(template_id, row_id, updates)
+        updated = await self._repo.get_by_id(template_id, row_id)
+        return updated.fields

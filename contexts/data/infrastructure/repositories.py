@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tortoise import fields
+
 from contexts.data.domain.data_query import DataRow, FilterCriterion
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.shared.domain.pagination import Pagination
@@ -49,3 +51,20 @@ class DataQueryRepositoryImpl(DataQueryRepository):
         if model is None:
             raise NotFoundError(f"template {template_id} not found")
         await model.filter(id=row_id).delete()
+
+    async def field_types(self, template_id: str) -> dict[str, str]:
+        model = TEMPLATE_DATA_MODELS.get(template_id)
+        if model is None:
+            raise NotFoundError(f"template {template_id} not found")
+        return {
+            name: "decimal" if isinstance(f, fields.DecimalField) else "other"
+            for name, f in model._meta.fields_map.items()
+        }
+
+    async def update_by_id(
+        self, template_id: str, row_id: int, updates: dict
+    ) -> None:
+        model = TEMPLATE_DATA_MODELS.get(template_id)
+        if model is None:
+            raise NotFoundError(f"template {template_id} not found")
+        await model.filter(id=row_id).update(**updates)
