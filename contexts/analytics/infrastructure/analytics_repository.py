@@ -4,6 +4,7 @@ from decimal import Decimal
 import asyncio
 
 from tortoise.expressions import Q
+from contexts.alert.infrastructure.tables import AlertModel
 from contexts.auth.infrastructure.tables import User
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
@@ -26,7 +27,10 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_FORECAST_PROFIT,
     SETTLE_FORECAST_PROFIT_RATE,
     SETTLE_FORECAST_REVENUE,
+    DataConstructionDynamic,
     DataDynamicIndicator,
+    DataInstallationDynamic,
+    DataMaterialCost,
     DataSettlementOutput,
     settlement_indicator_map,
 )
@@ -486,17 +490,97 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             projects = await project_query.order_by("name").limit(candidate_limit)
         reports = [item for item in self._REPORT_CATALOG
                    if keyword.lower() in (item["title"] + item["subtitle"]).lower()]
+        business_results, business_total = await self._business_search(
+            keyword, project_ids, candidate_limit,
+        )
         all_results = (
             [{"type": "project", "id": p.id, "title": p.name, "subtitle": p.code}
              for p in projects]
             + [{"type": "user", "id": u.id, "title": u.real_name or u.username,
                 "subtitle": u.email or ""} for u in users]
             + reports
+            + business_results
         )
         all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
-        total = project_total + user_total + len(reports)
+        total = project_total + user_total + len(reports) + business_total
         return {"results": all_results[pagination.offset:pagination.offset + pagination.size],
                 "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
+
+    async def _business_search(self, keyword: str, project_ids: list[int] | None,
+                               limit: int) -> tuple[list[dict], int]:
+        """Search parsed business data (materials / cost items / alerts).
+
+        Data rows are scoped to the latest successful batch of each in-scope
+        project so stale monthly batches do not produce duplicate hits.
+        """
+        batch_query = UploadBatch.filter(status="success")
+        if project_ids is not None:
+            batch_query = batch_query.filter(project_id__in=project_ids)
+        batches = await batch_query.order_by("project_id", "-ym", "-id")
+        latest: dict[int, int] = {}
+        for b in batches:
+            latest.setdefault(b.project_id, b.id)
+        batch_ids = list(latest.values())
+        if not batch_ids:
+            return [], 0
+        batch_to_project = {b.id: b.project_id for b in batches if b.id in latest.values()}
+        project_names = {
+            p.id: p.name for p in await Project.filter(id__in=latest.keys())
+        }
+
+        alert_query = AlertModel.filter(
+            Q(title__icontains=keyword) | Q(message__icontains=keyword)
+        )
+        if project_ids is not None:
+            alert_query = alert_query.filter(project_id__in=project_ids)
+
+        (mat_total, con_total, inst_total, alert_total,
+         materials, constructions, installations, alerts) = await asyncio.gather(
+            DataMaterialCost.filter(batch_id__in=batch_ids,
+                                    budget_category__icontains=keyword).count(),
+            DataConstructionDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).count(),
+            DataInstallationDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).count(),
+            alert_query.count(),
+            DataMaterialCost.filter(batch_id__in=batch_ids,
+                                    budget_category__icontains=keyword).limit(limit),
+            DataConstructionDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).limit(limit),
+            DataInstallationDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).limit(limit),
+            alert_query.order_by("-last_triggered_at").limit(limit),
+        )
+
+        results: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        def add(type_: str, row_id: int, title: str | None, subtitle: str) -> None:
+            if not title:
+                return
+            key = (type_, title)
+            if key in seen:
+                return
+            seen.add(key)
+            results.append({"type": type_, "id": row_id,
+                            "title": title, "subtitle": subtitle})
+
+        def project_of(row) -> str:
+            return project_names.get(batch_to_project.get(row.batch_id), "")
+
+        for row in materials:
+            suffix = f" · {row.unit}" if row.unit else ""
+            add("material", row.id, row.budget_category,
+                f"{project_of(row)}{suffix}")
+        for row in constructions:
+            add("cost_item", row.id, row.project_name,
+                f"{project_of(row)} · 建筑工程")
+        for row in installations:
+            add("cost_item", row.id, row.project_name,
+                f"{project_of(row)} · 安装工程")
+        for row in alerts:
+            add("alert", row.id, row.title, f"{row.level} · {row.status}")
+        return results, mat_total + con_total + inst_total + alert_total
 
     async def sync_status(self) -> dict:
         latest = await UploadBatch.all().order_by("-created_at").first()
