@@ -91,10 +91,22 @@ class AnalyticsRepository(ABC):
     @abstractmethod
     async def mark_notification_read(self, user_id: int, notification_id: int) -> None: ...
 
+    @abstractmethod
+    async def mark_all_notifications_read(self, user_id: int) -> int: ...
+
+    @abstractmethod
+    async def delete_notification(self, user_id: int, notification_id: int) -> None: ...
+
+    @abstractmethod
+    async def clear_notifications(self, user_id: int) -> int: ...
+
     # ── misc ────────────────────────────────────────────────────────
 
     @abstractmethod
     async def ai_analysis(self, project_id: int, ym: str | None) -> dict: ...
+
+    @abstractmethod
+    async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict: ...
 
     @abstractmethod
     async def global_search(self, keyword: str, pagination: Pagination,

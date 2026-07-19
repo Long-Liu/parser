@@ -49,7 +49,7 @@ def test_build_workbook_from_real_material_cost():
     # 两行表头：首列为层级序号列（落在最后一行表头）
     assert ws.cell(row=2, column=1).value == "序号"
     # fixed_columns：首个 match 关键词作为列名
-    assert ws.cell(row=2, column=2).value == "预算科目"
+    assert ws.cell(row=2, column=2).value == "成本科目"
     assert ws.cell(row=2, column=3).value == "单位"
     # 多关键词列：自上向下铺排
     assert ws.cell(row=1, column=4).value == "经济考核指标"
@@ -87,11 +87,9 @@ def test_build_workbook_marks_dynamic_columns_with_example_month():
 
 # ── 端点 ──────────────────────────────────────────────────────────────
 #
-# NOTE: Sanic 分发 bound controller 方法为 handler(request, **kw)，运行时
-# require_auth 收到的第一个位置参数是 controller 实例 —— 全部 DDD 端点共有
-# 的预存缺陷（修复属 contexts/auth 范围，见 tests/test_data_update.py 同
-# 样说明）。因此 handler 本体经 __wrapped__ 解包测试，401 契约在普通函数
-# handler 上单独测试。
+# handler 本体经 __wrapped__ 解包后以 fake request 测试；require_auth 通过
+# isinstance(sanic.request.Request) 定位请求对象，因此 401 契约改为经真实
+# Sanic app + ASGI 调用测试（同 tests/test_endpoint_smoke.py 风格）。
 
 class _FakeAuthService:
     async def authenticate(self, token: str):
@@ -137,7 +135,7 @@ async def test_download_endpoint_returns_xlsx_attachment():
 
     ws = load_workbook(io.BytesIO(response.body)).active
     assert ws.title == "表9建安材料成本表"
-    assert ws.cell(row=2, column=2).value == "预算科目"
+    assert ws.cell(row=2, column=2).value == "成本科目"
 
 
 async def test_download_endpoint_unknown_template_404():
@@ -147,14 +145,48 @@ async def test_download_endpoint_unknown_template_404():
 
 
 async def test_require_auth_decorator_returns_401_without_token():
+    from sanic import Sanic
+    from sanic.response import json
+
     from contexts.auth.interface.auth_middleware import require_auth
 
-    @require_auth
-    async def dummy(request):
-        raise AssertionError("must not reach the handler")
+    app = Sanic("template_download_auth_smoke")
+    app.asgi = True
+    app.ctx.services = SimpleNamespace(authorization=_FakeAuthService())
 
-    response = await dummy(_fake_request(token=None))
-    assert response.status == 401
+    @app.get("/protected")
+    @require_auth
+    async def protected(request):
+        return json({"ok": True})
+
+    app.finalize()
+    app.signalize(allow_fail_builtin=False)
+
+    status: dict = {}
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/protected",
+        "raw_path": b"/protected",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 80),
+    }
+    await app(scope, receive, send)
+    assert status.get("code") == 401
 
 
 def test_download_route_registered_in_application():
@@ -162,5 +194,5 @@ def test_download_route_registered_in_application():
 
     route_names = {route.name for route in application.app.router.routes}
     assert any(
-        "template_ddd" in name and "download" in name for name in route_names
+        "template" in name and "download" in name for name in route_names
     )

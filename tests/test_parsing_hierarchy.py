@@ -141,11 +141,11 @@ def test_extract_hierarchy_column_missing_from_sheet():
 def test_material_cost_real_template_fills_hierarchy():
     template = YamlTemplateLoader().load("material_cost")
     flat_headers = [
-        "序号", "预算科目", "单位",
+        "序号", "成本科目", "单位",
         "经济考核指标_数量", "经济考核指标_单价", "经济考核指标_合价",
     ]
     grid = [
-        ["序号", "预算科目", "单位", "经济考核指标（初版预算）", None, None],
+        ["序号", "成本科目", "单位", "经济考核指标（初版预算）", None, None],
         [None, None, None, "数量", "单价", "合价"],
         ["一", "建筑材料费", None, None, None, 70388700],
         ["1", "混凝土", "m³", 88829.39, 330, 29313700],

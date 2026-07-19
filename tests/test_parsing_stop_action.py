@@ -46,13 +46,18 @@ def test_yaml_loader_default_action_is_exclude():
 
 
 def test_all_action_last_templates_load():
+    """新电源A模板的终结合计行规则必须标记 action:"last"。
+
+    远端模板重构后 rebar_ledger 等旧表已删除；construction_dynamic 另有一条
+    默认 exclude 的 "^合计"（I 列）规则，与 "合计（含税）" 终结行规则并存，
+    因此按精确 pattern 断言而非集合相等。
+    """
     loader = YamlTemplateLoader()
     expected = {
         "material_cost": "^总计",
-        "construction_dynamic": "^合计",
+        "construction_dynamic": "^合计（含税）",
         "installation_dynamic": "^合计",
         "other_items": "^合计",
-        "rebar_ledger": "^合计Kg",
         "machinery": "^小计",
         "social_insurance": "^合计",
     }
@@ -60,7 +65,7 @@ def test_all_action_last_templates_load():
         template = loader.load(template_id)
         actions = {
             r.action for r in template.stop_rules
-            if any(p.startswith(pattern) for p in r.patterns)
+            if pattern in r.patterns
         }
         assert actions == {StopRuleAction.LAST}, template_id
 
@@ -132,9 +137,9 @@ def test_action_last_includes_matched_row_as_final_row():
 def test_material_cost_real_yaml_total_row_ingested():
     """material_cost.yaml 端到端：总计行入库、其后注行不解析。"""
     template = YamlTemplateLoader().load("material_cost")
-    flat_headers = ["序号", "预算科目", "单位", "经济考核指标_合价"]
+    flat_headers = ["序号", "成本科目", "单位", "经济考核指标_合价"]
     grid = [
-        ["序号", "预算科目", "单位", "经济考核指标（初版预算）"],
+        ["序号", "成本科目", "单位", "经济考核指标（初版预算）"],
         [None, None, None, "合价"],
         ["一", "建筑材料费", None, 70388700],
         ["1", "混凝土", "m³", 29313700],

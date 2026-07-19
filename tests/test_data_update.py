@@ -152,13 +152,10 @@ async def test_update_by_id_unknown_template_raises_not_found():
 
 # ── controller (undecorated handler + decorator contract) ────────────
 #
-# NOTE: Sanic dispatches bound controller methods as handler(request, **kw),
-# so at runtime the auth decorators receive the controller instance as their
-# first positional arg — a pre-existing flaw shared by ALL DDD endpoints
-# (verified against the live get_row route). Fixing it belongs to
-# contexts/auth / contexts/shared and is out of scope for this package.
-# We therefore test the handler body via __wrapped__ unwrapping, and test
-# the 401/403 decorator contract separately on plain function handlers.
+# Handler bodies are tested via __wrapped__ unwrapping with fake requests.
+# The 401/403 decorator contract is tested separately through a real Sanic
+# app + ASGI call, because the auth decorators locate the request via
+# isinstance(sanic.request.Request) (same style as tests/test_endpoint_smoke.py).
 
 class FakeAuthorization:
     def __init__(self, permissions):
@@ -243,41 +240,90 @@ async def test_put_handler_missing_row_raises_not_found():
         await raw(controller, req, template_id="gross_profit", row_id=999)
 
 
+# ── decorator contract via a real Sanic app (isinstance-based dispatch) ────
+
+
+async def _asgi_get(app, path: str, token: str | None = None):
+    """Minimal ASGI GET client (mirrors tests/test_endpoint_smoke.py)."""
+    status: dict = {}
+    body = bytearray()
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+        elif message["type"] == "http.response.body":
+            body.extend(message.get("body", b""))
+
+    headers = []
+    if token is not None:
+        headers.append((b"authorization", f"Bearer {token}".encode()))
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 80),
+    }
+    await app(scope, receive, send)
+    return status.get("code"), bytes(body)
+
+
+def _protected_app(permissions, *, with_permission: bool):
+    from sanic import Sanic
+    from sanic.response import json
+
+    from contexts.auth.interface.auth_middleware import (
+        require_auth,
+        require_permission,
+    )
+
+    app = Sanic(f"data_update_decorator_{with_permission}_{id(permissions)}")
+    app.asgi = True
+    app.ctx.services = SimpleNamespace(
+        authorization=FakeAuthorization(permissions),
+    )
+
+    if with_permission:
+        @app.get("/protected")
+        @require_auth
+        @require_permission("data:upload")
+        async def protected(request):
+            return json({"ok": True})
+    else:
+        @app.get("/protected")
+        @require_auth
+        async def protected(request):
+            return json({"ok": True})
+
+    app.finalize()
+    app.signalize(allow_fail_builtin=False)
+    return app
+
+
 async def test_require_auth_decorator_returns_401_without_token():
-    from contexts.auth.interface.auth_middleware import require_auth
-
-    @require_auth
-    async def dummy(request):
-        raise AssertionError("must not reach the handler")
-
-    resp = await dummy(_request(token=None))
-    assert resp.status == 401
+    app = _protected_app(set(), with_permission=False)
+    code, _ = await _asgi_get(app, "/protected", token=None)
+    assert code == 401
 
 
 async def test_require_permission_decorator_returns_403_without_data_upload():
-    from contexts.auth.interface.auth_middleware import (
-        require_auth,
-        require_permission,
-    )
-
-    @require_auth
-    @require_permission("data:upload")
-    async def dummy(request):
-        raise AssertionError("must not reach the handler")
-
-    resp = await dummy(_request(token="t", permissions={"data:view"}))
-    assert resp.status == 403
+    app = _protected_app({"data:view"}, with_permission=True)
+    code, _ = await _asgi_get(app, "/protected", token="t")
+    assert code == 403
 
 
 async def test_decorator_chain_passes_with_data_upload_permission():
-    from contexts.auth.interface.auth_middleware import (
-        require_auth,
-        require_permission,
-    )
-
-    @require_auth
-    @require_permission("data:upload")
-    async def dummy(request):
-        return "reached"
-
-    assert await dummy(_request(token="t", permissions={"data:upload"})) == "reached"
+    app = _protected_app({"data:upload"}, with_permission=True)
+    code, body = await _asgi_get(app, "/protected", token="t")
+    assert code == 200
+    assert jsonlib.loads(body) == {"ok": True}

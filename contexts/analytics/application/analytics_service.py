@@ -96,10 +96,22 @@ class AnalyticsApplicationService:
     async def mark_notification_read(self, user_id: int, notification_id: int) -> None:
         return await self._repository.mark_notification_read(user_id, notification_id)
 
+    async def mark_all_notifications_read(self, user_id: int) -> int:
+        return await self._repository.mark_all_notifications_read(user_id)
+
+    async def delete_notification(self, user_id: int, notification_id: int) -> None:
+        return await self._repository.delete_notification(user_id, notification_id)
+
+    async def clear_notifications(self, user_id: int) -> int:
+        return await self._repository.clear_notifications(user_id)
+
     # ── misc ────────────────────────────────────────────────────────
 
     async def ai_analysis(self, project_id: int, ym: str | None) -> dict:
         return await self._repository.ai_analysis(project_id, ym)
+
+    async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict:
+        return await self._repository.compare_ai_analysis(project_ids, ym)
 
     async def global_search(self, keyword: str, pagination: Pagination,
                             project_ids: list[int] | None = None,
