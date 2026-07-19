@@ -5,12 +5,15 @@ from tortoise.expressions import Q
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import (
     ProjectRepository, ProjectDataCleanup, UserDirectory, ProjectNotificationPort,
+    ProjectMetricsPort,
 )
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.project.infrastructure.tables import ProjectUser, ProjectMilestone
 from contexts.auth.infrastructure.tables import User as OrmUser, Notification
 from contexts.parsing.infrastructure.tables import UploadBatch, UploadLog, UploadPreview
-from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
+from contexts.shared.infrastructure.database.tables import (
+    TEMPLATE_DATA_MODELS, DataGrossProfit,
+)
 from contexts.shared.domain.identifiers import ProjectId, UserId
 
 
@@ -133,6 +136,63 @@ class ProjectDataCleanupImpl(ProjectDataCleanup):
 class TortoiseUserDirectory(UserDirectory):
     async def exists(self, user_id: UserId) -> bool:
         return await OrmUser.filter(id=user_id.value).exists()
+
+    async def real_names(self, user_ids: list[int]) -> dict[int, str | None]:
+        if not user_ids:
+            return {}
+        rows = await OrmUser.filter(id__in=list(user_ids)).values("id", "real_name")
+        return {row["id"]: row["real_name"] for row in rows}
+
+
+class TortoiseProjectMetrics(ProjectMetricsPort):
+    """Batch read model over shared tables (no analytics-context import).
+
+    Latest month per project = the successful upload batch with the max ym
+    (ties broken by max batch id); metrics come from the data_gross_profit
+    actual_* columns of that batch's first row.
+    """
+
+    async def latest_gross_profit(self, project_ids: list[int]) -> dict[int, dict]:
+        if not project_ids:
+            return {}
+        batches = await UploadBatch.filter(
+            project_id__in=list(project_ids), status="success",
+        ).order_by("project_id", "-ym", "-id").values("id", "project_id", "ym")
+        latest: dict[int, dict] = {}
+        for batch in batches:
+            latest.setdefault(batch["project_id"], batch)
+        if not latest:
+            return {}
+        rows = await DataGrossProfit.filter(
+            batch_id__in=[b["id"] for b in latest.values()],
+        ).order_by("id").values(
+            "batch_id", "actual_revenue", "actual_cost",
+            "actual_profit", "actual_profit_rate",
+        )
+        first_row: dict[int, dict] = {}
+        for row in rows:
+            first_row.setdefault(row["batch_id"], row)
+        return {
+            project_id: {
+                "latest_ym": batch["ym"],
+                **self._actual(first_row.get(batch["id"])),
+            }
+            for project_id, batch in latest.items()
+        }
+
+    @staticmethod
+    def _actual(row: dict | None) -> dict:
+        def number(key: str) -> float | None:
+            if row is None or row[key] is None:
+                return None
+            return float(row[key])
+
+        return {
+            "revenue": number("actual_revenue"),
+            "cost": number("actual_cost"),
+            "profit": number("actual_profit"),
+            "profit_rate": number("actual_profit_rate"),
+        }
 
 
 class ProjectNotificationAdapter(ProjectNotificationPort):

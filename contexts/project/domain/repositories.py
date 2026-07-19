@@ -48,9 +48,26 @@ class UserDirectory(ABC):
     @abstractmethod
     async def exists(self, user_id: UserId) -> bool: ...
 
+    async def real_names(self, user_ids: list[int]) -> dict[int, str | None]:
+        # Optional batch lookup of display names; kept non-abstract so
+        # existing fakes and integrations remain source-compatible.
+        return {}
+
 
 class ProjectNotificationPort(ABC):
     @abstractmethod
     async def publish_warning(
         self, project_id: ProjectId, project_name: str
     ) -> None: ...
+
+
+class ProjectMetricsPort(ABC):
+    """Read-model port for project operating metrics (latest gross profit)."""
+
+    @abstractmethod
+    async def latest_gross_profit(self, project_ids: list[int]) -> dict[int, dict]:
+        """Batch lookup: {project_id: {latest_ym, revenue, cost, profit, profit_rate}}.
+
+        Projects without any usable data are simply absent from the result.
+        """
+        ...
