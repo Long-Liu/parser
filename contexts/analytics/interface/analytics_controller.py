@@ -6,6 +6,13 @@ from openpyxl import Workbook
 from sanic.response import raw
 
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
+from contexts.analytics.infrastructure.xlsx_export import (
+    build_compare_workbook,
+    build_cost_categories_workbook,
+    build_month_comparison_workbook,
+    build_profits_workbook,
+    content_disposition,
+)
 from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.interface.auth_middleware import (
@@ -15,16 +22,21 @@ from contexts.auth.interface.auth_middleware import (
 )
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
+from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
 
 
-def _xlsx(workbook: Workbook, filename: str):
+# 导出全量上限：项目/科目数量级远低于此值，等价于全量导出。
+_EXPORT_PAGE = Pagination(1, 10_000, max_size=10_000)
+
+
+def _xlsx(workbook: Workbook, filename: str, fallback: str):
     output = io.BytesIO()
     workbook.save(output)
     return raw(output.getvalue(), content_type=(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ), headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    ), headers={"Content-Disposition": content_disposition(filename, fallback)})
 
 class AnalyticsController(BaseController):
     name = "analytics"
@@ -90,6 +102,13 @@ class AnalyticsController(BaseController):
         r(self.export_profits,      "/reports/project-profits/export",      methods=["GET"])
         r(self.export_costs,        "/reports/cost-categories/export",      methods=["GET"])
         r(self.export_project,      "/projects/<project_id:int>/export",    methods=["GET"])
+        r(self.export_month_comparison,
+          "/projects/<project_id:int>/month-comparison/export",         methods=["GET"])
+        r(self.export_compare,      "/projects/compare/export",             methods=["GET"])
+        r(self.compare_ai_analysis, "/projects/compare/ai-analysis",        methods=["POST"])
+        r(self.mark_all_read,       "/notifications/read-all",              methods=["POST"])
+        r(self.delete_notification, "/notifications/<notification_id:int>", methods=["DELETE"])
+        r(self.clear_notifications, "/notifications",                       methods=["DELETE"])
 
     # ── project endpoints ──────────────────────────────────────────────
 
@@ -215,8 +234,7 @@ class AnalyticsController(BaseController):
         return self.json(
             await self.analytics_svc.project_profits(
                 request.args.get("ym"),
-                p.page,
-                p.size,
+                p,
                 await self._project_scope(request),
             )
         )
@@ -346,38 +364,25 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:export")
     async def export_profits(self, request):
+        ym = request.args.get("ym")
         result = await self.analytics_svc.project_profits(
-            request.args.get("ym"), 1, 100, await self._project_scope(request)
+            ym, _EXPORT_PAGE, await self._project_scope(request)
         )
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "项目毛利"
-        ws.append(["项目编号", "项目名称", "月份", "收入", "成本", "毛利", "毛利率"])
-        for item in result["projects"]:
-            c = item["current"]
-            ws.append([item["project_code"], item["project_name"], item["ym"],
-                       c["revenue"], c["cost"], c["profit"], c["profit_rate"]])
-        return _xlsx(wb, "project-profits.xlsx")
+        wb = build_profits_workbook(result["projects"])
+        return _xlsx(wb, f"项目毛利情况_{ym or '全部'}.xlsx", "project-profits.xlsx")
 
     @require_auth
     @require_permission("data:export")
     async def export_costs(self, request):
         try:
-            ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v]
+            ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v.strip()]
             ids = await self._project_scope(request, ids or None)
-            result = await self.analytics_svc.cost_categories(ids, request.args.get("ym"), 1, 100)
+            ym = request.args.get("ym")
+            result = await self.analytics_svc.cost_categories(ids, ym, _EXPORT_PAGE)
         except ValueError:
             raise ValidationError("invalid project_ids") from None
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "成本科目"
-        ws.append(["项目", "月份", "科目", "指标", "实际", "偏差", "偏差率"])
-        for proj in result["projects"]:
-            for item in proj["items"]:
-                ws.append([proj["project"]["name"], proj["ym"], item["name"],
-                           item["indicator"], item["actual"], item["deviation"],
-                           item["deviation_rate"]])
-        return _xlsx(wb, "cost-categories.xlsx")
+        wb = build_cost_categories_workbook(result["projects"])
+        return _xlsx(wb, f"成本科目_{ym or '全部'}.xlsx", "cost-categories.xlsx")
 
     @require_auth
     @require_permission("data:export")
@@ -394,5 +399,65 @@ class AnalyticsController(BaseController):
         for item in result["cost_categories"]:
             costs.append([item["name"], item["indicator"], item["actual"],
                           item["deviation"], item["deviation_rate"]])
-        return _xlsx(wb, f"project-{project_id}.xlsx")
+        return _xlsx(wb, "项目导出_" + result["project"]["name"] + ".xlsx",
+                     f"project-{project_id}.xlsx")
 
+
+    @require_auth
+    @require_permission("data:export")
+    @require_project_access()
+    async def export_month_comparison(self, request, project_id: int):
+        months = [m.strip() for m in
+                  request.args.get("months", "").split(",") if m.strip()]
+        result = await self.analytics_svc.month_comparison(project_id, months)
+        yms = [m["ym"] for m in result["months"]]
+        wb = build_month_comparison_workbook(result)
+        return _xlsx(wb, "月度对比_" + "_".join(yms) + ".xlsx",
+                     f"month-comparison-{project_id}.xlsx")
+
+    @require_auth
+    @require_permission("data:export")
+    async def export_compare(self, request):
+        try:
+            ids = [int(v) for v in request.args.get("project_ids", "").split(",")
+                   if v.strip()]
+            ids = await self._project_scope(request, ids or None)
+            ym = request.args.get("ym")
+            result = await self.analytics_svc.compare_projects(ids, ym)
+        except ValueError:
+            raise ValidationError("invalid project_ids") from None
+        wb = build_compare_workbook(result)
+        return _xlsx(wb, f"多项目对比_{ym or '最新'}.xlsx", "project-compare.xlsx")
+
+    @require_auth
+    @require_permission("data:view")
+    async def compare_ai_analysis(self, request):
+        try:
+            body = request.json or {}
+            ids = [int(v) for v in body.get("project_ids", [])]
+        except (TypeError, ValueError):
+            raise ValidationError("invalid project_ids") from None
+        return self.json(
+            await self.analytics_svc.compare_ai_analysis(
+                await self._project_scope(request, ids), body.get("ym")
+            )
+        )
+
+    @require_auth
+    async def mark_all_read(self, request):
+        marked = await self.analytics_svc.mark_all_notifications_read(
+            request.ctx.user_id
+        )
+        return self.json({"ok": True, "marked": marked})
+
+    @require_auth
+    async def delete_notification(self, request, notification_id: int):
+        await self.analytics_svc.delete_notification(
+            request.ctx.user_id, notification_id
+        )
+        return self.json_ok()
+
+    @require_auth
+    async def clear_notifications(self, request):
+        deleted = await self.analytics_svc.clear_notifications(request.ctx.user_id)
+        return self.json({"ok": True, "deleted": deleted})

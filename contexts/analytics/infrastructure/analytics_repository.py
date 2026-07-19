@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 import asyncio
 from tortoise.transactions import atomic
@@ -20,6 +21,8 @@ from contexts.shared.infrastructure.database.tables import (
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
+from contexts.analytics.domain.compare_report import build_compare_report
+from contexts.analytics.domain.scoring import compare_scores
 
 
 def _number(value) -> float:
@@ -96,14 +99,79 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 continue
             seen.add(batch.ym)
             items.append(await self._monthly_item(batch))
+        # 环比：每个月份相对前一个选中月份（items 按 ym 升序）的指标变化；
+        # 首个选中月份无基期，mom 为 None。
+        for index, item in enumerate(items):
+            item["mom"] = None if index == 0 else self._mom_change(items[index - 1], item)
         return {"project_id": project_id, "months": items}
+
+    @staticmethod
+    def _mom_change(previous: dict, current: dict) -> dict:
+        """Month-over-month change for each metric.
+
+        change: absolute difference (profit_rate 以百分点 pp 表示，因其本身为百分数);
+        change_pct: (current - previous) / previous * 100, None when base is 0.
+        """
+        mom = {}
+        for metric in ("revenue", "cost", "profit", "profit_rate"):
+            change = round(current[metric] - previous[metric], 2)
+            base = previous[metric]
+            mom[metric] = {
+                "change": change,
+                "change_pct": round(change / base * 100, 2) if base else None,
+            }
+        return mom
 
     async def compare_projects(self, project_ids: list[int], ym: str | None) -> dict:
         if len(set(project_ids)) < 2:
             raise ValidationError("at least two projects are required")
         costs = await self.cost_categories(project_ids, ym, Pagination(1, 100, max_size=100))
         profits = await self._profits_for_ids(project_ids, ym)
-        return {"cost_categories": costs["projects"], "profits": profits}
+        metrics = [
+            await self._compare_item(project, ym)
+            for project in await Project.filter(id__in=project_ids).order_by("id")
+        ]
+        # cost_categories/profits kept for backward compatibility; "projects"
+        # carries the 9-metric comparison table plus five-dimension scores.
+        return {"cost_categories": costs["projects"], "profits": profits,
+                "projects": metrics}
+
+    async def _compare_item(self, project: Project, ym: str | None) -> dict:
+        batch = await self._batch(project.id, ym)
+        row = None if batch is None else await DataGrossProfit.filter(batch_id=batch.id).first()
+        contract = _number(project.contract_price)
+        # 累计结算（截至当前实际·累计已结算）；沿用 _profit_item current 口径的回退约定。
+        settlement = _number(_or_default(row.actual_revenue, row.contract_price)) if row else 0.0
+        # 现有数据模型无独立"营收"列，营收与累计结算同源（revenue_ratio 恒为 100 或 None，
+        # 待模板扩展独立营收列后区分）。
+        revenue = settlement
+        profit = _number(_or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
+        total_cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
+        # 除零一律 None，对应评分维度按最低档计（见 domain/scoring.py）。
+        profit_rate = round(profit / revenue * 100, 2) if revenue else None
+        settlement_rate = round(settlement / contract * 100, 2) if contract else None
+        revenue_ratio = round(revenue / settlement * 100, 2) if settlement else None
+        unit_cost = round(total_cost / revenue * 100, 2) if revenue else None
+        scored = compare_scores(
+            profit_rate=profit_rate, unit_cost=unit_cost,
+            progress=_number(project.progress),
+            settlement_rate=settlement_rate, revenue_ratio=revenue_ratio,
+        )
+        return {
+            "project_id": project.id, "project_code": project.code,
+            "project_name": project.name, "ym": batch.ym if batch else ym,
+            "progress": _number(project.progress),
+            "contract": contract,
+            "settlement": settlement,
+            "revenue": revenue,
+            "total_cost": total_cost,
+            "profit": profit,
+            "profit_rate": profit_rate,
+            "settlement_rate": settlement_rate,
+            "revenue_ratio": revenue_ratio,
+            "unit_cost": unit_cost,
+            **scored,
+        }
 
     @atomic()
     async def delete_monthly_data(self, project_id: int, ym: str) -> None:
@@ -136,6 +204,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             series.append({
                 "project": {"id": project.id, "code": project.code, "name": project.name},
                 "ym": batch.ym if batch else ym,
+                # hierarchy_code 由前端按层级码分组大类/子项；存量数据该列为 NULL，
+                # 保持平铺返回（值为 None），由前端按单层渲染。
                 "items": [{
                     "hierarchy_code": row.hierarchy_code,
                     "name": row.item_name,
@@ -146,6 +216,13 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                         _number(row.incurred_cost) - _number(row.indicator_with_tax),
                         _number(row.indicator_with_tax),
                     ),
+                    # 六口径补充列（data_dynamic_indicator 现有列）：
+                    "list_target": _number(row.estimated_with_tax),   # 预计完工量含税指标
+                    "adj_target": _number(row.adjusted_with_tax),     # 分包策划调整后指标
+                    "budget": _number(row.current_budget),            # 现执行预算
+                    # 预计完工成本（动态情况）列尚未纳入模板/表结构，
+                    # 暂以预计完工量含税指标（estimated_with_tax）为近似口径，待模板扩展后切换。
+                    "forecast": _number(row.estimated_with_tax),
                 } for row in rows],
             })
         return {"projects": series,
@@ -414,6 +491,61 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             notification_id=notification_id, user_id=user_id,
         )
 
+    @atomic()
+    async def mark_all_notifications_read(self, user_id: int) -> int:
+        """Mark every notification visible to the user (own + broadcast) as read.
+
+        Returns the number of newly marked notifications (idempotent).
+        """
+        all_ids = list(await Notification.filter(
+            Q(user_id=user_id) | Q(user_id=None)
+        ).values_list("id", flat=True))
+        if not all_ids:
+            return 0
+        read_ids = set(await NotificationRead.filter(
+            user_id=user_id, notification_id__in=all_ids,
+        ).values_list("notification_id", flat=True))
+        unread = [nid for nid in all_ids if nid not in read_ids]
+        if unread:
+            await NotificationRead.bulk_create(
+                [NotificationRead(notification_id=nid, user_id=user_id)
+                 for nid in unread],
+                ignore_conflicts=True,
+            )
+        return len(unread)
+
+    @atomic()
+    async def delete_notification(self, user_id: int, notification_id: int) -> None:
+        """Delete one of the user's OWN notifications.
+
+        Broadcast notifications (user_id NULL) and other users' notifications
+        are not deletable and surface as NotFoundError.
+        """
+        deleted = await Notification.filter(
+            id=notification_id, user_id=user_id,
+        ).delete()
+        if not deleted:
+            raise NotFoundError(f"notification {notification_id} not found")
+        await NotificationRead.filter(
+            notification_id=notification_id, user_id=user_id,
+        ).delete()
+
+    @atomic()
+    async def clear_notifications(self, user_id: int) -> int:
+        """Delete all of the user's OWN notifications; returns deleted count.
+
+        Broadcast notifications (user_id NULL) belong to everyone and are kept.
+        """
+        own_ids = list(await Notification.filter(
+            user_id=user_id,
+        ).values_list("id", flat=True))
+        if not own_ids:
+            return 0
+        await NotificationRead.filter(
+            notification_id__in=own_ids, user_id=user_id,
+        ).delete()
+        return await Notification.filter(id__in=own_ids).delete()
+
     async def ai_analysis(self, project_id: int, ym: str | None) -> dict:
         project = await self._project(project_id)
         profits = await self._profit_for(project_id, ym)
@@ -441,6 +573,35 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             if result:
                 return {"project_id": project_id, "ym": profits["ym"], **result}
         return fallback
+
+    async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict:
+        """Multi-project AI report: five chapters aligned with the comparison UI.
+
+        Uses the external provider when configured; otherwise falls back to the
+        deterministic domain report built from compare metrics + scores.
+        """
+        comparison = await self.compare_projects(project_ids, ym)
+        metrics = comparison["projects"]
+        generated_at = datetime.now().isoformat(timespec="seconds")
+        if self._ai_provider:
+            result = await self._ai_provider.analyze({
+                "type": "project_comparison",
+                "period": ym,
+                "projects": metrics,
+            })
+            if result:
+                return {"project_ids": project_ids, "ym": ym,
+                        "generated_at": generated_at, **result}
+        return {
+            "project_ids": project_ids,
+            "ym": ym,
+            "generated_at": generated_at,
+            "projects": [{
+                "project_id": p["project_id"], "project_name": p["project_name"],
+                "total_score": p["total_score"], "grade": p["grade"],
+            } for p in metrics],
+            "chapters": build_compare_report(metrics, ym),
+        }
 
     async def global_search(self, keyword: str, pagination: Pagination,
                             project_ids: list[int] | None = None,
@@ -493,10 +654,34 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         revenue = _number(row.contract_price) if row else 0.0
         profit = _number(row.gross_profit_net) if row else 0.0
         cost = revenue - profit
+        # 指标（考核）口径 → target_*；回退约定与 _profit_item 一致。
+        i_rev = _number(_or_default(row.indicator_revenue, row.contract_price)) if row else 0.0
+        i_prf = _number(_or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
+        # 预计完工口径 → expected_complete_*；回退约定与 _profit_item forecast 组一致。
+        f_rev = _number(_or_default(row.forecast_revenue, row.estimated_completion_price)) if row else 0.0
+        f_prf = _number(_or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else 0.0
+        f_cost = (_number(row.forecast_cost)
+                  if row and row.forecast_cost is not None else f_rev - f_prf)
         return {"batch_id": batch.id, "ym": batch.ym, "file_name": batch.file_name,
                 "status": batch.status, "uploaded_at": batch.created_at.isoformat(),
                 "revenue": revenue, "cost": cost, "profit": profit,
-                "profit_rate": _rate(profit, revenue)}
+                "profit_rate": _rate(profit, revenue),
+                # ── 基础指标 ──
+                "contract_price": _number(row.contract_price) if row else 0.0,
+                "estimated_completion_price": _number(row.estimated_completion_price) if row else 0.0,
+                "target_profit": i_prf,
+                "target_profit_rate": _rate(i_prf, i_rev),
+                # ── 预计完工指标（gross_profit forecast 组）──
+                "expected_complete_settlement": f_rev,
+                "expected_complete_cost": f_cost,
+                "expected_complete_profit": f_prf,
+                "expected_complete_profit_rate": _rate(f_prf, f_rev),
+                # ── 租借及核销：现有数据模型无数据源（模板未含租借/核销列），
+                #    一律返回 None，待模板扩展后接入。
+                "rental_expected_settlement": None,
+                "rental_cost": None,
+                "rental_profit": None,
+                "write_off_rate": None}
 
     async def _profit_for(self, project_id: int, ym: str | None) -> dict:
         batch = await self._batch(project_id, ym)
