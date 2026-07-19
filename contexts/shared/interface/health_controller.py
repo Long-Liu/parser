@@ -11,4 +11,4 @@ bp = Blueprint("health")
 @openapi.tag("Health")
 @openapi.summary("Health check")
 async def health(request):
-    return json({"status": "ok", "env": "local" if request.app.ctx.config.DEBUG else "production"})
+    return json({"status": "ok", "env": "local" if request.app.ctx.settings.debug else "production"})

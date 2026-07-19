@@ -8,9 +8,8 @@ from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
-from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
-from contexts.shared.interface.controller_helpers import parse_int
+from contexts.shared.interface.controller_helpers import pagination_from
 
 def _parse_filters(request) -> list[FilterCriterion]:
     filters: list[FilterCriterion] = []
@@ -30,7 +29,7 @@ def _parse_int_or_none(value: str | None) -> int | None:
         raise ValidationError(f"invalid integer: {value}") from None
 
 class DataController(BaseController):
-    name = "data_ddd"
+    name = "data"
 
     def __init__(self, data_svc: DataApplicationService,
                  access_policy: ProjectAccessPolicy):
@@ -51,13 +50,15 @@ class DataController(BaseController):
     async def query(self, request, template_id: str):
         batch_id = _parse_int_or_none(request.args.get("batch_id"))
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" not in permissions and "user:manage" not in permissions:
+        if not ProjectAccessPolicy.has_elevated_permission(permissions):
             if batch_id is None:
                 raise ValidationError("batch_id is required for project-scoped data access")
             await self.access_policy.require_batch(
                 UserId(request.ctx.user_id), batch_id,
             )
-        p = Pagination(parse_int(request.args.get("page"), 1), parse_int(request.args.get("size"), 200), max_size=500)
+        # Larger default/max page size than other list endpoints — preserved
+        # from the original hand-built Pagination to keep the API unchanged.
+        p = pagination_from(request, max_size=500, default_size=200)
         return self.json(await self.svc.query(template_id, batch_id=batch_id, pagination=p,
                                           filters=_parse_filters(request)))
 
@@ -67,7 +68,7 @@ class DataController(BaseController):
     @openapi.summary("Get single data row")
     async def get_row(self, request, template_id: str, row_id: int):
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" not in permissions and "user:manage" not in permissions:
+        if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access_policy.require_data_row(
                 UserId(request.ctx.user_id), template_id, row_id,
             )
@@ -79,7 +80,7 @@ class DataController(BaseController):
     @openapi.summary("Delete data row")
     async def delete(self, request, template_id: str, row_id: int):
         permissions = set(request.ctx.permissions or set())
-        if "admin:roles" not in permissions and "user:manage" not in permissions:
+        if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access_policy.require_data_row(
                 UserId(request.ctx.user_id), template_id, row_id, {"manager"},
             )

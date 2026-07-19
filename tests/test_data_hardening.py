@@ -1,6 +1,6 @@
 import pytest
 
-from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
+from contexts.data.infrastructure.repositories import TortoiseDataQueryRepository
 from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
@@ -13,7 +13,7 @@ def test_pagination_rejects_out_of_range_values(page, size):
 
 
 async def test_unknown_template_query_is_not_reported_as_empty_data():
-    repo = DataQueryRepositoryImpl()
+    repo = TortoiseDataQueryRepository()
     with pytest.raises(NotFoundError, match="unknown"):
         await repo.query("unknown", None, [], Pagination(page=1, size=20))
 

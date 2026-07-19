@@ -3,8 +3,8 @@ sheet_pattern: "表8*其他项目*"
 description: "其他项目清单与计价汇总表"
 
 headers:
-  rows: [3]
-  data_start_row: 4
+  rows: [2, 3]
+  data_start_row: 5
 
 hierarchy:
   column_name: "序号"
@@ -41,7 +41,7 @@ columns:
     match_header: ["主合同承接价格"]
     type: decimal(15,2)
   - db_field: cost_amount
-    match_header: ["成本金额"]
+    match_header: ["金额"]
     type: decimal(15,2)
   - db_field: remark
     match_header: ["备注"]

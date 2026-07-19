@@ -17,7 +17,6 @@ _MODEL_MODULES = [
     "contexts.auth.infrastructure.tables",
     "contexts.project.infrastructure.tables",
     "contexts.parsing.infrastructure.tables",
-    "contexts.template.infrastructure.tables",
     "contexts.shared.infrastructure.database.tables",
 ]
 

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from contexts.alert.application.alert_app_service import AlertApplicationService
+from contexts.alert.application.event_handlers import AlertEventHandlers
 from contexts.alert.composition import build_alert_service
 from contexts.alert.domain.repositories import AlertPushDispatcher
 from contexts.alert.infrastructure.push import AlertWebSocketHub, TortoiseAlertOutboxDispatcher
@@ -29,31 +30,35 @@ from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 from contexts.auth.infrastructure.project_access_repository import TortoiseProjectAccessRepository
-from contexts.auth.infrastructure.repositories import RoleRepositoryImpl, UserRepositoryImpl
+from contexts.auth.infrastructure.repositories import TortoiseRoleRepository, TortoiseUserRepository
 from contexts.data.application.data_app_service import DataApplicationService
-from contexts.data.infrastructure.repositories import DataQueryRepositoryImpl
+from contexts.data.infrastructure.repositories import TortoiseDataQueryRepository
+from contexts.parsing.application.batch_query_service import BatchQueryApplicationService
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.composition import build_upload_service
 from contexts.parsing.application.file_storage import FileStorage
+from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.parsing.infrastructure.file_storage import LocalUploadFileStorage
-from contexts.parsing.infrastructure.repositories import ParseJobRepositoryImpl, UploadPreviewRepositoryImpl
+from contexts.parsing.infrastructure.repositories import TortoiseParseJobRepository, TortoiseUploadPreviewRepository
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.composition import build_project_service
 from contexts.project.infrastructure.repositories import (
-    ProjectDataCleanupImpl,
     ProjectNotificationAdapter,
-    ProjectRepositoryImpl,
+    TortoiseProjectDataCleanup,
+    TortoiseProjectRepository,
     TortoiseUserDirectory,
 )
 from contexts.shared.infrastructure.config import Settings
 from contexts.shared.infrastructure.database.transaction import TortoiseTransactionManager
 from contexts.shared.application.transaction import TransactionManager
-from contexts.shared.infrastructure.domain_event_bus import domain_event_bus
+from contexts.shared.infrastructure.domain_event_bus import DomainEventBus
 from contexts.template.application.template_app_service import TemplateApplicationService
 from contexts.template.infrastructure.repositories import YamlTemplateCatalog
+from contexts.parsing.domain.events import ParseJobCompleted, ParseJobConfirmed
 from contexts.parsing.domain.repositories import ParseJobRepository
+from contexts.project.domain.events import ProjectCreated, ProjectDeleted, ProjectUpdated
 from contexts.project.domain.repositories import ProjectRepository
 
 if TYPE_CHECKING:
@@ -77,8 +82,10 @@ class ApplicationComponents:
     upload_service: UploadApplicationService
     analytics_service: AnalyticsApplicationService
     alert_service: AlertApplicationService
+    batch_query_service: BatchQueryApplicationService
     parse_job_repository: ParseJobRepository
     project_repository: ProjectRepository
+    event_bus: DomainEventBus
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,25 +104,31 @@ def build_container(
     """Build the complete production dependency graph in one pass."""
     overrides = overrides or ComponentOverrides()
     transaction_manager = overrides.transaction_manager or TortoiseTransactionManager()
+    # One event bus per container: subscriptions are registered below, so a
+    # module-level singleton would accumulate duplicate handlers across builds.
+    event_bus = DomainEventBus()
 
     password_hasher = BCryptPasswordHasher()
     jwt_service = JwtService(settings.jwt.secret, settings.jwt.expiry_hours)
-    user_repo = overrides.user_repository or UserRepositoryImpl()
-    role_repo = RoleRepositoryImpl()
+    user_repo = overrides.user_repository or TortoiseUserRepository()
+    role_repo = TortoiseRoleRepository()
     project_access_repo = TortoiseProjectAccessRepository()
-    project_repo = ProjectRepositoryImpl()
-    project_cleanup = ProjectDataCleanupImpl()
+    project_repo = TortoiseProjectRepository()
+    parsed_data_cleanup = ParsedDataCleanup()
+    project_cleanup = TortoiseProjectDataCleanup(parsed_data_cleanup)
     user_directory = TortoiseUserDirectory()
     project_notifications = ProjectNotificationAdapter()
     template_catalog = YamlTemplateCatalog()
-    data_repo = DataQueryRepositoryImpl()
-    parse_job_repo = ParseJobRepositoryImpl()
-    preview_repo = UploadPreviewRepositoryImpl()
+    data_repo = TortoiseDataQueryRepository()
+    parse_job_repo = TortoiseParseJobRepository()
+    preview_repo = TortoiseUploadPreviewRepository()
     data_sink = TortoiseParsedDataSink()
     file_storage = overrides.file_storage or LocalUploadFileStorage(settings.upload)
     workbook_reader = OpenPyxlWorkbookReader()
     ai_provider = overrides.ai_provider or HttpAIAnalysisProvider(settings.ai_analysis)
-    analytics_repo = TortoiseAnalyticsRepository(ai_provider)
+    analytics_repo = TortoiseAnalyticsRepository(
+        ai_provider, parsed_data_cleanup, transaction_manager,
+    )
     alert_repo = TortoiseAlertRepository()
     alert_metrics = TortoiseAlertMetricProvider()
     alert_hub = AlertWebSocketHub()
@@ -124,22 +137,31 @@ def build_container(
     alert_service = build_alert_service(
         alert_repo, alert_metrics, alert_dispatcher, transaction_manager,
     )
+    # Cross-context wiring: alert evaluation reacts to parsing/project domain
+    # events instead of being called directly by those contexts.
+    alert_handlers = AlertEventHandlers(alert_service)
+    event_bus.subscribe(ParseJobCompleted, alert_handlers.on_parse_job_completed)
+    event_bus.subscribe(ParseJobConfirmed, alert_handlers.on_parse_job_confirmed)
+    event_bus.subscribe(ProjectCreated, alert_handlers.on_project_created)
+    event_bus.subscribe(ProjectUpdated, alert_handlers.on_project_updated)
+    event_bus.subscribe(ProjectDeleted, alert_handlers.on_project_deleted)
     auth = build_auth_components(
         user_repo, role_repo, project_access_repo, password_hasher, jwt_service,
-        domain_event_bus, transaction_manager,
+        event_bus, transaction_manager,
     )
     project_service = build_project_service(
-        project_repo, project_cleanup, user_directory, project_notifications, alert_service,
+        project_repo, project_cleanup, user_directory, project_notifications, event_bus,
         transaction_manager,
     )
     template_service = TemplateApplicationService(template_catalog)
     data_service = DataApplicationService(data_repo, transaction_manager)
     upload_service = build_upload_service(
-        parse_job_repo, template_catalog, data_sink, domain_event_bus,
-        file_storage, workbook_reader, project_repo, preview_repo, alert_service,
+        parse_job_repo, template_catalog, data_sink, event_bus,
+        file_storage, workbook_reader, project_repo, preview_repo,
         transaction_manager,
     )
     analytics_service = AnalyticsApplicationService(analytics_repo)
+    batch_query_service = BatchQueryApplicationService(parse_job_repo, project_repo)
 
     return ApplicationComponents(
         password_hasher=password_hasher,
@@ -156,8 +178,10 @@ def build_container(
         upload_service=upload_service,
         analytics_service=analytics_service,
         alert_service=alert_service,
+        batch_query_service=batch_query_service,
         parse_job_repository=parse_job_repo,
         project_repository=project_repo,
+        event_bus=event_bus,
     )
 
 
@@ -197,8 +221,7 @@ def build_controllers(components: ApplicationComponents) -> tuple["BaseControlle
             components.project_access_policy,
         ),
         BatchesController(
-            components.parse_job_repository,
-            components.project_repository,
+            components.batch_query_service,
             components.project_access_policy,
         ),
         UploadsController(components.upload_service),

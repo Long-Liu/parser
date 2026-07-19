@@ -44,28 +44,28 @@ columns:
     match_header: ["初始招标工程量"]
     type: decimal(15,2)
   - db_field: device_material_fee
-    match_header: ["主承接价格", "装置性材料费"]
+    match_header: ["主承接价格"]
     type: decimal(15,2)
   - db_field: installation_fee
     match_header: ["主承接价格", "安装费"]
     type: decimal(15,2)
   - db_field: contract_device_material
-    match_header: ["主合同", "装置性材料费"]
+    match_header: ["综合合价", "装置性材料费"]
     type: decimal(15,2)
   - db_field: contract_installation
-    match_header: ["主合同", "安装费"]
+    match_header: ["综合合价", "安装费"]
     type: decimal(15,2)
   - db_field: indicator_device_material
-    match_header: ["经济考核指标单价", "装置性材料费"]
+    match_header: ["装置性材料费_装置性材料费"]
     type: decimal(15,2)
   - db_field: indicator_fabrication
-    match_header: ["指标单价", "制作费"]
+    match_header: ["制作费"]
     type: decimal(15,2)
   - db_field: indicator_construction
-    match_header: ["指标单价", "施工费"]
+    match_header: ["施工费"]
     type: decimal(15,2)
   - db_field: upstream_qty
-    match_header: ["上游动态", "工程量"]
+    match_header: ["上游动态/完工量价"]
     type: decimal(15,2)
   - db_field: drawing_stat_qty
     match_header: ["施工图统计量"]

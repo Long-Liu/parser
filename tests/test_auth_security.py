@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from sanic import Sanic
 from sanic.response import json
 
 from contexts.auth.application.auth_app_service import AuthApplicationService
@@ -23,7 +24,7 @@ from contexts.auth.interface.auth_middleware import require_auth
 from contexts.shared.domain.exceptions import AuthenticationError, ValidationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.infrastructure.config import AuthConfig, Settings
-from contexts.shared.interface.request_services import RequestServices
+from contexts.auth.interface.request_services import RequestServices
 
 TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
 OLD_PASSWORD = "oldpassword1"
@@ -187,17 +188,59 @@ async def test_change_password_revoked_token_hits_middleware_401(stack):
         user_id=1, old_password=OLD_PASSWORD, new_password=NEW_PASSWORD,
     )
 
+    # The auth decorator locates the request via isinstance(sanic Request),
+    # so exercise it through a real app + ASGI call (same style as
+    # tests/test_endpoint_smoke.py).
+    app = Sanic("auth_revoked_smoke")
+    app.asgi = True
+    app.ctx.services = RequestServices(authorization=stack.authz, project_access=None)
+
+    @app.get("/protected")
     @require_auth
-    async def handler(request):
+    async def protected(request):
         return json({"ok": True})
 
-    services = RequestServices(authorization=stack.authz, project_access=None)
-    request = _request(
-        services=services, headers={"Authorization": f"Bearer {token}"},
-    )
-    response = await handler(request)
-    assert response.status == 401
-    assert "revoked" in jsonlib.loads(response.body)["error"]
+    app.finalize()
+    app.signalize(allow_fail_builtin=False)
+
+    code, body = await _asgi_get(app, "/protected", token)
+    assert code == 401
+    assert "revoked" in jsonlib.loads(body)["error"]
+
+
+async def _asgi_get(app, path: str, token: str | None = None):
+    """Minimal ASGI GET client (mirrors tests/test_endpoint_smoke.py)."""
+    status: dict = {}
+    body = bytearray()
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+        elif message["type"] == "http.response.body":
+            body.extend(message.get("body", b""))
+
+    headers = []
+    if token is not None:
+        headers.append((b"authorization", f"Bearer {token}".encode()))
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 80),
+    }
+    await app(scope, receive, send)
+    return status.get("code"), bytes(body)
 
 
 # ── logout ────────────────────────────────────────────────────────────

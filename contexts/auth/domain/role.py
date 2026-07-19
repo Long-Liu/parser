@@ -6,7 +6,7 @@ from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import RoleId
-from contexts.shared.domain.name import Name
+from contexts.auth.domain.name import Name
 from contexts.auth.domain.events import RoleCreated, RolePermissionsChanged
 
 

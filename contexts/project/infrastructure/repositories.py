@@ -10,9 +10,15 @@ from contexts.project.domain.repositories import (
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.project.infrastructure.tables import ProjectUser, ProjectMilestone
 from contexts.auth.infrastructure.tables import User as OrmUser, Notification
-from contexts.parsing.infrastructure.tables import UploadBatch, UploadLog, UploadPreview
+from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
+from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.shared.infrastructure.database.tables import (
-    TEMPLATE_DATA_MODELS, DataGrossProfit,
+    SETTLE_CONTRACT_PRICE,
+    SETTLE_CUMULATIVE_COST,
+    SETTLE_CUMULATIVE_OUTPUT,
+    SETTLE_CURRENT_PROFIT,
+    SETTLE_CURRENT_PROFIT_RATE,
+    DataSettlementOutput,
 )
 from contexts.shared.domain.identifiers import ProjectId, UserId
 
@@ -36,7 +42,7 @@ def _to_entity(orm: OrmProject) -> Project:
     )
 
 
-class ProjectRepositoryImpl(ProjectRepository):
+class TortoiseProjectRepository(ProjectRepository):
     async def save(self, project: Project) -> None:
         values = {
             "code": project.code,
@@ -119,18 +125,14 @@ class ProjectRepositoryImpl(ProjectRepository):
         ).delete()
 
 
-class ProjectDataCleanupImpl(ProjectDataCleanup):
+class TortoiseProjectDataCleanup(ProjectDataCleanup):
+    """Delegates parsed-data deletion to the parsing context's cleanup port."""
+
+    def __init__(self, parsed_data_cleanup: ParsedDataCleanup) -> None:
+        self._parsed_data_cleanup = parsed_data_cleanup
+
     async def delete_for_project(self, project_id: ProjectId) -> None:
-        batch_ids = list(await UploadBatch.filter(
-            project_id=project_id.value
-        ).values_list("id", flat=True))
-        if not batch_ids:
-            return
-        for model in TEMPLATE_DATA_MODELS.values():
-            await model.filter(batch_id__in=batch_ids).delete()
-        await UploadPreview.filter(batch_id__in=batch_ids).delete()
-        await UploadLog.filter(batch_id__in=batch_ids).delete()
-        await UploadBatch.filter(id__in=batch_ids).delete()
+        await self._parsed_data_cleanup.delete_for_project(project_id.value)
 
 
 class TortoiseUserDirectory(UserDirectory):
@@ -148,8 +150,9 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
     """Batch read model over shared tables (no analytics-context import).
 
     Latest month per project = the successful upload batch with the max ym
-    (ties broken by max batch id); metrics come from the data_gross_profit
-    actual_* columns of that batch's first row.
+    (ties broken by max batch id); metrics come from the data_settlement_output
+    (表11 结算产值表) indicator rows of that batch, mirroring the analytics
+    context's _profit_item current block.
     """
 
     async def latest_gross_profit(self, project_ids: list[int]) -> dict[int, dict]:
@@ -163,35 +166,49 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
             latest.setdefault(batch["project_id"], batch)
         if not latest:
             return {}
-        rows = await DataGrossProfit.filter(
+        rows = await DataSettlementOutput.filter(
             batch_id__in=[b["id"] for b in latest.values()],
-        ).order_by("id").values(
-            "batch_id", "actual_revenue", "actual_cost",
-            "actual_profit", "actual_profit_rate",
-        )
-        first_row: dict[int, dict] = {}
+        ).values("batch_id", "indicator_name", "cumulative_value")
+        by_batch: dict[int, dict] = {}
         for row in rows:
-            first_row.setdefault(row["batch_id"], row)
+            if row["indicator_name"]:
+                by_batch.setdefault(row["batch_id"], {})[
+                    row["indicator_name"]] = row["cumulative_value"]
         return {
             project_id: {
                 "latest_ym": batch["ym"],
-                **self._actual(first_row.get(batch["id"])),
+                **self._settlement(by_batch.get(batch["id"])),
             }
             for project_id, batch in latest.items()
         }
 
     @staticmethod
-    def _actual(row: dict | None) -> dict:
-        def number(key: str) -> float | None:
-            if row is None or row[key] is None:
+    def _settlement(indicators: dict | None) -> dict:
+        def number(*names: str) -> float | None:
+            if not indicators:
                 return None
-            return float(row[key])
+            for name in names:
+                value = indicators.get(name)
+                if value is not None:
+                    return float(value)
+            return None
 
+        revenue = number(SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = number(SETTLE_CURRENT_PROFIT)
+        cost = number(SETTLE_CUMULATIVE_COST)
+        if cost is None and revenue is not None and profit is not None:
+            cost = revenue - profit
+        # Rate indicators are stored as ratios (0.x); report percents.
+        rate = number(SETTLE_CURRENT_PROFIT_RATE)
+        if rate is not None:
+            rate = round(rate * 100, 2)
+        elif revenue and profit is not None:
+            rate = round(profit / revenue * 100, 2)
         return {
-            "revenue": number("actual_revenue"),
-            "cost": number("actual_cost"),
-            "profit": number("actual_profit"),
-            "profit_rate": number("actual_profit_rate"),
+            "revenue": revenue,
+            "cost": cost,
+            "profit": profit,
+            "profit_rate": rate,
         }
 
 

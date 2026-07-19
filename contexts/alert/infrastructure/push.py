@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.domain.repositories import AlertPushDispatcher
 from contexts.alert.infrastructure.tables import AlertOutboxModel
 
@@ -32,7 +33,7 @@ class AlertWebSocketHub:
         for user_id, sockets in list(self._connections.items()):
             for websocket in list(sockets):
                 allowed = self._projects.get(websocket, set())
-                if project_id not in allowed and -1 not in allowed:
+                if project_id not in allowed and ALL_PROJECTS not in allowed:
                     continue
                 try:
                     await websocket.send(json.dumps(message, ensure_ascii=False))

@@ -4,7 +4,7 @@ from contexts.shared.application.transaction import TransactionManager, Transact
 
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.domain.user import User
-from contexts.auth.application.security import PasswordHasher
+from contexts.auth.domain.ports import PasswordHasher
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import (
     ConflictError,
@@ -13,7 +13,7 @@ from contexts.shared.domain.exceptions import (
 )
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.pagination import Pagination
-from contexts.shared.domain.password import Password
+from contexts.auth.domain.password import Password
 
 
 class UserApplicationService(TransactionalService):

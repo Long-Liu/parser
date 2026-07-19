@@ -3,22 +3,38 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 import asyncio
-from tortoise.transactions import atomic
 
 from tortoise.expressions import Q
+from contexts.alert.infrastructure.tables import AlertModel
 from contexts.auth.infrastructure.tables import User
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
+from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
-from contexts.parsing.infrastructure.tables import UploadLog
 from contexts.project.infrastructure.tables import Project
 from contexts.project.infrastructure.tables import ProjectMilestone
+from contexts.shared.application.transaction import (
+    NoopTransactionManager,
+    TransactionManager,
+)
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.tables import (
+    SETTLE_CONTRACT_PRICE,
+    SETTLE_CUMULATIVE_COST,
+    SETTLE_CUMULATIVE_OUTPUT,
+    SETTLE_CURRENT_PROFIT,
+    SETTLE_CURRENT_PROFIT_RATE,
+    SETTLE_FORECAST_COST,
+    SETTLE_FORECAST_PROFIT,
+    SETTLE_FORECAST_PROFIT_RATE,
+    SETTLE_FORECAST_REVENUE,
+    DataConstructionDynamic,
     DataDynamicIndicator,
-    DataGrossProfit,
+    DataInstallationDynamic,
+    DataMaterialCost,
+    DataSettlementOutput,
+    settlement_indicator_map,
 )
-from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
 from contexts.analytics.domain.compare_report import build_compare_report
@@ -29,13 +45,26 @@ def _number(value) -> float:
     return float(value) if value is not None else 0.0
 
 
-def _or_default(value, default):
-    """Return value if it is not None, otherwise default. Unlike `or`, treats 0/0.0/Decimal('0') as real values."""
-    return value if value is not None else default
-
-
 def _rate(profit: float, revenue: float) -> float:
     return round(profit / revenue * 100, 2) if revenue else 0.0
+
+
+def _settle(indicators: dict, *names: str) -> float:
+    """First non-None cumulative_value among the given settlement indicators."""
+    for name in names:
+        value = indicators.get(name)
+        if value is not None:
+            return float(value)
+    return 0.0
+
+
+def _settle_rate(indicators: dict, name: str, profit: float, revenue: float) -> float:
+    """Settlement rate indicators are stored as ratios (0.x); the API reports
+    percents, so convert. Fall back to profit/revenue when the row is absent."""
+    value = indicators.get(name)
+    if value is not None:
+        return round(float(value) * 100, 2)
+    return _rate(profit, revenue)
 
 
 class TortoiseAnalyticsRepository(AnalyticsRepository):
@@ -45,8 +74,12 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         {"type": "report", "id": "dashboard", "title": "数据大屏", "subtitle": "经营监控中心"},
     ]
 
-    def __init__(self, ai_provider: AIAnalysisPort | None = None) -> None:
+    def __init__(self, ai_provider: AIAnalysisPort | None = None,
+                 data_cleanup: ParsedDataCleanup | None = None,
+                 transaction_manager: TransactionManager | None = None) -> None:
         self._ai_provider = ai_provider
+        self._data_cleanup = data_cleanup or ParsedDataCleanup()
+        self._tx = transaction_manager or NoopTransactionManager()
 
     async def project_summary(self, project_ids: list[int] | None = None) -> dict:
         query = Project.all()
@@ -138,17 +171,30 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
 
     async def _compare_item(self, project: Project, ym: str | None) -> dict:
         batch = await self._batch(project.id, ym)
-        row = None if batch is None else await DataGrossProfit.filter(batch_id=batch.id).first()
+        indicators: dict = {}
+        if batch is not None:
+            rows = await DataSettlementOutput.filter(batch_id=batch.id)
+            indicators = settlement_indicator_map(rows)
         contract = _number(project.contract_price)
-        # 累计结算（截至当前实际·累计已结算）；沿用 _profit_item current 口径的回退约定。
-        settlement = _number(_or_default(row.actual_revenue, row.contract_price)) if row else 0.0
+        # 累计结算（截至当前实际·累计已结算）：取结算表产值行，缺行时回退表内
+        # 合同总价行（与 _profit_item current 口径一致）；整批无数据时保持全零，
+        # 不回退项目合同价，以免无数据项目虚增评分。
+        settlement = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
+        if indicators:
+            total_cost = _settle(indicators, SETTLE_CUMULATIVE_COST)
+        else:
+            total_cost = settlement - profit
         # 现有数据模型无独立"营收"列，营收与累计结算同源（revenue_ratio 恒为 100 或 None，
         # 待模板扩展独立营收列后区分）。
         revenue = settlement
-        profit = _number(_or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
-        total_cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
-        # 除零一律 None，对应评分维度按最低档计（见 domain/scoring.py）。
-        profit_rate = round(profit / revenue * 100, 2) if revenue else None
+        # 毛利率优先取结算表存储口径（比率 → 百分比）；除零一律 None，
+        # 对应评分维度按最低档计（见 domain/scoring.py）。
+        stored_rate = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
+        if stored_rate is not None:
+            profit_rate = round(float(stored_rate) * 100, 2)
+        else:
+            profit_rate = round(profit / revenue * 100, 2) if revenue else None
         settlement_rate = round(settlement / contract * 100, 2) if contract else None
         revenue_ratio = round(revenue / settlement * 100, 2) if settlement else None
         unit_cost = round(total_cost / revenue * 100, 2) if revenue else None
@@ -173,20 +219,14 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             **scored,
         }
 
-    @atomic()
     async def delete_monthly_data(self, project_id: int, ym: str) -> None:
-        await self._project(project_id)
-        batches = await UploadBatch.filter(project_id=project_id, ym=ym)
-        batch_ids = [batch.id for batch in batches]
-        if not batch_ids:
-            raise NotFoundError(f"monthly data {ym} not found")
-        for model in TEMPLATE_DATA_MODELS.values():
-            await model.filter(batch_id__in=batch_ids).delete()
-        await UploadLog.filter(batch_id__in=batch_ids).delete()
-        await UploadBatch.filter(id__in=batch_ids).delete()
-        # Clean up any preview records for these batches
-        from contexts.parsing.infrastructure.tables import UploadPreview
-        await UploadPreview.filter(batch_id__in=batch_ids).delete()
+        async with self._tx.transaction():
+            await self._project(project_id)
+            batches = await UploadBatch.filter(project_id=project_id, ym=ym)
+            batch_ids = [batch.id for batch in batches]
+            if not batch_ids:
+                raise NotFoundError(f"monthly data {ym} not found")
+            await self._data_cleanup.delete_for_batches(batch_ids)
 
     async def cost_categories(self, project_ids: list[int], ym: str | None,
                               pagination: Pagination) -> dict:
@@ -270,42 +310,42 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "pagination": result["pagination"],
         }
 
-    @atomic()
     async def create_milestone(self, project_id: int, data: dict) -> dict:
-        await self._project(project_id)
-        if not data.get("ym") or not data.get("title"):
-            raise ValidationError("ym and title are required")
-        row = await ProjectMilestone.create(
-            project_id=project_id, ym=data["ym"], title=data["title"].strip(),
-            progress=Decimal(str(data.get("progress", 0))),
-            description=data.get("description", ""),
-            completed_at=data.get("completed_at") or None,
-        )
-        return self._milestone(row)
+        async with self._tx.transaction():
+            await self._project(project_id)
+            if not data.get("ym") or not data.get("title"):
+                raise ValidationError("ym and title are required")
+            row = await ProjectMilestone.create(
+                project_id=project_id, ym=data["ym"], title=data["title"].strip(),
+                progress=Decimal(str(data.get("progress", 0))),
+                description=data.get("description", ""),
+                completed_at=data.get("completed_at") or None,
+            )
+            return self._milestone(row)
 
-    @atomic()
     async def update_milestone(self, project_id: int, milestone_id: int,
                                data: dict) -> dict:
-        row = await ProjectMilestone.get_or_none(
-            id=milestone_id, project_id=project_id,
-        )
-        if row is None:
-            raise NotFoundError(f"milestone {milestone_id} not found")
-        for field in ("ym", "title", "description", "completed_at"):
-            if field in data:
-                setattr(row, field, data[field] or None)
-        if "progress" in data:
-            row.progress = Decimal(str(data["progress"]))
-        await row.save()
-        return self._milestone(row)
+        async with self._tx.transaction():
+            row = await ProjectMilestone.get_or_none(
+                id=milestone_id, project_id=project_id,
+            )
+            if row is None:
+                raise NotFoundError(f"milestone {milestone_id} not found")
+            for field in ("ym", "title", "description", "completed_at"):
+                if field in data:
+                    setattr(row, field, data[field] or None)
+            if "progress" in data:
+                row.progress = Decimal(str(data["progress"]))
+            await row.save()
+            return self._milestone(row)
 
-    @atomic()
     async def delete_milestone(self, project_id: int, milestone_id: int) -> None:
-        deleted = await ProjectMilestone.filter(
-            id=milestone_id, project_id=project_id,
-        ).delete()
-        if not deleted:
-            raise NotFoundError(f"milestone {milestone_id} not found")
+        async with self._tx.transaction():
+            deleted = await ProjectMilestone.filter(
+                id=milestone_id, project_id=project_id,
+            ).delete()
+            if not deleted:
+                raise NotFoundError(f"milestone {milestone_id} not found")
 
     async def project_profits(self, ym: str | None, pagination: Pagination,
                               project_ids: list[int] | None = None) -> dict:
@@ -326,38 +366,43 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batch_map = {}
         for batch in await batch_query.order_by("project_id", "-ym", "-id"):
             batch_map.setdefault(batch.project_id, batch)
-        profit_map = {
-            row.batch_id: row
-            for row in await DataGrossProfit.filter(
-                batch_id__in=[b.id for b in batch_map.values()])
-        }
+        settlement_rows = await DataSettlementOutput.filter(
+            batch_id__in=[b.id for b in batch_map.values()])
+        profit_map = {}
+        for row in settlement_rows:
+            profit_map.setdefault(row.batch_id, {})[row.indicator_name] = row.cumulative_value
         return batch_map, profit_map
 
     def _profit_item(self, project, batch_map, profit_map, ym) -> dict:
         batch = batch_map.get(project.id)
-        row = profit_map.get(batch.id) if batch else None
-        revenue = _number(_or_default(row.actual_revenue, row.contract_price)) if row else _number(project.contract_price)
-        profit = _number(_or_default(row.actual_profit, row.gross_profit_net)) if row else 0.0
-        cost = _number(row.actual_cost) if row and row.actual_cost is not None else revenue - profit
-        f_rev = _number(_or_default(row.forecast_revenue, row.estimated_completion_price)) if row else revenue
-        f_prf = _number(_or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else profit
-        b_rev = _number(_or_default(row.bid_revenue, row.contract_price)) if row else revenue
-        b_prf = _number(_or_default(row.bid_profit, row.gross_profit_total)) if row else 0.0
-        i_rev = _number(_or_default(row.indicator_revenue, row.contract_price)) if row else revenue
-        i_prf = _number(_or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
+        indicators = profit_map.get(batch.id) if batch else None
+        indicators = indicators or {}
+        # Profit figures come from 表11 结算产值表 (data_settlement_output);
+        # the old 毛利 sheet was retired and data_gross_profit dropped.
+        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
+        if indicators:
+            cost = _settle(indicators, SETTLE_CUMULATIVE_COST)
+        else:
+            revenue = revenue or _number(project.contract_price)
+            cost = revenue - profit
+        f_rev = _settle(indicators, SETTLE_FORECAST_REVENUE) if indicators else revenue
+        f_prf = _settle(indicators, SETTLE_FORECAST_PROFIT) if indicators else profit
+        f_cost = _settle(indicators, SETTLE_FORECAST_COST) if indicators else f_rev - f_prf
+        # The settlement sheet has no bid / target-indicator split, so the
+        # legacy bid/indicator blocks keep their shape but report zeros.
         return {
             "project_id": project.id, "project_code": project.code,
             "project_name": project.name, "ym": batch.ym if batch else ym,
-            "bid": {"revenue": b_rev,
-                    "cost": _number(row.bid_cost) if row and row.bid_cost is not None else b_rev - b_prf,
-                    "profit": b_prf, "profit_rate": _rate(b_prf, b_rev)},
-            "indicator": {"revenue": i_rev,
-                          "cost": _number(row.indicator_cost) if row and row.indicator_cost is not None else i_rev - i_prf,
-                          "profit": i_prf, "profit_rate": _rate(i_prf, i_rev)},
+            "bid": {"revenue": 0.0, "cost": 0.0, "profit": 0.0, "profit_rate": 0.0},
+            "indicator": {"revenue": 0.0, "cost": 0.0, "profit": 0.0,
+                          "profit_rate": 0.0},
             "current": {"revenue": revenue, "cost": cost, "profit": profit,
-                        "profit_rate": _rate(profit, revenue)},
-            "forecast": {"revenue": f_rev, "cost": f_rev - f_prf,
-                         "profit": f_prf, "profit_rate": _rate(f_prf, f_rev)},
+                        "profit_rate": _settle_rate(
+                            indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue)},
+            "forecast": {"revenue": f_rev, "cost": f_cost,
+                         "profit": f_prf, "profit_rate": _settle_rate(
+                             indicators, SETTLE_FORECAST_PROFIT_RATE, f_prf, f_rev)},
         }
 
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
@@ -433,21 +478,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         return [{"name": name, "amount": round(amount, 2)}
                 for name, amount in sorted(totals.items(), key=lambda item: -item[1])]
 
-    async def alerts(self, pagination: Pagination,
-                     project_ids: list[int] | None = None) -> dict:
-        query = Project.filter(status="warning")
-        if project_ids is not None:
-            query = query.filter(id__in=project_ids)
-        total = await query.count()
-        rows = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
-        return {"alerts": [{"type": "project_warning", "project_id": p.id,
-                            "title": p.name, "message": "项目处于预警状态"} for p in rows],
-                "pagination": {"page":pagination.page, "size": pagination.size, "total": total}}
-
     async def notifications(self, user_id: int, pagination: Pagination,
                             unread_only: bool = False,
                             project_ids: list[int] | None = None) -> dict:
-        from tortoise.expressions import Q
         query = Notification.filter(Q(user_id=user_id) | Q(user_id=None))
         if project_ids is not None:
             query = query.filter(Q(project_id__in=project_ids) | Q(project_id=None))
@@ -467,84 +500,83 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 "unread": len(all_ids) - len(read_ids),
                 "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
-    @atomic()
     async def create_notification(self, data: dict) -> dict:
-        if not data.get("title") or not data.get("message"):
-            raise ValidationError("title and message are required")
-        row = await Notification.create(
-            user_id=data.get("user_id"),
-            notification_type=data.get("type", "system"),
-            title=data["title"], message=data["message"],
-            project_id=data.get("project_id"),
-        )
-        return {"id": row.id, "title": row.title}
+        async with self._tx.transaction():
+            if not data.get("title") or not data.get("message"):
+                raise ValidationError("title and message are required")
+            row = await Notification.create(
+                user_id=data.get("user_id"),
+                notification_type=data.get("type", "system"),
+                title=data["title"], message=data["message"],
+                project_id=data.get("project_id"),
+            )
+            return {"id": row.id, "title": row.title}
 
-    @atomic()
     async def mark_notification_read(self, user_id: int, notification_id: int) -> None:
-        from tortoise.expressions import Q
-        exists = await Notification.filter(id=notification_id).filter(
-            Q(user_id=user_id) | Q(user_id=None)
-        ).exists()
-        if not exists:
-            raise NotFoundError(f"notification {notification_id} not found")
-        await NotificationRead.get_or_create(
-            notification_id=notification_id, user_id=user_id,
-        )
+        async with self._tx.transaction():
+            exists = await Notification.filter(id=notification_id).filter(
+                Q(user_id=user_id) | Q(user_id=None)
+            ).exists()
+            if not exists:
+                raise NotFoundError(f"notification {notification_id} not found")
+            await NotificationRead.get_or_create(
+                notification_id=notification_id, user_id=user_id,
+            )
 
-    @atomic()
     async def mark_all_notifications_read(self, user_id: int) -> int:
         """Mark every notification visible to the user (own + broadcast) as read.
 
         Returns the number of newly marked notifications (idempotent).
         """
-        all_ids = list(await Notification.filter(
-            Q(user_id=user_id) | Q(user_id=None)
-        ).values_list("id", flat=True))
-        if not all_ids:
-            return 0
-        read_ids = set(await NotificationRead.filter(
-            user_id=user_id, notification_id__in=all_ids,
-        ).values_list("notification_id", flat=True))
-        unread = [nid for nid in all_ids if nid not in read_ids]
-        if unread:
-            await NotificationRead.bulk_create(
-                [NotificationRead(notification_id=nid, user_id=user_id)
-                 for nid in unread],
-                ignore_conflicts=True,
-            )
-        return len(unread)
+        async with self._tx.transaction():
+            all_ids = list(await Notification.filter(
+                Q(user_id=user_id) | Q(user_id=None)
+            ).values_list("id", flat=True))
+            if not all_ids:
+                return 0
+            read_ids = set(await NotificationRead.filter(
+                user_id=user_id, notification_id__in=all_ids,
+            ).values_list("notification_id", flat=True))
+            unread = [nid for nid in all_ids if nid not in read_ids]
+            if unread:
+                await NotificationRead.bulk_create(
+                    [NotificationRead(notification_id=nid, user_id=user_id)
+                     for nid in unread],
+                    ignore_conflicts=True,
+                )
+            return len(unread)
 
-    @atomic()
     async def delete_notification(self, user_id: int, notification_id: int) -> None:
         """Delete one of the user's OWN notifications.
 
         Broadcast notifications (user_id NULL) and other users' notifications
         are not deletable and surface as NotFoundError.
         """
-        deleted = await Notification.filter(
-            id=notification_id, user_id=user_id,
-        ).delete()
-        if not deleted:
-            raise NotFoundError(f"notification {notification_id} not found")
-        await NotificationRead.filter(
-            notification_id=notification_id, user_id=user_id,
-        ).delete()
+        async with self._tx.transaction():
+            deleted = await Notification.filter(
+                id=notification_id, user_id=user_id,
+            ).delete()
+            if not deleted:
+                raise NotFoundError(f"notification {notification_id} not found")
+            await NotificationRead.filter(
+                notification_id=notification_id, user_id=user_id,
+            ).delete()
 
-    @atomic()
     async def clear_notifications(self, user_id: int) -> int:
         """Delete all of the user's OWN notifications; returns deleted count.
 
         Broadcast notifications (user_id NULL) belong to everyone and are kept.
         """
-        own_ids = list(await Notification.filter(
-            user_id=user_id,
-        ).values_list("id", flat=True))
-        if not own_ids:
-            return 0
-        await NotificationRead.filter(
-            notification_id__in=own_ids, user_id=user_id,
-        ).delete()
-        return await Notification.filter(id__in=own_ids).delete()
+        async with self._tx.transaction():
+            own_ids = list(await Notification.filter(
+                user_id=user_id,
+            ).values_list("id", flat=True))
+            if not own_ids:
+                return 0
+            await NotificationRead.filter(
+                notification_id__in=own_ids, user_id=user_id,
+            ).delete()
+            return await Notification.filter(id__in=own_ids).delete()
 
     async def ai_analysis(self, project_id: int, ym: str | None) -> dict:
         project = await self._project(project_id)
@@ -632,17 +664,97 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             projects = await project_query.order_by("name").limit(candidate_limit)
         reports = [item for item in self._REPORT_CATALOG
                    if keyword.lower() in (item["title"] + item["subtitle"]).lower()]
+        business_results, business_total = await self._business_search(
+            keyword, project_ids, candidate_limit,
+        )
         all_results = (
             [{"type": "project", "id": p.id, "title": p.name, "subtitle": p.code}
              for p in projects]
             + [{"type": "user", "id": u.id, "title": u.real_name or u.username,
                 "subtitle": u.email or ""} for u in users]
             + reports
+            + business_results
         )
         all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
-        total = project_total + user_total + len(reports)
+        total = project_total + user_total + len(reports) + business_total
         return {"results": all_results[pagination.offset:pagination.offset + pagination.size],
                 "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
+
+    async def _business_search(self, keyword: str, project_ids: list[int] | None,
+                               limit: int) -> tuple[list[dict], int]:
+        """Search parsed business data (materials / cost items / alerts).
+
+        Data rows are scoped to the latest successful batch of each in-scope
+        project so stale monthly batches do not produce duplicate hits.
+        """
+        batch_query = UploadBatch.filter(status="success")
+        if project_ids is not None:
+            batch_query = batch_query.filter(project_id__in=project_ids)
+        batches = await batch_query.order_by("project_id", "-ym", "-id")
+        latest: dict[int, int] = {}
+        for b in batches:
+            latest.setdefault(b.project_id, b.id)
+        batch_ids = list(latest.values())
+        if not batch_ids:
+            return [], 0
+        batch_to_project = {b.id: b.project_id for b in batches if b.id in latest.values()}
+        project_names = {
+            p.id: p.name for p in await Project.filter(id__in=latest.keys())
+        }
+
+        alert_query = AlertModel.filter(
+            Q(title__icontains=keyword) | Q(message__icontains=keyword)
+        )
+        if project_ids is not None:
+            alert_query = alert_query.filter(project_id__in=project_ids)
+
+        (mat_total, con_total, inst_total, alert_total,
+         materials, constructions, installations, alerts) = await asyncio.gather(
+            DataMaterialCost.filter(batch_id__in=batch_ids,
+                                    budget_category__icontains=keyword).count(),
+            DataConstructionDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).count(),
+            DataInstallationDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).count(),
+            alert_query.count(),
+            DataMaterialCost.filter(batch_id__in=batch_ids,
+                                    budget_category__icontains=keyword).limit(limit),
+            DataConstructionDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).limit(limit),
+            DataInstallationDynamic.filter(batch_id__in=batch_ids,
+                                           project_name__icontains=keyword).limit(limit),
+            alert_query.order_by("-last_triggered_at").limit(limit),
+        )
+
+        results: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        def add(type_: str, row_id: int, title: str | None, subtitle: str) -> None:
+            if not title:
+                return
+            key = (type_, title)
+            if key in seen:
+                return
+            seen.add(key)
+            results.append({"type": type_, "id": row_id,
+                            "title": title, "subtitle": subtitle})
+
+        def project_of(row) -> str:
+            return project_names.get(batch_to_project.get(row.batch_id), "")
+
+        for row in materials:
+            suffix = f" · {row.unit}" if row.unit else ""
+            add("material", row.id, row.budget_category,
+                f"{project_of(row)}{suffix}")
+        for row in constructions:
+            add("cost_item", row.id, row.project_name,
+                f"{project_of(row)} · 建筑工程")
+        for row in installations:
+            add("cost_item", row.id, row.project_name,
+                f"{project_of(row)} · 安装工程")
+        for row in alerts:
+            add("alert", row.id, row.title, f"{row.level} · {row.status}")
+        return results, mat_total + con_total + inst_total + alert_total
 
     async def sync_status(self) -> dict:
         latest = await UploadBatch.all().order_by("-created_at").first()
@@ -650,34 +762,37 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 "last_synced_at": latest.created_at.isoformat() if latest else None}
 
     async def _monthly_item(self, batch: UploadBatch) -> dict:
-        row = await DataGrossProfit.filter(batch_id=batch.id).first()
-        revenue = _number(row.contract_price) if row else 0.0
-        profit = _number(row.gross_profit_net) if row else 0.0
-        cost = revenue - profit
-        # 指标（考核）口径 → target_*；回退约定与 _profit_item 一致。
-        i_rev = _number(_or_default(row.indicator_revenue, row.contract_price)) if row else 0.0
-        i_prf = _number(_or_default(row.indicator_profit, row.gross_profit_net)) if row else 0.0
-        # 预计完工口径 → expected_complete_*；回退约定与 _profit_item forecast 组一致。
-        f_rev = _number(_or_default(row.forecast_revenue, row.estimated_completion_price)) if row else 0.0
-        f_prf = _number(_or_default(row.forecast_profit, row.estimated_gross_profit_net)) if row else 0.0
-        f_cost = (_number(row.forecast_cost)
-                  if row and row.forecast_cost is not None else f_rev - f_prf)
+        rows = await DataSettlementOutput.filter(batch_id=batch.id)
+        indicators = settlement_indicator_map(rows)
+        # 毛利数据自 表11 结算产值表读取（旧毛利 sheet 已随远端重构废弃）。
+        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
+        cost = _settle(indicators, SETTLE_CUMULATIVE_COST) if indicators else revenue - profit
+        # 预计完工组：回退约定与 _profit_item forecast 组一致。
+        f_rev = _settle(indicators, SETTLE_FORECAST_REVENUE)
+        f_prf = _settle(indicators, SETTLE_FORECAST_PROFIT)
+        f_cost = _settle(indicators, SETTLE_FORECAST_COST) if indicators else f_rev - f_prf
         return {"batch_id": batch.id, "ym": batch.ym, "file_name": batch.file_name,
                 "status": batch.status, "uploaded_at": batch.created_at.isoformat(),
                 "revenue": revenue, "cost": cost, "profit": profit,
-                "profit_rate": _rate(profit, revenue),
+                "profit_rate": _settle_rate(
+                    indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue),
                 # ── 基础指标 ──
-                "contract_price": _number(row.contract_price) if row else 0.0,
-                "estimated_completion_price": _number(row.estimated_completion_price) if row else 0.0,
-                "target_profit": i_prf,
-                "target_profit_rate": _rate(i_prf, i_rev),
-                # ── 预计完工指标（gross_profit forecast 组）──
+                "contract_price": _settle(indicators, SETTLE_CONTRACT_PRICE),
+                "estimated_completion_price": f_rev,
+                # 考核（指标）口径：结算产值表无 target/indicator 分列，
+                # 保持字段形状返回 None，待模板扩展后接入。
+                "target_profit": None,
+                "target_profit_rate": None,
+                # ── 预计完工指标 ──
                 "expected_complete_settlement": f_rev,
                 "expected_complete_cost": f_cost,
                 "expected_complete_profit": f_prf,
-                "expected_complete_profit_rate": _rate(f_prf, f_rev),
-                # ── 租借及核销：现有数据模型无数据源（模板未含租借/核销列），
-                #    一律返回 None，待模板扩展后接入。
+                "expected_complete_profit_rate": _settle_rate(
+                    indicators, SETTLE_FORECAST_PROFIT_RATE, f_prf, f_rev),
+                # ── 租借及核销：表10.2 budget_lease 已有租借/核销列，但
+                #    结算口径（预计结算/成本/毛利/核销率）尚未定义，
+                #    保持 None，待产品口径确认后接入。
                 "rental_expected_settlement": None,
                 "rental_cost": None,
                 "rental_profit": None,
@@ -685,11 +800,15 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
 
     async def _profit_for(self, project_id: int, ym: str | None) -> dict:
         batch = await self._batch(project_id, ym)
-        row = None if batch is None else await DataGrossProfit.filter(batch_id=batch.id).first()
-        revenue = _number(row.contract_price) if row else 0.0
-        profit = _number(row.gross_profit_net) if row else 0.0
+        indicators = {}
+        if batch is not None:
+            rows = await DataSettlementOutput.filter(batch_id=batch.id)
+            indicators = settlement_indicator_map(rows)
+        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
         return {"ym": batch.ym if batch else ym, "profit": profit,
-                "profit_rate": _rate(profit, revenue)}
+                "profit_rate": _settle_rate(
+                    indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue)}
 
     async def _profits_for_ids(self, project_ids: list[int], ym: str | None) -> list[dict]:
         result = []

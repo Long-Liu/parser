@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 
 from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
@@ -20,6 +19,10 @@ class DomainEventBus(EventPublisher):
     def subscribe(self, event_type: type[DomainEvent], handler: EventHandler) -> None:
         self._handlers[event_type].append(handler)
 
+    def subscribers(self, event_type: type[DomainEvent]) -> tuple[EventHandler, ...]:
+        """Read-only view of the handlers registered for an event type."""
+        return tuple(self._handlers.get(event_type, ()))
+
     async def publish(self, events: list[DomainEvent]) -> None:
         snapshot = list(events)
         if defer_after_commit(lambda: self._publish_now(snapshot)):
@@ -34,30 +37,3 @@ class DomainEventBus(EventPublisher):
                     await handler(event)
                 except Exception:
                     logger.exception("Event handler failed for %s", type(event).__name__)
-
-
-# ponytail: module-level singleton — good enough until multiple buses are needed
-domain_event_bus = DomainEventBus()
-
-
-@dataclass(frozen=True)
-class _DemoEvent(DomainEvent):
-    data: str = ""
-
-
-def _demo():
-    received: list[str] = []
-
-    async def handler(event: _DemoEvent) -> None:
-        received.append(event.data)
-
-    bus = DomainEventBus()
-    bus.subscribe(_DemoEvent, handler)
-    import asyncio
-    asyncio.run(bus.publish([_DemoEvent(aggregate_id=1, data="hello")]))
-    assert received == ["hello"]
-    print("domain_event_bus: OK")
-
-
-if __name__ == "__main__":
-    _demo()

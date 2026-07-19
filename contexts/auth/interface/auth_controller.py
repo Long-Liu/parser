@@ -9,11 +9,11 @@ from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.interface.auth_middleware import require_auth
 from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.interface.base_controller import BaseController
-from contexts.shared.interface.request_services import RequestServices
+from contexts.auth.interface.request_services import RequestServices
 
 
 class AuthController(BaseController):
-    name = "auth_ddd"
+    name = "auth"
 
     def __init__(
         self, auth_svc: AuthApplicationService, user_svc: UserApplicationService

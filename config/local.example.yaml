@@ -1,4 +1,7 @@
 # Copy this file to config/local.yaml before starting the service.
+# String values support ${ENV_VAR} interpolation, expanded at load time.
+# Unset variables expand to "" so non-local validation fails fast on
+# missing secrets instead of running with literal placeholders.
 debug: true
 
 app:
@@ -8,11 +11,13 @@ db:
   host: 127.0.0.1
   port: 3306
   user: root
+  # e.g. password: ${DB_PASSWORD} — falls back to a literal for local dev.
   password: "change-me"
   database: excel_parser
   pool_size: 5
 
 jwt:
+  # e.g. secret: ${JWT_SECRET} — must be >= 32 chars outside local.
   secret: "local-development-secret-change-me"
   expiry_hours: 24
 
@@ -27,6 +32,10 @@ ai_analysis:
   api_key: ""
 
 admin:
+  # Initial password for the seeded admin account.
+  # e.g. default_password: ${ADMIN_PASSWORD}
+  # Local dev may leave this empty (falls back to "admin123" with a warning);
+  # any other environment refuses to start without it.
   default_password: "admin123"
 
 auth:

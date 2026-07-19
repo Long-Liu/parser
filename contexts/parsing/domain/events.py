@@ -36,9 +36,20 @@ class SheetValidated(DomainEvent):
 @dataclass(frozen=True)
 class ParseJobCompleted(DomainEvent):
     project_id: int | None = None
+    year_month: str = ""
     total_sheets: int = 0
     matched_sheets: int = 0
     total_rows: int = 0
+    # Preview runs complete without persisting data rows; subscribers that react
+    # to real data changes (e.g. alert evaluation) must skip preview completions.
+    is_preview: bool = False
+
+
+@dataclass(frozen=True)
+class ParseJobConfirmed(DomainEvent):
+    """A preview batch was confirmed and its data rows were persisted."""
+    project_id: int | None = None
+    year_month: str = ""
 
 
 @dataclass(frozen=True)

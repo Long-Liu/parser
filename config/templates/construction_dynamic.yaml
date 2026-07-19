@@ -17,13 +17,16 @@ stop_rules:
   - type: cell_match
     patterns: ["^合计（含税）", '^合计\(含税\)']
     action: "last"
+  - type: cell_match
+    patterns: ["^合计"]
+    columns: ["I"]
 
 columns:
   - db_field: work_content
-    match_header: ["工作内容"]
+    match_header: ["项目编码"]
     type: varchar(300)
   - db_field: quota_code
-    match_header: ["定额"]
+    match_header: ["定额编号"]
     type: varchar(50)
   - db_field: project_name
     match_header: ["项目名称"]
@@ -44,10 +47,10 @@ columns:
     match_header: ["分包策划"]
     type: varchar(200)
   - db_field: contract_unit_price
-    match_header: ["主承接合同价", "综合单价"]
+    match_header: ["主承接合同价", "施工单价"]
     type: decimal(15,2)
   - db_field: contract_total_price
-    match_header: ["主承接合同价", "综合合价"]
+    match_header: ["主承接合同价", "施工合价"]
     type: decimal(15,2)
   - db_field: device_ex_tax
     match_header: ["乙供设备"]

@@ -1,0 +1,25 @@
+template_id: settlement_output
+sheet_pattern: "表11*"
+description: "结算产值表"
+
+headers:
+  rows: [1]
+  data_start_row: 3
+
+stop_rules:
+  - type: consecutive_empty_rows
+    count: 3
+
+columns:
+  - db_field: indicator_name
+    match_header: ["指标名称"]
+    type: varchar(200)
+  - db_field: cumulative_value
+    match_header: ["累计填报值"]
+    type: decimal(20,6)
+  - db_field: indicator_desc
+    match_header: ["指标说明"]
+    type: text
+  - db_field: data_source
+    match_header: ["数据来源"]
+    type: varchar(300)

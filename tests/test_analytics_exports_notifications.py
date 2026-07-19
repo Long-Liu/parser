@@ -6,12 +6,14 @@ multi-project compare export workbooks, notification read-all/delete/clear
 (including cross-user protection), and the deterministic five-chapter
 multi-project AI report fallback.
 
-Controller handlers are invoked via ``__wrapped__`` unwrapping: Sanic
-dispatches bound controller methods as handler(request, **kw), so at runtime
-the auth decorators receive the controller instance as first positional arg —
-a pre-existing flaw shared by all DDD endpoints (see tests/test_data_update.py
-and tests/test_template_download.py). The 401/403 decorator contract itself is
-covered elsewhere on plain function handlers.
+Profit figures come from 表11 结算产值表 (data_settlement_output): the sheet
+has no bid/target-indicator split, so the bid/indicator calibers report zeros
+while current/forecast carry the settlement values.
+
+Controller handlers are invoked via ``__wrapped__`` unwrapping to exercise the
+handler body without the auth decorators; the 401/403 decorator contract
+itself is covered by tests/test_auth_middleware.py and the endpoint smoke
+suite.
 """
 
 import io
@@ -51,8 +53,15 @@ from contexts.shared.domain.exceptions import (
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import (
+    SETTLE_CONTRACT_PRICE,
+    SETTLE_CUMULATIVE_COST,
+    SETTLE_CUMULATIVE_OUTPUT,
+    SETTLE_CURRENT_PROFIT,
+    SETTLE_FORECAST_COST,
+    SETTLE_FORECAST_PROFIT,
+    SETTLE_FORECAST_REVENUE,
     DataDynamicIndicator,
-    DataGrossProfit,
+    DataSettlementOutput,
 )
 
 
@@ -88,21 +97,32 @@ async def make_batch(project_id: int, ym: str) -> UploadBatch:
     )
 
 
-async def make_profit_with_calibers(batch_id: int) -> DataGrossProfit:
-    return await DataGrossProfit.create(
-        batch_id=batch_id,
-        contract_price=Decimal("1000"), gross_profit_net=Decimal("100"),
-        gross_profit_total=Decimal("120"),
-        estimated_completion_price=Decimal("1100"),
-        estimated_gross_profit_net=Decimal("110"),
-        bid_revenue=Decimal("1000"), bid_cost=Decimal("850"),
-        bid_profit=Decimal("150"),
-        indicator_revenue=Decimal("980"), indicator_cost=Decimal("860"),
-        indicator_profit=Decimal("120"),
-        actual_revenue=Decimal("900"), actual_cost=Decimal("810"),
-        actual_profit=Decimal("90"),
-        forecast_revenue=Decimal("1050"), forecast_cost=Decimal("920"),
-        forecast_profit=Decimal("130"),
+async def make_settlement(batch_id: int, **indicators) -> None:
+    """Create 表11 settlement rows: one vertical row per indicator name."""
+    for name, value in indicators.items():
+        await DataSettlementOutput.create(
+            batch_id=batch_id, indicator_name=name,
+            cumulative_value=Decimal(str(value)),
+        )
+
+
+async def make_profit_with_calibers(batch_id: int) -> None:
+    """Settlement rows covering the current + forecast profit calibers.
+
+    The settlement sheet has no bid / target-indicator split, so those two
+    calibers report zeros by design (see repository _profit_item).
+    """
+    await make_settlement(
+        batch_id,
+        **{
+            SETTLE_CONTRACT_PRICE: "1000",
+            SETTLE_CUMULATIVE_OUTPUT: "900",
+            SETTLE_CUMULATIVE_COST: "810",
+            SETTLE_CURRENT_PROFIT: "90",
+            SETTLE_FORECAST_REVENUE: "1050",
+            SETTLE_FORECAST_COST: "920",
+            SETTLE_FORECAST_PROFIT: "130",
+        }
     )
 
 
@@ -152,10 +172,10 @@ async def test_profits_workbook_has_four_calibers(db):
     ]
     row = [ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)]
     assert row[0] == project.code and row[2] == "2026-03"
-    assert row[3:7] == [1000.0, 850.0, 150.0, 15.0]          # bid
-    assert row[7:11] == [980.0, 860.0, 120.0, 12.24]         # indicator
-    assert row[11:15] == [900.0, 810.0, 90.0, 10.0]          # current
-    assert row[15:19] == [1050.0, 920.0, 130.0, 12.38]       # forecast
+    assert row[3:7] == [0.0, 0.0, 0.0, 0.0]                 # bid: no source -> zeros
+    assert row[7:11] == [0.0, 0.0, 0.0, 0.0]                # indicator: no source
+    assert row[11:15] == [900.0, 810.0, 90.0, 10.0]         # current
+    assert row[15:19] == [1050.0, 920.0, 130.0, 12.38]      # forecast
 
 
 @pytest.mark.asyncio
@@ -186,11 +206,16 @@ async def test_cost_categories_workbook_has_six_calibers(db):
 @pytest.mark.asyncio
 async def test_month_comparison_workbook_metrics_and_mom(db):
     project = await make_project()
-    for ym, revenue, net in (("2026-02", "100", "10"), ("2026-03", "150", "30")):
+    for ym, revenue, cost, net in (
+            ("2026-02", "100", "90", "10"), ("2026-03", "150", "120", "30")):
         batch = await make_batch(project.id, ym)
-        await DataGrossProfit.create(
-            batch_id=batch.id, contract_price=Decimal(revenue),
-            gross_profit_net=Decimal(net),
+        await make_settlement(
+            batch.id,
+            **{
+                SETTLE_CUMULATIVE_OUTPUT: revenue,
+                SETTLE_CUMULATIVE_COST: cost,
+                SETTLE_CURRENT_PROFIT: net,
+            }
         )
 
     repo = TortoiseAnalyticsRepository()
@@ -291,9 +316,13 @@ async def test_export_month_comparison_endpoint(db):
     project = await make_project()
     for ym in ("2026-02", "2026-03"):
         batch = await make_batch(project.id, ym)
-        await DataGrossProfit.create(
-            batch_id=batch.id, contract_price=Decimal("100"),
-            gross_profit_net=Decimal("10"),
+        await make_settlement(
+            batch.id,
+            **{
+                SETTLE_CUMULATIVE_OUTPUT: "100",
+                SETTLE_CUMULATIVE_COST: "90",
+                SETTLE_CURRENT_PROFIT: "10",
+            }
         )
 
     controller = _controller()
@@ -345,7 +374,10 @@ async def test_project_profits_report_endpoint_still_works(db):
     assert payload["pagination"]["total"] == 1
     item = payload["projects"][0]
     assert set(item) >= {"bid", "indicator", "current", "forecast"}
-    assert item["bid"]["profit"] == 150.0
+    # settlement sheet has no bid split -> zeros; current carries real values
+    assert item["bid"]["profit"] == 0.0
+    assert item["current"]["profit"] == 90.0
+    assert item["current"]["profit_rate"] == 10.0
 
 
 # ── notification repository ──────────────────────────────────────────
@@ -451,17 +483,23 @@ async def test_delete_notification_endpoint_rejects_others_notification(db):
 async def _seed_compare_projects():
     alpha = await make_project(contract_price=Decimal("12500"), progress=Decimal("82"))
     batch_a = await make_batch(alpha.id, "2026-03")
-    await DataGrossProfit.create(
-        batch_id=batch_a.id, contract_price=Decimal("12500"),
-        actual_revenue=Decimal("10250"), actual_cost=Decimal("8050"),
-        actual_profit=Decimal("2200"),
+    await make_settlement(
+        batch_a.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "10250",
+            SETTLE_CUMULATIVE_COST: "8050",
+            SETTLE_CURRENT_PROFIT: "2200",
+        }
     )
     beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
     batch_b = await make_batch(beta.id, "2026-03")
-    await DataGrossProfit.create(
-        batch_id=batch_b.id, contract_price=Decimal("8800"),
-        actual_revenue=Decimal("6600"), actual_cost=Decimal("5060"),
-        actual_profit=Decimal("1540"),
+    await make_settlement(
+        batch_b.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "6600",
+            SETTLE_CUMULATIVE_COST: "5060",
+            SETTLE_CURRENT_PROFIT: "1540",
+        }
     )
     return alpha, beta
 

@@ -5,7 +5,7 @@ from contexts.parsing.domain.parse_job import (
     ParseJob, SheetResult, FileInfo, ParsedRow, RowError, JobStatus, MatchStatus,
 )
 from contexts.shared.domain.identifiers import JobId, ProjectId, UserId, TemplateId
-from contexts.shared.domain.year_month import YearMonth
+from contexts.parsing.domain.year_month import YearMonth
 
 
 def _make_job(job_id: int = 1) -> ParseJob:

@@ -14,6 +14,25 @@ exports the Sanic application for deployment and integration.
 
 Run tests with `python -m pytest -q`.
 
+## Configuration
+
+- `APP_ENV` selects which `config/{env}.yaml` file is loaded (default
+  `local`). `APP_CONFIG_DIR` overrides the config directory location when it
+  does not live at the project root.
+- String values support `${ENV_VAR}` interpolation (e.g.
+  `password: ${DB_PASSWORD}`), expanded at load time; unset variables expand
+  to an empty string so missing secrets fail validation instead of silently
+  passing through.
+- Outside the `local` environment, `db.password` must be non-empty and
+  `jwt.secret` must be at least 32 characters, or startup aborts.
+
+### Initial admin password
+
+The seeded `admin` account takes its initial password from
+`admin.default_password` in the active config file (which may itself be
+`${ADMIN_PASSWORD}`). In `local`, leaving it empty falls back to `admin123`
+with a warning log; any other environment refuses to start without it.
+
 ## Database migrations
 
 The service applies committed Tortoise migrations during startup. It never

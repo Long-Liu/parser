@@ -3,12 +3,15 @@
 Usage in controllers::
 
     from contexts.shared.interface.controller_helpers import (
-        parse_int, pagination_from, get_service,
+        parse_int, pagination_from,
     )
 
-    svc = get_service(MyApplicationService)
     pagination = pagination_from(request)
     page = parse_int(request.args.get("page"), 1)
+
+Services are injected into controllers via the composition root
+(``contexts.container.build_controllers``); these helpers only cover
+query-parameter parsing.
 """
 
 from __future__ import annotations
@@ -25,17 +28,14 @@ def parse_int(value: str | None, default: int) -> int:
         raise ValidationError(f"invalid integer: {value}") from None
 
 
-def pagination_from(request, max_size: int = 100) -> Pagination:
+def pagination_from(request, max_size: int = 100, default_size: int = 20) -> Pagination:
     """Extract a validated Pagination value object from request query params.
 
-    Reads ``page`` (default 1) and ``size`` (default 20) from ``request.args``.
+    Reads ``page`` (default 1) and ``size`` (default ``default_size``) from
+    ``request.args``.
     """
     return Pagination(
         page=parse_int(request.args.get("page"), 1),
-        size=parse_int(request.args.get("size"), 20),
+        size=parse_int(request.args.get("size"), default_size),
         max_size=max_size,
     )
-
-
-# Note: services are now injected via closure factories (create_*_bp functions)
-# so get_service() is no longer needed here. See application.py for wiring.

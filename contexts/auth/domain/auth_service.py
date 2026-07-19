@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from contexts.auth.application.security import PasswordHasher
+from contexts.auth.domain.ports import PasswordHasher
 from contexts.shared.domain.exceptions import AuthenticationError
 
 if TYPE_CHECKING:

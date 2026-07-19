@@ -9,7 +9,7 @@ def test_auth_and_analytics_controllers_are_registered():
     import application
 
     route_names = {route.name for route in application.app.router.routes}
-    assert any("auth_ddd" in name for name in route_names)
+    assert any(".auth." in name for name in route_names)
     assert any("analytics" in name for name in route_names)
 
 

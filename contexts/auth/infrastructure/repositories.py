@@ -3,7 +3,7 @@ from __future__ import annotations
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 
-from contexts.shared.domain.name import Name
+from contexts.auth.domain.name import Name
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
 from contexts.auth.domain.user import RoleRef, User
@@ -43,7 +43,7 @@ async def _load_roles(user_id: int) -> list[dict]:
     )
 
 
-class UserRepositoryImpl(UserRepository):
+class TortoiseUserRepository(UserRepository):
     async def save(self, user: User) -> None:
         values = {
             "username": user.username,
@@ -186,7 +186,7 @@ class UserRepositoryImpl(UserRepository):
         return set(codes)
 
 
-class RoleRepositoryImpl(RoleRepository):
+class TortoiseRoleRepository(RoleRepository):
     async def save(self, role: Role) -> None:
         values = {
             "code": role.code,

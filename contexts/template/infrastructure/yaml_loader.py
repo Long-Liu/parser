@@ -15,6 +15,7 @@ from contexts.template.domain.template import (
     StopRuleType,
     Template,
 )
+from contexts.template.infrastructure.validators import TEMPLATE_ID_RE
 
 
 class YamlTemplateLoader:
@@ -26,6 +27,8 @@ class YamlTemplateLoader:
         self._config_dir = os.path.abspath(config_dir)
 
     def load(self, template_id: str) -> Template:
+        if not TEMPLATE_ID_RE.match(template_id):
+            raise ValueError(f"invalid template_id: {template_id}")
         filepath = os.path.join(self._config_dir, f"{template_id}.yaml")
         resolved = os.path.realpath(filepath)
         config_root = os.path.realpath(self._config_dir)
@@ -35,15 +38,18 @@ class YamlTemplateLoader:
             data = yaml.safe_load(f)
         return self._build(data)
 
-    def load_all(self) -> list[Template]:
-        templates = []
+    def template_ids(self) -> list[str]:
+        """List the ids of every template config in the directory."""
         if not os.path.isdir(self._config_dir):
-            return templates
-        for filename in sorted(os.listdir(self._config_dir)):
-            if filename.endswith((".yaml", ".yml")):
-                tid = filename.rsplit(".", 1)[0]
-                templates.append(self.load(tid))
-        return templates
+            return []
+        return sorted(
+            filename.rsplit(".", 1)[0]
+            for filename in os.listdir(self._config_dir)
+            if filename.endswith((".yaml", ".yml"))
+        )
+
+    def load_all(self) -> list[Template]:
+        return [self.load(tid) for tid in self.template_ids()]
 
     def _build(self, data: dict) -> Template:
         header_rows = data.get("headers", {}).get("rows", [])

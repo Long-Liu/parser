@@ -3,7 +3,7 @@ sheet_pattern: "表9建安材料成本表*"
 description: "建安材料成本表"
 
 headers:
-  rows: [1, 2]
+  rows: [0, 1]
   data_start_row: 3
 
 hierarchy:
@@ -16,11 +16,12 @@ stop_rules:
     columns: ["A"]
   - type: cell_match
     patterns: ["^总计"]
+    columns: ["A", "B"]
     action: "last"
 
 columns:
   - db_field: budget_category
-    match_header: ["预算科目"]
+    match_header: ["成本科目"]
     type: varchar(200)
   - db_field: unit
     match_header: ["单位"]
@@ -56,22 +57,22 @@ columns:
     match_header: ["已签订合同", "分析备注"]
     type: text
   - db_field: actual_paid_qty
-    match_header: ["实际已发生情况", "实际采购数量"]
+    match_header: ["已入帐", "实际采购数量"]
     type: decimal(15,4)
   - db_field: actual_paid_unit_price
-    match_header: ["实际已发生情况", "实际单价"]
+    match_header: ["已入帐", "实际单价"]
     type: decimal(15,4)
   - db_field: actual_paid_total
-    match_header: ["实际已发生情况", "实际合价"]
+    match_header: ["已入帐", "实际合价"]
     type: decimal(15,2)
   - db_field: actual_unpaid_qty
-    match_header: ["实际已发生情况", "实际采购数量"]
+    match_header: ["后续预计发生", "实际采购数量"]
     type: decimal(15,4)
   - db_field: actual_unpaid_unit_price
-    match_header: ["实际已发生情况", "实际单价"]
+    match_header: ["后续预计发生", "实际单价"]
     type: decimal(15,4)
   - db_field: actual_unpaid_total
-    match_header: ["实际已发生情况", "实际合价"]
+    match_header: ["后续预计发生", "实际合价"]
     type: decimal(15,2)
   - db_field: estimated_completion_qty
     match_header: ["预计完工测算", "测算完工数量"]

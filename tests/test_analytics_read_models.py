@@ -1,9 +1,9 @@
 """Repository-level tests for the analytics read model extensions.
 
-Covers: monthly-data full metric groups (rental fields have no data source and
-must be None), cost-details six calibers, month-comparison MoM changes
-(including zero-base division), and multi-project compare 9 metrics + five
--dimension scoring boundaries.
+Covers: monthly-data full metric groups (sourced from 表11 settlement rows;
+rental/target fields have no data source and must be None), cost-details six
+calibers, month-comparison MoM changes (including zero-base division), and
+multi-project compare 9 metrics + five-dimension scoring boundaries.
 
 Uses an in-memory sqlite database via Tortoise; each test gets a fresh schema.
 """
@@ -24,8 +24,16 @@ from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import (
+    SETTLE_CONTRACT_PRICE,
+    SETTLE_CUMULATIVE_COST,
+    SETTLE_CUMULATIVE_OUTPUT,
+    SETTLE_CURRENT_PROFIT,
+    SETTLE_CURRENT_PROFIT_RATE,
+    SETTLE_FORECAST_COST,
+    SETTLE_FORECAST_PROFIT,
+    SETTLE_FORECAST_REVENUE,
     DataDynamicIndicator,
-    DataGrossProfit,
+    DataSettlementOutput,
 )
 
 
@@ -61,8 +69,13 @@ async def make_batch(project_id: int, ym: str, file_name: str = "cost.xlsx") -> 
     )
 
 
-async def make_gross_profit(batch_id: int, **kwargs) -> DataGrossProfit:
-    return await DataGrossProfit.create(batch_id=batch_id, **kwargs)
+async def make_settlement(batch_id: int, **indicators) -> None:
+    """Create 表11 settlement rows: one vertical row per indicator name."""
+    for name, value in indicators.items():
+        await DataSettlementOutput.create(
+            batch_id=batch_id, indicator_name=name,
+            cumulative_value=Decimal(str(value)),
+        )
 
 
 async def make_indicator(batch_id: int, **kwargs) -> DataDynamicIndicator:
@@ -76,14 +89,17 @@ async def make_indicator(batch_id: int, **kwargs) -> DataDynamicIndicator:
 async def test_monthly_data_exposes_full_metric_groups(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
-    await make_gross_profit(
+    await make_settlement(
         batch.id,
-        contract_price=Decimal("12500"), estimated_completion_price=Decimal("11800"),
-        gross_profit_net=Decimal("1850"),
-        indicator_revenue=Decimal("12000"), indicator_cost=Decimal("9300"),
-        indicator_profit=Decimal("2700"),
-        forecast_revenue=Decimal("12500"), forecast_cost=Decimal("10100"),
-        forecast_profit=Decimal("2400"),
+        **{
+            SETTLE_CONTRACT_PRICE: "12500",
+            SETTLE_CUMULATIVE_OUTPUT: "12500",
+            SETTLE_CUMULATIVE_COST: "10650",
+            SETTLE_CURRENT_PROFIT: "1850",
+            SETTLE_FORECAST_REVENUE: "12500",
+            SETTLE_FORECAST_COST: "10100",
+            SETTLE_FORECAST_PROFIT: "2400",
+        }
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -103,15 +119,16 @@ async def test_monthly_data_exposes_full_metric_groups(db):
     assert item["profit_rate"] == 14.8
     # basic group
     assert item["contract_price"] == 12500.0
-    assert item["estimated_completion_price"] == 11800.0
-    assert item["target_profit"] == 2700.0
-    assert item["target_profit_rate"] == 22.5
+    assert item["estimated_completion_price"] == 12500.0
+    # target/indicator caliber has no column in the settlement sheet -> None
+    assert item["target_profit"] is None
+    assert item["target_profit_rate"] is None
     # forecast group
     assert item["expected_complete_settlement"] == 12500.0
     assert item["expected_complete_cost"] == 10100.0
     assert item["expected_complete_profit"] == 2400.0
     assert item["expected_complete_profit_rate"] == 19.2
-    # rental/write-off: no data source in current schema -> always None
+    # rental/write-off: no agreed settlement caliber yet -> always None
     assert item["rental_expected_settlement"] is None
     assert item["rental_cost"] is None
     assert item["rental_profit"] is None
@@ -119,30 +136,50 @@ async def test_monthly_data_exposes_full_metric_groups(db):
 
 
 @pytest.mark.asyncio
-async def test_monthly_data_falls_back_to_legacy_gross_profit_columns(db):
+async def test_monthly_data_uses_stored_rate_rows_when_present(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
-    await make_gross_profit(
+    await make_settlement(
         batch.id,
-        contract_price=Decimal("1000"), estimated_completion_price=Decimal("1100"),
-        gross_profit_net=Decimal("100"), estimated_gross_profit_net=Decimal("120"),
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "12500",
+            SETTLE_CURRENT_PROFIT: "1850",
+            # rate rows are stored as ratios (0.x) and reported as percents
+            SETTLE_CURRENT_PROFIT_RATE: "0.148",
+        }
     )
 
     repo = TortoiseAnalyticsRepository()
     item = (await repo.monthly_data(project.id, Pagination(1, 20, max_size=100)))["data"][0]
 
-    # indicator group missing -> target falls back to legacy net profit
-    assert item["target_profit"] == 100.0
-    assert item["target_profit_rate"] == 10.0
-    # forecast group missing -> falls back to estimated completion columns
-    assert item["expected_complete_settlement"] == 1100.0
-    assert item["expected_complete_profit"] == 120.0
-    assert item["expected_complete_cost"] == 980.0
-    assert item["expected_complete_profit_rate"] == pytest.approx(10.91)
+    assert item["profit_rate"] == 14.8
+    # cumulative cost row missing while other rows exist -> 0 per _settle
+    assert item["cost"] == 0.0
 
 
 @pytest.mark.asyncio
-async def test_monthly_data_without_gross_profit_row_returns_zeros(db):
+async def test_monthly_data_falls_back_to_contract_price_row(db):
+    project = await make_project()
+    batch = await make_batch(project.id, "2026-03")
+    await make_settlement(
+        batch.id,
+        **{
+            SETTLE_CONTRACT_PRICE: "1100",
+            SETTLE_CURRENT_PROFIT: "120",
+        }
+    )
+
+    repo = TortoiseAnalyticsRepository()
+    item = (await repo.monthly_data(project.id, Pagination(1, 20, max_size=100)))["data"][0]
+
+    # 累计结算产值 missing -> revenue falls back to the 合同总价 row
+    assert item["revenue"] == 1100.0
+    assert item["profit"] == 120.0
+    assert item["profit_rate"] == pytest.approx(10.91)
+
+
+@pytest.mark.asyncio
+async def test_monthly_data_without_settlement_rows_returns_zeros(db):
     project = await make_project()
     await make_batch(project.id, "2026-03")
 
@@ -150,10 +187,13 @@ async def test_monthly_data_without_gross_profit_row_returns_zeros(db):
     item = (await repo.monthly_data(project.id, Pagination(1, 20, max_size=100)))["data"][0]
 
     for key in ("revenue", "cost", "profit", "profit_rate", "contract_price",
-                "estimated_completion_price", "target_profit", "target_profit_rate",
+                "estimated_completion_price",
                 "expected_complete_settlement", "expected_complete_cost",
                 "expected_complete_profit", "expected_complete_profit_rate"):
         assert item[key] == 0.0, key
+    # no settlement rows at all -> target/rental groups stay None
+    assert item["target_profit"] is None
+    assert item["target_profit_rate"] is None
     assert item["rental_expected_settlement"] is None
     assert item["write_off_rate"] is None
 
@@ -228,11 +268,16 @@ async def test_cost_categories_report_carries_extended_calibers(db):
 @pytest.mark.asyncio
 async def test_month_comparison_computes_mom_changes(db):
     project = await make_project()
-    for ym, revenue, net in (("2026-02", "100", "10"), ("2026-03", "150", "30")):
+    for ym, revenue, cost, net in (
+            ("2026-02", "100", "90", "10"), ("2026-03", "150", "120", "30")):
         batch = await make_batch(project.id, ym)
-        await make_gross_profit(
-            batch.id, contract_price=Decimal(revenue),
-            gross_profit_net=Decimal(net),
+        await make_settlement(
+            batch.id,
+            **{
+                SETTLE_CUMULATIVE_OUTPUT: revenue,
+                SETTLE_CUMULATIVE_COST: cost,
+                SETTLE_CURRENT_PROFIT: net,
+            }
         )
 
     repo = TortoiseAnalyticsRepository()
@@ -255,9 +300,19 @@ async def test_month_comparison_computes_mom_changes(db):
 async def test_month_comparison_mom_returns_none_when_base_is_zero(db):
     project = await make_project()
     empty = await make_batch(project.id, "2026-01")
-    await make_gross_profit(empty.id, contract_price=Decimal("0"), gross_profit_net=Decimal("0"))
+    await make_settlement(
+        empty.id,
+        **{SETTLE_CUMULATIVE_OUTPUT: "0", SETTLE_CURRENT_PROFIT: "0"}
+    )
     filled = await make_batch(project.id, "2026-02")
-    await make_gross_profit(filled.id, contract_price=Decimal("100"), gross_profit_net=Decimal("10"))
+    await make_settlement(
+        filled.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "100",
+            SETTLE_CUMULATIVE_COST: "90",
+            SETTLE_CURRENT_PROFIT: "10",
+        }
+    )
 
     repo = TortoiseAnalyticsRepository()
     result = await repo.month_comparison(project.id, ["2026-01", "2026-02"])
@@ -283,17 +338,23 @@ async def test_month_comparison_requires_two_months(db):
 async def test_compare_projects_returns_metrics_scores_and_legacy_fields(db):
     alpha = await make_project(contract_price=Decimal("12500"), progress=Decimal("82"))
     batch_a = await make_batch(alpha.id, "2026-03")
-    await make_gross_profit(
-        batch_a.id, contract_price=Decimal("12500"),
-        actual_revenue=Decimal("10250"), actual_cost=Decimal("8050"),
-        actual_profit=Decimal("2200"),
+    await make_settlement(
+        batch_a.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "10250",
+            SETTLE_CUMULATIVE_COST: "8050",
+            SETTLE_CURRENT_PROFIT: "2200",
+        }
     )
     beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
     batch_b = await make_batch(beta.id, "2026-03")
-    await make_gross_profit(
-        batch_b.id, contract_price=Decimal("8800"),
-        actual_revenue=Decimal("6600"), actual_cost=Decimal("5060"),
-        actual_profit=Decimal("1540"),
+    await make_settlement(
+        batch_b.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "6600",
+            SETTLE_CUMULATIVE_COST: "5060",
+            SETTLE_CURRENT_PROFIT: "1540",
+        }
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -333,15 +394,23 @@ async def test_compare_projects_returns_metrics_scores_and_legacy_fields(db):
 async def test_compare_profit_rate_boundary_18_scores_90(db):
     alpha = await make_project(contract_price=Decimal("100"))
     batch_a = await make_batch(alpha.id, "2026-03")
-    await make_gross_profit(
-        batch_a.id, actual_revenue=Decimal("100"), actual_profit=Decimal("18"),
-        actual_cost=Decimal("82"),
+    await make_settlement(
+        batch_a.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "100",
+            SETTLE_CURRENT_PROFIT: "18",
+            SETTLE_CUMULATIVE_COST: "82",
+        }
     )
     beta = await make_project(contract_price=Decimal("100"))
     batch_b = await make_batch(beta.id, "2026-03")
-    await make_gross_profit(
-        batch_b.id, actual_revenue=Decimal("100"), actual_profit=Decimal("17.99"),
-        actual_cost=Decimal("82"),
+    await make_settlement(
+        batch_b.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "100",
+            SETTLE_CURRENT_PROFIT: "17.99",
+            SETTLE_CUMULATIVE_COST: "82",
+        }
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -355,13 +424,40 @@ async def test_compare_profit_rate_boundary_18_scores_90(db):
 
 
 @pytest.mark.asyncio
+async def test_compare_stored_rate_row_preferred_over_computed(db):
+    """结算表已存毛利率（比率）时直接采用并换算为百分比。"""
+    alpha = await make_project(contract_price=Decimal("100"))
+    batch_a = await make_batch(alpha.id, "2026-03")
+    await make_settlement(
+        batch_a.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "100",
+            SETTLE_CURRENT_PROFIT: "18",
+            SETTLE_CUMULATIVE_COST: "82",
+            SETTLE_CURRENT_PROFIT_RATE: "0.185",
+        }
+    )
+    beta = await make_project(contract_price=Decimal("100"))
+    await make_batch(beta.id, "2026-03")
+
+    repo = TortoiseAnalyticsRepository()
+    result = await repo.compare_projects([alpha.id, beta.id], "2026-03")
+
+    assert result["projects"][0]["profit_rate"] == 18.5
+
+
+@pytest.mark.asyncio
 async def test_compare_division_by_zero_yields_none_and_lowest_band(db):
     alpha = await make_project(contract_price=Decimal("1000"), progress=Decimal("0"))
     beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
     batch_b = await make_batch(beta.id, "2026-03")
-    await make_gross_profit(
-        batch_b.id, actual_revenue=Decimal("6600"), actual_cost=Decimal("5060"),
-        actual_profit=Decimal("1540"),
+    await make_settlement(
+        batch_b.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "6600",
+            SETTLE_CUMULATIVE_COST: "5060",
+            SETTLE_CURRENT_PROFIT: "1540",
+        }
     )
 
     repo = TortoiseAnalyticsRepository()
