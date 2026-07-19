@@ -29,3 +29,7 @@ ai_analysis:
 
 admin:
   default_password: "112w3e4R"
+
+auth:
+  # false: 生产环境关闭开放注册，仅管理员（user:manage）可创建账号
+  allow_open_register: false

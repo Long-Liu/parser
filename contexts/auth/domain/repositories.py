@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from contexts.shared.domain.identifiers import RoleId, UserId
 from contexts.auth.domain.user import User
@@ -60,3 +61,26 @@ class RoleRepository(ABC):
 
     @abstractmethod
     async def remove_from_user(self, user_id: UserId, role_id: RoleId) -> None: ...
+
+
+class TokenRevocationRepository(ABC):
+    """Blacklist store for revoked JWTs.
+
+    Two revocation granularities share one store (see the Tortoise impl):
+    - single token, keyed by its ``jti`` claim (logout);
+    - user-wide marker, revoking every token whose ``iat`` is at or before
+      the marker's ``revoked_at`` (password change — covers the current
+      token as well, so no separate jti entry is needed there).
+    Entries become useless once all covered tokens have expired; ``expires_at``
+    records that horizon so implementations can purge lazily.
+    """
+
+    @abstractmethod
+    async def revoke(self, *, jti: str, user_id: UserId, expires_at: datetime) -> None: ...
+
+    @abstractmethod
+    async def revoke_all_for_user(self, *, user_id: UserId, expires_at: datetime) -> None: ...
+
+    @abstractmethod
+    async def is_revoked(self, *, jti: str | None, user_id: UserId,
+                         issued_at: float | None) -> bool: ...

@@ -43,6 +43,14 @@ class AdminConfig(BaseModel):
     default_password: str = ""
 
 
+class AuthConfig(BaseModel):
+    """Authentication behaviour switches."""
+
+    # False (default): POST /api/auth/register requires an admin token with the
+    # user:manage permission. True: anyone can register (open registration).
+    allow_open_register: bool = False
+
+
 class Settings(BaseModel):
     """Root config — all values loaded from a single YAML file."""
 
@@ -54,6 +62,7 @@ class Settings(BaseModel):
     upload: UploadConfig = Field(default_factory=UploadConfig)
     ai_analysis: AiAnalysisConfig = Field(default_factory=AiAnalysisConfig)
     admin: AdminConfig = Field(default_factory=AdminConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Settings":

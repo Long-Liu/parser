@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -15,9 +16,22 @@ class JwtService(TokenService):
         self.secret = secret
         self.expiry_hours = expiry_hours
 
+    def max_lifetime(self) -> timedelta:
+        """Upper bound of a token's valid lifetime (drives blacklist retention)."""
+        return timedelta(hours=self.expiry_hours)
+
     def generate(self, user_id: UserId, username: str) -> str:
-        exp = datetime.now(tz=timezone.utc) + timedelta(hours=self.expiry_hours)
-        payload = {"user_id": user_id.value, "username": username, "exp": exp}
+        now = datetime.now(tz=timezone.utc)
+        exp = now + timedelta(hours=self.expiry_hours)
+        # jti enables single-token revocation (logout); iat enables the
+        # user-wide "revoke all tokens issued before T" rule (password change).
+        payload = {
+            "user_id": user_id.value,
+            "username": username,
+            "iat": now,
+            "jti": uuid.uuid4().hex,
+            "exp": exp,
+        }
         return jwt.encode(payload, self.secret, algorithm=JWT_ALGORITHM)
 
     def verify(self, token: str) -> dict:

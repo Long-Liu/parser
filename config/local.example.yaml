@@ -28,3 +28,8 @@ ai_analysis:
 
 admin:
   default_password: "admin123"
+
+auth:
+  # true: open self-registration via POST /api/auth/register;
+  # false (default): registration requires an admin token with user:manage.
+  allow_open_register: true

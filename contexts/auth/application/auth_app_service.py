@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
+from contexts.shared.domain.identifiers import UserId
+from contexts.shared.domain.password import Password
 from contexts.auth.domain.user import User
 from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.domain.auth_service import AuthenticationService
-from contexts.auth.domain.repositories import UserRepository
+from contexts.auth.domain.repositories import TokenRevocationRepository, UserRepository
 from contexts.auth.application.dto import LoginCommand, LoginResult, RegisterCommand
 
 logger = logging.getLogger("parser.auth")
@@ -19,13 +22,15 @@ class AuthApplicationService(TransactionalService):
                  jwt_service: TokenService,
                  password_hasher: PasswordHasher,
                  event_publisher: EventPublisher | None = None,
-                 transaction_manager: TransactionManager | None = None) -> None:
+                 transaction_manager: TransactionManager | None = None,
+                 token_revocations: TokenRevocationRepository | None = None) -> None:
         super().__init__(transaction_manager)
         self._users = user_repo
         self._auth = auth_service
         self._jwt = jwt_service
         self._password_hasher = password_hasher
         self._event_publisher = event_publisher
+        self._token_revocations = token_revocations
 
     async def login(self, cmd: LoginCommand) -> LoginResult:
         if not cmd.username or not cmd.password:
@@ -67,3 +72,47 @@ class AuthApplicationService(TransactionalService):
         if self._event_publisher:
             await self._event_publisher.publish(user.pull_events())
         return {"id": user.id.value, "username": cmd.username}
+
+    @transactional
+    async def change_password(self, *, user_id: int, old_password: str,
+                              new_password: str) -> None:
+        """Self-service password change; invalidates all existing tokens.
+
+        Error semantics mirror login: a wrong old password raises
+        AuthenticationError (401); a non-compliant new password raises
+        ValidationError (400) via the Password value object.
+        """
+        if not old_password or not new_password:
+            raise ValidationError("old_password and new_password are required")
+        user = await self._users.find_by_id(UserId(user_id))
+        if user is None:
+            raise AuthenticationError("invalid credentials")
+        self._auth.verify_credentials(user, old_password)
+        user.reset_password(self._password_hasher.hash(str(Password(new_password))))
+        await self._users.save(user)
+        if self._event_publisher:
+            await self._event_publisher.publish(user.pull_events())
+        # User-wide revocation: blacklists every token of this user whose iat
+        # is at/before now — the current token included, so no per-jti entry
+        # is needed here. The entry lives until all pre-change tokens would
+        # have expired anyway (now + max token lifetime).
+        if self._token_revocations is not None:
+            horizon = datetime.now(timezone.utc) + self._jwt.max_lifetime()
+            await self._token_revocations.revoke_all_for_user(
+                user_id=UserId(user_id), expires_at=horizon,
+            )
+
+    async def logout(self, *, user_id: int, token_jti: str | None = None,
+                     token_exp: int | float | None = None) -> None:
+        """Blacklist the presented token until its natural expiry."""
+        if self._token_revocations is None or not token_jti:
+            # Tokens minted before jti support cannot be blacklisted
+            # individually; they expire naturally within max_lifetime().
+            return
+        if token_exp:
+            expires_at = datetime.fromtimestamp(float(token_exp), tz=timezone.utc)
+        else:
+            expires_at = datetime.now(timezone.utc) + self._jwt.max_lifetime()
+        await self._token_revocations.revoke(
+            jti=token_jti, user_id=UserId(user_id), expires_at=expires_at,
+        )

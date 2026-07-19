@@ -84,3 +84,22 @@ class NotificationRead(Model):
     class Meta:
         table = "notification_reads"
         unique_together = (("notification_id", "user_id"),)
+
+
+class RevokedToken(Model):
+    """JWT blacklist entry.
+
+    ``jti`` is either a real token id (single-token revocation, logout) or the
+    user-wide sentinel ``user:{user_id}`` (revoke every token issued at/before
+    ``revoked_at``, password change). Rows past ``expires_at`` are dead weight
+    and are purged lazily during blacklist checks.
+    """
+
+    id = fields.IntField(primary_key=True)
+    jti = fields.CharField(max_length=64, unique=True)
+    user_id = fields.IntField(db_index=True)
+    expires_at = fields.DatetimeField(db_index=True)
+    revoked_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "revoked_tokens"

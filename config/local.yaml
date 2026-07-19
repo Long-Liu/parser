@@ -28,3 +28,7 @@ ai_analysis:
 
 admin:
   default_password: "admin123"
+
+auth:
+  # true: POST /api/auth/register 开放注册（本地开发方便）；false: 需 user:manage 管理员权限
+  allow_open_register: true

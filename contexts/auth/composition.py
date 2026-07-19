@@ -10,6 +10,9 @@ from contexts.auth.application.security import PasswordHasher, TokenService
 from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
+from contexts.auth.infrastructure.token_revocation_repository import (
+    TortoiseTokenRevocationRepository,
+)
 from contexts.shared.application.transaction import TransactionManager
 from contexts.shared.domain.event_publisher import EventPublisher
 
@@ -33,11 +36,13 @@ def build_auth_components(
     transactions: TransactionManager,
 ) -> AuthComponents:
     authentication = AuthenticationService(password_hasher)
+    token_revocations = TortoiseTokenRevocationRepository()
     return AuthComponents(
         auth=AuthApplicationService(
             users, authentication, tokens, password_hasher, events, transactions,
+            token_revocations,
         ),
-        authorization=AuthorizationApplicationService(users, tokens),
+        authorization=AuthorizationApplicationService(users, tokens, token_revocations),
         users=UserApplicationService(users, password_hasher, events, transactions),
         roles=RoleApplicationService(roles, events, users, transactions),
         project_access=ProjectAccessPolicy(project_access),
