@@ -4,6 +4,9 @@ from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.shared.domain.pagination import Pagination
 from contexts.template.domain.repositories import TemplateCatalog
+from contexts.template.infrastructure.xlsx_template_builder import (
+    build_template_workbook,
+)
 
 
 class TemplateApplicationService:
@@ -33,3 +36,11 @@ class TemplateApplicationService:
                 "data_table": t.data_table,
                 "fixed_columns": [c.db_field for c in t.fixed_columns],
                 "dynamic_columns": [c.db_prefix for c in t.dynamic_columns]}
+
+    async def build_download(self, template_id: TemplateId) -> tuple[bytes, str]:
+        """Render the .xlsx skeleton for a template; returns (content, filename)."""
+        t = await self._repo.find_by_id(template_id)
+        if not t:
+            raise NotFoundError(f"template {template_id} not found")
+        filename = f"{t.description or str(template_id)}.xlsx"
+        return build_template_workbook(t), filename

@@ -11,6 +11,7 @@ from contexts.template.domain.template import (
     HeaderSpec,
     HierarchyConfig,
     StopRule,
+    StopRuleAction,
     StopRuleType,
     Template,
 )
@@ -65,6 +66,7 @@ class YamlTemplateLoader:
                     if rule_type == StopRuleType.CONSECUTIVE_EMPTY
                     else None
                 ),
+                action=StopRuleAction(rule.get("action", StopRuleAction.EXCLUDE.value)),
             ))
         fixed_columns = [
             ColumnMapping(

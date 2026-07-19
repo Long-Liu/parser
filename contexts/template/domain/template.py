@@ -14,12 +14,20 @@ class StopRuleType(str, Enum):
     CONSECUTIVE_EMPTY = "consecutive_empty_rows"
 
 
+class StopRuleAction(str, Enum):
+    # EXCLUDE: drop the matched row and stop (default).
+    # LAST: keep the matched row as the final data row, then stop.
+    EXCLUDE = "exclude"
+    LAST = "last"
+
+
 @dataclass(frozen=True)
 class StopRule(ValueObject):
     rule_type: StopRuleType
     patterns: list[str] = field(default_factory=list)
     columns: list[str] = field(default_factory=list)
     empty_row_count: int | None = None
+    action: StopRuleAction = StopRuleAction.EXCLUDE
 
 
 @dataclass(frozen=True)
