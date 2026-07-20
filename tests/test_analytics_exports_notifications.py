@@ -7,8 +7,9 @@ multi-project compare export workbooks, notification read-all/delete/clear
 multi-project AI report fallback.
 
 Profit figures come from 表11 结算产值表 (data_settlement_output): the sheet
-has no bid/target-indicator split, so the bid/indicator calibers report zeros
-while current/forecast carry the settlement values.
+has no bid data source, so the bid caliber reports zeros while current/forecast
+carry the settlement values; the indicator caliber is sourced from 00 动态指标
+(data_dynamic_indicator 含税指标合计 + 合同总价).
 
 Controller handlers are invoked via ``__wrapped__`` unwrapping to exercise the
 handler body without the auth decorators; the 401/403 decorator contract
@@ -109,8 +110,9 @@ async def make_settlement(batch_id: int, **indicators) -> None:
 async def make_profit_with_calibers(batch_id: int) -> None:
     """Settlement rows covering the current + forecast profit calibers.
 
-    The settlement sheet has no bid / target-indicator split, so those two
-    calibers report zeros by design (see repository _profit_item).
+    The workbook has no bid data source, so the bid caliber reports zeros by
+    design; the indicator caliber is sourced separately from 00 动态指标
+    (data_dynamic_indicator, see repository _profit_item).
     """
     await make_settlement(
         batch_id,
@@ -156,6 +158,11 @@ async def test_profits_workbook_has_four_calibers(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
     await make_profit_with_calibers(batch.id)
+    # 00 动态指标 sheet：指标口径预计完工成本 = 预计完工量含税指标合计 800
+    await DataDynamicIndicator.create(
+        batch_id=batch.id, hierarchy_code="1", item_name="安装工程",
+        indicator_with_tax=Decimal("820"), estimated_with_tax=Decimal("800"),
+    )
 
     repo = TortoiseAnalyticsRepository()
     result = await repo.project_profits("2026-03", Pagination(1, 10000, max_size=10000))
@@ -173,7 +180,7 @@ async def test_profits_workbook_has_four_calibers(db):
     row = [ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)]
     assert row[0] == project.code and row[2] == "2026-03"
     assert row[3:7] == [0.0, 0.0, 0.0, 0.0]                 # bid: no source -> zeros
-    assert row[7:11] == [0.0, 0.0, 0.0, 0.0]                # indicator: no source
+    assert row[7:11] == [1000.0, 800.0, 200.0, 20.0]        # indicator: 合同价 - 含税指标合计
     assert row[11:15] == [900.0, 810.0, 90.0, 10.0]         # current
     assert row[15:19] == [1050.0, 920.0, 130.0, 12.38]      # forecast
 

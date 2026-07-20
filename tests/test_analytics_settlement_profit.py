@@ -83,7 +83,17 @@ def _project(**overrides):
     return SimpleNamespace(**values)
 
 
-def _patch(monkeypatch, *, settlement_rows=SETTLEMENT_ROWS, project=None, batch=None):
+def _dyn_row(estimated, indicator=None):
+    """00 动态指标 sheet row: 预计完工量含税指标 / 清单量含税指标."""
+    return SimpleNamespace(
+        batch_id=7,
+        estimated_with_tax=None if estimated is None else Decimal(str(estimated)),
+        indicator_with_tax=None if indicator is None else Decimal(str(indicator)),
+    )
+
+
+def _patch(monkeypatch, *, settlement_rows=SETTLEMENT_ROWS, dynamic_rows=(),
+           project=None, batch=None):
     project = project or _project()
     batch = _batch() if batch is None else batch
     monkeypatch.setattr(analytics.Project, "all", lambda: _FakeQuery([project]))
@@ -93,6 +103,10 @@ def _patch(monkeypatch, *, settlement_rows=SETTLEMENT_ROWS, project=None, batch=
     monkeypatch.setattr(
         analytics.DataSettlementOutput, "filter",
         lambda **kw: _FakeQuery(settlement_rows),
+    )
+    monkeypatch.setattr(
+        analytics.DataDynamicIndicator, "filter",
+        lambda **kw: _FakeQuery(list(dynamic_rows)),
     )
 
 
@@ -117,11 +131,49 @@ async def test_project_profits_reads_settlement_indicators(monkeypatch):
     assert forecast["cost"] == pytest.approx(22140.962109)
     # stored ratio 0.106968 -> percent 10.7
     assert forecast["profit_rate"] == pytest.approx(10.7)
-    # no bid/indicator split exists in the settlement sheet
+    # no bid split exists in the workbook; indicator needs 动态指标 rows
     assert item["bid"] == {"revenue": 0.0, "cost": 0.0, "profit": 0.0,
                            "profit_rate": 0.0}
     assert item["indicator"] == {"revenue": 0.0, "cost": 0.0, "profit": 0.0,
                                  "profit_rate": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_project_profits_indicator_reads_dynamic_indicator_sheet(monkeypatch):
+    """指标（含税）口径来自 00 动态指标 sheet：预计完工成本取预计完工量
+    含税指标合计，收入以表11 合同总价近似。"""
+    _patch(monkeypatch, dynamic_rows=[
+        _dyn_row(estimated="63361", indicator="64555.20"),
+        _dyn_row(estimated="1000"),
+    ])
+
+    result = await TortoiseAnalyticsRepository().project_profits(
+        None, Pagination(1, 20, max_size=100))
+
+    indicator = result["projects"][0]["indicator"]
+    assert indicator["revenue"] == pytest.approx(66075.19)   # 合同总价
+    assert indicator["cost"] == pytest.approx(64361.0)       # 63361 + 1000
+    assert indicator["profit"] == pytest.approx(1714.19)     # 66075.19 - 64361
+    assert indicator["profit_rate"] == pytest.approx(2.59)   # 1714.19/66075.19
+
+
+@pytest.mark.asyncio
+async def test_project_profits_indicator_falls_back_to_list_indicator(monkeypatch):
+    """预计完工量含税指标缺失时回退清单量含税指标；无结算行时收入回退
+    项目合同价。"""
+    _patch(monkeypatch, settlement_rows=[], dynamic_rows=[
+        _dyn_row(estimated=None, indicator="60000"),
+        _dyn_row(estimated=None, indicator=None),  # 无数据行不计入
+    ])
+
+    result = await TortoiseAnalyticsRepository().project_profits(
+        None, Pagination(1, 20, max_size=100))
+
+    indicator = result["projects"][0]["indicator"]
+    assert indicator["revenue"] == pytest.approx(66075.19)  # project contract price
+    assert indicator["cost"] == pytest.approx(60000.0)
+    assert indicator["profit"] == pytest.approx(6075.19)
+    assert indicator["profit_rate"] == pytest.approx(9.19)
 
 
 @pytest.mark.asyncio
