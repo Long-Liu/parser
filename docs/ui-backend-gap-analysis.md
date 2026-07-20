@@ -267,3 +267,13 @@ UI（F:68660–69683）：KPI 4 卡（总项目数/总合同额/总毛利/预警
 - 🔴 旧导出端点分页参数个数错误（TypeError，原本即不可用），A2 包已修复并加回归测试。
 - ⚠️ **未修复（建议立项）**：YAML `headers.rows` 为 1-based 而 `HeaderFlattener` 按 0-based 消费，每个模板首行数据会被拼进表头（off-by-one）；修复影响全部 15 个模板的列匹配，需专项处理。
 - ⚠️ compare 中"营收"与"结算"同源（无独立营收列），revenue_ratio 恒 100/None，待模板扩展。
+
+## 8. 层级码全路径化（2026-07-20）
+
+成本科目页两级/三级展开的最后一块短板已补齐：
+
+- 问题：解析层存的是 Excel 原始序号，中文数字大类（一~九）下阿拉伯编号**每节重启**，"1.1" 全表重复，前端按 `split(".")` 前缀分组必错挂。
+- 方案：新增 `contexts/analytics/domain/hierarchy.py`（位置状态机），在 `cost_categories`/`cost_details` 返回前把 `hierarchy_code` 重写为**全路径码**（如 `二.2.1`）并新增 `level` 字段（1=中文数字大类，2=子项，3=孙项）；无码行（"其中：…"）保持 `level=None` 平铺。
+- 解析在完整有序行集上运行后再做分页切片（原 SQL OFFSET/LIMIT 会丢失大类上下文）；同时剔除 `item_name` 为 NULL 的解析尾行垃圾。
+- 实测（电源A项目样例）：9 个大类 / 37 子项 / 29 孙项，全路径码全局唯一，前端两级展开零状态机成本。
+- 测试：`tests/test_analytics_hierarchy.py`（纯函数 3 例 + 仓储集成 3 例），全量 230 passed。

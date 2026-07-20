@@ -8,6 +8,7 @@ from tortoise.expressions import Q
 
 from contexts.alert.infrastructure.tables import AlertModel
 from contexts.analytics.domain.compare_report import build_compare_report
+from contexts.analytics.domain.hierarchy import resolve_hierarchy_paths
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
 from contexts.analytics.domain.scoring import compare_scores
@@ -236,34 +237,39 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         for project in projects:
             batch = await self._batch(project.id, ym)
             query = DataDynamicIndicator.filter(batch_id=batch.id) if batch else None
+            # 解析尾行可能产生 item_name 为空的垃圾行，报表直接剔除
+            if query is not None:
+                query = query.exclude(item_name=None)
             total = await query.count() if query else 0
             totals.append(total)
-            rows = [] if query is None else await query.order_by("id").offset(
-                pagination.offset
-            ).limit(pagination.size)
+            # 层级路径解析是位置状态机（中文数字大类下编号会重启），必须在
+            # 完整有序行集上运行后再分页切片，不能先 OFFSET/LIMIT。
+            rows = [] if query is None else await query.order_by("id")
+            items = [{
+                "hierarchy_code": row.hierarchy_code,
+                "name": row.item_name,
+                "indicator": _number(row.indicator_with_tax),
+                "actual": _number(row.incurred_cost),
+                "deviation": round(_number(row.incurred_cost) - _number(row.indicator_with_tax), 2),
+                "deviation_rate": _rate(
+                    _number(row.incurred_cost) - _number(row.indicator_with_tax),
+                    _number(row.indicator_with_tax),
+                ),
+                # 六口径补充列（data_dynamic_indicator 现有列）：
+                "list_target": _number(row.estimated_with_tax),   # 预计完工量含税指标
+                "adj_target": _number(row.adjusted_with_tax),     # 分包策划调整后指标
+                "budget": _number(row.current_budget),            # 现执行预算
+                # 预计完工成本（动态情况）列尚未纳入模板/表结构，
+                # 暂以预计完工量含税指标（estimated_with_tax）为近似口径，待模板扩展后切换。
+                "forecast": _number(row.estimated_with_tax),
+            } for row in rows]
+            # hierarchy_code 重写为全路径（如 "二.2.1"）并补 level；
+            # 存量数据该列为 NULL 的行保持平铺（level=None）。
+            resolve_hierarchy_paths(items)
             series.append({
                 "project": {"id": project.id, "code": project.code, "name": project.name},
                 "ym": batch.ym if batch else ym,
-                # hierarchy_code 由前端按层级码分组大类/子项；存量数据该列为 NULL，
-                # 保持平铺返回（值为 None），由前端按单层渲染。
-                "items": [{
-                    "hierarchy_code": row.hierarchy_code,
-                    "name": row.item_name,
-                    "indicator": _number(row.indicator_with_tax),
-                    "actual": _number(row.incurred_cost),
-                    "deviation": round(_number(row.incurred_cost) - _number(row.indicator_with_tax), 2),
-                    "deviation_rate": _rate(
-                        _number(row.incurred_cost) - _number(row.indicator_with_tax),
-                        _number(row.indicator_with_tax),
-                    ),
-                    # 六口径补充列（data_dynamic_indicator 现有列）：
-                    "list_target": _number(row.estimated_with_tax),   # 预计完工量含税指标
-                    "adj_target": _number(row.adjusted_with_tax),     # 分包策划调整后指标
-                    "budget": _number(row.current_budget),            # 现执行预算
-                    # 预计完工成本（动态情况）列尚未纳入模板/表结构，
-                    # 暂以预计完工量含税指标（estimated_with_tax）为近似口径，待模板扩展后切换。
-                    "forecast": _number(row.estimated_with_tax),
-                } for row in rows],
+                "items": items[pagination.offset:pagination.offset + pagination.size],
             })
         return {"projects": series,
                 "pagination": {"page": pagination.page, "size": pagination.size,
@@ -354,8 +360,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             query = query.filter(id__in=project_ids)
         total = await query.count()
         projects = await query.order_by("id").offset(pagination.offset).limit(pagination.size)
-        batch_map, profit_map = await self._load_batches(projects, ym)
-        items = [self._profit_item(p, batch_map, profit_map, ym) for p in projects]
+        batch_map, profit_map, indicator_map = await self._load_batches(projects, ym)
+        items = [self._profit_item(p, batch_map, profit_map, indicator_map, ym)
+                 for p in projects]
         return {"projects": items, "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
     async def _load_batches(self, projects, ym):
@@ -371,9 +378,21 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         profit_map = {}
         for row in settlement_rows:
             profit_map.setdefault(row.batch_id, {})[row.indicator_name] = row.cumulative_value
-        return batch_map, profit_map
+        # 指标（含税）口径来自 00 动态指标 sheet（data_dynamic_indicator）：
+        # 预计完工成本取"预计完工量含税指标"合计，缺失时回退"清单量含税指标"。
+        indicator_map = {}
+        for row in await DataDynamicIndicator.filter(
+                batch_id__in=[b.id for b in batch_map.values()]):
+            value = row.estimated_with_tax
+            if value is None:
+                value = row.indicator_with_tax
+            if value is None:
+                continue
+            indicator_map[row.batch_id] = (
+                indicator_map.get(row.batch_id, 0.0) + float(value))
+        return batch_map, profit_map, indicator_map
 
-    def _profit_item(self, project, batch_map, profit_map, ym) -> dict:
+    def _profit_item(self, project, batch_map, profit_map, indicator_map, ym) -> dict:
         batch = batch_map.get(project.id)
         indicators = profit_map.get(batch.id) if batch else None
         indicators = indicators or {}
@@ -389,14 +408,26 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         f_rev = _settle(indicators, SETTLE_FORECAST_REVENUE) if indicators else revenue
         f_prf = _settle(indicators, SETTLE_FORECAST_PROFIT) if indicators else profit
         f_cost = _settle(indicators, SETTLE_FORECAST_COST) if indicators else f_rev - f_prf
-        # The settlement sheet has no bid / target-indicator split, so the
-        # legacy bid/indicator blocks keep their shape but report zeros.
+        # 指标（含税）口径：预计完工成本取 00 动态指标 sheet 的含税指标合计，
+        # 结算收入以表11 合同总价近似（工作簿无独立的指标收入列）。
+        i_cost = indicator_map.get(batch.id) if batch else None
+        if i_cost is not None:
+            i_rev = _settle(indicators, SETTLE_CONTRACT_PRICE) or _number(
+                project.contract_price)
+            i_prf = round(i_rev - i_cost, 2)
+            indicator_block = {"revenue": i_rev, "cost": round(i_cost, 2),
+                               "profit": i_prf,
+                               "profit_rate": _rate(i_prf, i_rev)}
+        else:
+            indicator_block = {"revenue": 0.0, "cost": 0.0, "profit": 0.0,
+                               "profit_rate": 0.0}
+        # 投标口径在本工作簿中无数据源（投标总价在"报价表一"报价文件内），
+        # bid 块保持结构但返回 0。
         return {
             "project_id": project.id, "project_code": project.code,
             "project_name": project.name, "ym": batch.ym if batch else ym,
             "bid": {"revenue": 0.0, "cost": 0.0, "profit": 0.0, "profit_rate": 0.0},
-            "indicator": {"revenue": 0.0, "cost": 0.0, "profit": 0.0,
-                          "profit_rate": 0.0},
+            "indicator": indicator_block,
             "current": {"revenue": revenue, "cost": cost, "profit": profit,
                         "profit_rate": _settle_rate(
                             indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue)},
