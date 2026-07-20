@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from contextvars import ContextVar
 from functools import wraps
 
 
 class TransactionManager(ABC):
     @abstractmethod
-    def transaction(self) -> AsyncIterator[None]: ...
+    def transaction(self) -> AbstractAsyncContextManager[None]: ...
 
 
 class NoopTransactionManager(TransactionManager):
