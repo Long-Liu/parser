@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from decimal import Decimal
-import asyncio
 
 from tortoise.expressions import Q
+
 from contexts.alert.infrastructure.tables import AlertModel
-from contexts.auth.infrastructure.tables import User
-from contexts.auth.infrastructure.tables import Notification, NotificationRead
+from contexts.analytics.domain.compare_report import build_compare_report
+from contexts.analytics.domain.ports import AIAnalysisPort
+from contexts.analytics.domain.repositories import AnalyticsRepository
+from contexts.analytics.domain.scoring import compare_scores
+from contexts.auth.infrastructure.tables import Notification, NotificationRead, User
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
-from contexts.project.infrastructure.tables import Project
-from contexts.project.infrastructure.tables import ProjectMilestone
+from contexts.project.infrastructure.tables import Project, ProjectMilestone
 from contexts.shared.application.transaction import (
     NoopTransactionManager,
     TransactionManager,
@@ -35,10 +38,6 @@ from contexts.shared.infrastructure.database.tables import (
     DataSettlementOutput,
     settlement_indicator_map,
 )
-from contexts.analytics.domain.ports import AIAnalysisPort
-from contexts.analytics.domain.repositories import AnalyticsRepository
-from contexts.analytics.domain.compare_report import build_compare_report
-from contexts.analytics.domain.scoring import compare_scores
 
 
 def _number(value) -> float:
@@ -181,10 +180,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         # 不回退项目合同价，以免无数据项目虚增评分。
         settlement = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
         profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
-        if indicators:
-            total_cost = _settle(indicators, SETTLE_CUMULATIVE_COST)
-        else:
-            total_cost = settlement - profit
+        total_cost = _settle(indicators, SETTLE_CUMULATIVE_COST) if indicators else settlement - profit
         # 现有数据模型无独立"营收"列，营收与累计结算同源（revenue_ratio 恒为 100 或 None，
         # 待模板扩展独立营收列后区分）。
         revenue = settlement
@@ -230,7 +226,11 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
 
     async def cost_categories(self, project_ids: list[int], ym: str | None,
                               pagination: Pagination) -> dict:
-        projects = await Project.filter(id__in=project_ids).order_by("id") if project_ids else await Project.all().order_by("id")
+        projects = (
+            await Project.filter(id__in=project_ids).order_by("id")
+            if project_ids
+            else await Project.all().order_by("id")
+        )
         series = []
         totals = []
         for project in projects:

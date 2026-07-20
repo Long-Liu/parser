@@ -1,17 +1,19 @@
 """Tests for parsing domain services."""
 
-import pytest
 from contexts.parsing.domain.cell_unmerger import CellUnmerger, MergedCellRange
-from contexts.parsing.domain.header_flattener import HeaderFlattener
-from contexts.parsing.domain.stop_detector import StopDetector
 from contexts.parsing.domain.data_extractor import DataRowExtractor
 from contexts.parsing.domain.data_validator import DataValidator
-from contexts.parsing.domain.parse_job import ParsedRow, RowError
+from contexts.parsing.domain.header_flattener import HeaderFlattener
+from contexts.parsing.domain.parse_job import ParsedRow
+from contexts.parsing.domain.stop_detector import StopDetector
 from contexts.template.domain.template import (
-    Template, TemplateId, HeaderSpec, StopRule, StopRuleType,
-    ColumnMapping, DynamicColumnMapping,
+    ColumnMapping,
+    HeaderSpec,
+    StopRule,
+    StopRuleType,
+    Template,
+    TemplateId,
 )
-
 
 # ── CellUnmerger ─────────────────────────────────────────────────────
 

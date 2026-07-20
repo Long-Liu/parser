@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from tortoise.expressions import Q
 
-from contexts.project.domain.project import Project
-from contexts.project.domain.repositories import (
-    ProjectRepository, ProjectDataCleanup, UserDirectory, ProjectNotificationPort,
-    ProjectMetricsPort,
-)
-from contexts.project.infrastructure.tables import Project as OrmProject
-from contexts.project.infrastructure.tables import ProjectUser, ProjectMilestone
-from contexts.auth.infrastructure.tables import User as OrmUser, Notification
+from contexts.auth.infrastructure.tables import Notification
+from contexts.auth.infrastructure.tables import User as OrmUser
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
+from contexts.project.domain.project import Project
+from contexts.project.domain.repositories import (
+    ProjectDataCleanup,
+    ProjectMetricsPort,
+    ProjectNotificationPort,
+    ProjectRepository,
+    UserDirectory,
+)
+from contexts.project.infrastructure.tables import Project as OrmProject
+from contexts.project.infrastructure.tables import ProjectMilestone, ProjectUser
+from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.infrastructure.database.tables import (
     SETTLE_CONTRACT_PRICE,
     SETTLE_CUMULATIVE_COST,
@@ -20,7 +25,6 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_CURRENT_PROFIT_RATE,
     DataSettlementOutput,
 )
-from contexts.shared.domain.identifiers import ProjectId, UserId
 
 
 def _to_entity(orm: OrmProject) -> Project:

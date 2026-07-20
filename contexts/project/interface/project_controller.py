@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-from sanic_ext import openapi
-
-from contexts.auth.interface.auth_middleware import require_auth, require_permission, require_project_access
-from contexts.auth.application.project_access import ProjectAccessPolicy
-from contexts.project.application.project_app_service import ProjectApplicationService
-from contexts.shared.domain.identifiers import UserId, ProjectId
-from contexts.shared.domain.exceptions import ValidationError
-from contexts.shared.interface.base_controller import BaseController
-from contexts.shared.interface.controller_helpers import pagination_from
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+from sanic_ext import openapi
+
+from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.interface.auth_middleware import (
+    require_auth,
+    require_permission,
+    require_project_access,
+)
+from contexts.project.application.project_app_service import ProjectApplicationService
+from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.identifiers import ProjectId, UserId
+from contexts.shared.interface.base_controller import BaseController
+from contexts.shared.interface.controller_helpers import pagination_from
+
 
 def _project_details(data: dict) -> dict:
     result = {}

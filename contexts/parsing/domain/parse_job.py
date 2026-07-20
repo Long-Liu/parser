@@ -1,26 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
+from contexts.parsing.domain.events import (
+    ParseJobCompleted,
+    ParseJobConfirmed,
+    ParseJobFailed,
+    ParseJobSubmitted,
+    SheetExtracted,
+    SheetMatched,
+    SheetSkipped,
+    SheetValidated,
+)
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_entity import Entity
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.parsing.domain.year_month import YearMonth
-from contexts.parsing.domain.events import (
-    ParseJobSubmitted, ParseJobCompleted, ParseJobConfirmed, ParseJobFailed,
-    SheetMatched, SheetSkipped, SheetExtracted, SheetValidated,
-)
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     SUBMITTED = "submitted"
     DONE = "done"
     FAILED = "failed"
 
 
-class MatchStatus(str, Enum):
+class MatchStatus(StrEnum):
     MATCHED = "matched"
     SKIPPED = "skipped"
     EMPTY = "empty"
@@ -165,7 +171,7 @@ class ParseJob(AggregateRoot[JobId]):
         file_info: FileInfo,
         batch_no: str = "",
         uploaded_by: UserId | None = None,
-    ) -> "ParseJob":
+    ) -> ParseJob:
         """Create a new ParseJob. The ParseJobSubmitted event is deferred until
         confirm_submitted() is called after initial persistence."""
         return cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
@@ -181,7 +187,7 @@ class ParseJob(AggregateRoot[JobId]):
         sheets: list[SheetResult],
         batch_no: str = "",
         uploaded_by: UserId | None = None,
-    ) -> "ParseJob":
+    ) -> ParseJob:
         """Reconstitute a ParseJob from persisted state — for repository use only.
         Bypasses event recording since this is not a new operation."""
         job = cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)

@@ -4,9 +4,9 @@ import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 
+from contexts.shared.application.transaction import defer_after_commit
 from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
-from contexts.shared.application.transaction import defer_after_commit
 
 logger = logging.getLogger("parser.event_bus")
 EventHandler = Callable[[DomainEvent], Awaitable[None]]

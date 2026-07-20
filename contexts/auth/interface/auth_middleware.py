@@ -5,12 +5,18 @@ from functools import wraps
 from sanic.request import Request
 from sanic.response import json
 
-from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
-from contexts.shared.domain.exceptions import AuthenticationError, AuthorizationError, DomainError
+from contexts.auth.application.authorization_app_service import (
+    AuthorizationApplicationService,
+)
 from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.interface.request_services import RequestServices
+from contexts.shared.domain.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    DomainError,
+)
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import error_to_response
-from contexts.auth.interface.request_services import RequestServices
 
 
 def _extract_request(args: tuple) -> Request:

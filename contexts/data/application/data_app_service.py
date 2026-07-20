@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from contexts.shared.domain.exceptions import NotFoundError
-from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
-from contexts.data.domain.data_row_update import build_updates
 from contexts.data.domain.data_query import FilterCriterion
+from contexts.data.domain.data_row_update import build_updates
 from contexts.data.domain.repositories import DataQueryRepository
+from contexts.shared.application.transaction import (
+    TransactionalService,
+    TransactionManager,
+    transactional,
+)
+from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.pagination import Pagination
 
 

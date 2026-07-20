@@ -5,6 +5,7 @@ import io
 from openpyxl import Workbook
 from sanic.response import raw
 
+from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
 from contexts.analytics.infrastructure.xlsx_export import (
     build_compare_workbook,
@@ -13,7 +14,6 @@ from contexts.analytics.infrastructure.xlsx_export import (
     build_profits_workbook,
     content_disposition,
 )
-from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.interface.auth_middleware import (
     require_auth,
@@ -25,7 +25,6 @@ from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
-
 
 # 导出全量上限：项目/科目数量级远低于此值，等价于全量导出。
 _EXPORT_PAGE = Pagination(1, 10_000, max_size=10_000)

@@ -16,7 +16,6 @@ from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.config import Settings
 from contexts.shared.interface.health_controller import bp as health_bp
 
-
 # ── minimal ASGI client ─────────────────────────────────────────────────────
 
 

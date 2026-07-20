@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # Tortoise ORM lifecycle.
-
 import logging
 
 from tortoise import Tortoise, connections

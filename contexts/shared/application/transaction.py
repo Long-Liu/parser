@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from functools import wraps
 from contextvars import ContextVar
-from collections.abc import Awaitable
+from functools import wraps
 
 
 class TransactionManager(ABC):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from contexts.shared.domain.base_entity import Entity, IdType
 from contexts.shared.domain.base_domain_event import DomainEvent
+from contexts.shared.domain.base_entity import Entity, IdType
 
 
 class AggregateRoot(Entity[IdType]):

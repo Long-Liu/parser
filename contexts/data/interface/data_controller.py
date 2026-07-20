@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from sanic_ext import openapi
 
-from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from
+
 
 def _parse_filters(request) -> list[FilterCriterion]:
     filters: list[FilterCriterion] = []

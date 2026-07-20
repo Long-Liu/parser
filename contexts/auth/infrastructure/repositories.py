@@ -8,16 +8,22 @@ from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
 from contexts.auth.domain.user import RoleRef, User
 from contexts.auth.infrastructure.tables import (
-    Permission as OrmPermission,
-    Role as OrmRole,
-    RolePermission,
-    User as OrmUser,
-    UserRole,
+        Permission as OrmPermission,
 )
-from contexts.project.infrastructure.tables import ProjectUser
+from contexts.auth.infrastructure.tables import (
+        Role as OrmRole,
+)
+from contexts.auth.infrastructure.tables import (
+        RolePermission,
+        UserRole,
+)
+from contexts.auth.infrastructure.tables import (
+        User as OrmUser,
+)
 from contexts.project.infrastructure.tables import Project as OrmProject
-from contexts.shared.domain.identifiers import RoleId, UserId
+from contexts.project.infrastructure.tables import ProjectUser
 from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.identifiers import RoleId, UserId
 
 
 def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:

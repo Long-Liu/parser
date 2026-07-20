@@ -34,7 +34,7 @@ class YamlTemplateLoader:
         config_root = os.path.realpath(self._config_dir)
         if not resolved.startswith(config_root):
             raise ValueError(f"path traversal blocked: {template_id}")
-        with open(resolved, "r", encoding="utf-8") as f:
+        with open(resolved, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return self._build(data)
 

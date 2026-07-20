@@ -10,13 +10,13 @@ from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.parse_job import ParseJob
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import ProjectRepository
 from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.parsing.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
 from contexts.template.domain.template import (
     ColumnMapping,

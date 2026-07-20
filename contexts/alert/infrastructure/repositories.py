@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
+from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.domain.alert import Alert, AlertLevel, AlertRule, AlertStatus
 from contexts.alert.domain.repositories import AlertMetricProvider, AlertRepository
 from contexts.alert.infrastructure.tables import (
@@ -12,7 +13,6 @@ from contexts.alert.infrastructure.tables import (
     AlertRuleModel,
     AlertRuleStateModel,
 )
-from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
@@ -155,14 +155,11 @@ class TortoiseAlertRepository(AlertRepository):
                 "threshold_value": float(alert.threshold_value),
             },
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {}
         if event_type == "acknowledged":
             updates = {"acknowledged_by": actor_id, "acknowledged_at": now}
-        elif event_type in {"resolved", "auto_resolved"}:
-            updates = {"resolved_by": actor_id, "resolved_at": now,
-                       "resolution_note": note or None}
-        elif event_type == "ignored":
+        elif event_type in {"resolved", "auto_resolved"} or event_type == "ignored":
             updates = {"resolved_by": actor_id, "resolved_at": now,
                        "resolution_note": note or None}
         if updates:
@@ -227,7 +224,7 @@ class TortoiseAlertRepository(AlertRepository):
 
     async def missed_outbox(self, project_ids: list[int],
                             since: str | None) -> list[dict]:
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         query = AlertOutboxModel.filter(status="sent")
         if ALL_PROJECTS not in project_ids:
             query = query.filter(project_id__in=project_ids)
@@ -235,9 +232,9 @@ class TortoiseAlertRepository(AlertRepository):
             try:
                 cutoff = datetime.fromisoformat(since)
             except (ValueError, TypeError):
-                cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+                cutoff = datetime.now(UTC) - timedelta(minutes=5)
         else:
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+            cutoff = datetime.now(UTC) - timedelta(minutes=5)
         query = query.filter(sent_at__gte=cutoff)
         rows = await query.order_by("id").limit(200)
         return [{"event": row.event_type, "event_id": row.id,

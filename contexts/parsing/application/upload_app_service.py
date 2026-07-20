@@ -5,8 +5,6 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
-
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
 from contexts.parsing.domain.cell_unmerger import CellUnmerger
@@ -21,11 +19,16 @@ from contexts.parsing.domain.repositories import (
 )
 from contexts.parsing.domain.stop_detector import StopDetector
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.project.domain.repositories import ProjectRepository
+from contexts.shared.application.transaction import (
+    TransactionalService,
+    TransactionManager,
+    transactional,
+)
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
-from contexts.parsing.domain.year_month import YearMonth
 from contexts.template.domain.repositories import TemplateCatalog
 
 logger = logging.getLogger("parser.upload")

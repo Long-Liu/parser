@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from contexts.parsing.domain.parse_job import (
     FileInfo,
-    JobStatus,
     MatchStatus,
     ParseJob,
     SheetResult,
@@ -13,11 +12,11 @@ from contexts.parsing.domain.repositories import (
     ParseJobRepository,
     UploadPreviewRepository,
 )
+from contexts.parsing.domain.year_month import YearMonth
 from contexts.parsing.infrastructure.tables import UploadBatch as OrmBatch
 from contexts.parsing.infrastructure.tables import UploadLog as OrmLog
 from contexts.parsing.infrastructure.tables import UploadPreview
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
-from contexts.parsing.domain.year_month import YearMonth
 
 
 def _job_to_batch_values(job: ParseJob) -> dict:
@@ -169,7 +168,7 @@ class TortoiseUploadPreviewRepository(UploadPreviewRepository):
         await UploadPreview.filter(batch_id=batch_id).delete()
 
     async def cleanup_expired(self, max_age_hours: int = 24) -> int:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
         expired_ids = list(await UploadPreview.filter(
             status="pending", created_at__lt=cutoff,
         ).values_list("batch_id", flat=True))

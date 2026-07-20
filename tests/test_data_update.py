@@ -10,8 +10,6 @@ from contexts.data.domain.data_row_update import build_updates
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.data.interface.data_controller import DataController
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
-from contexts.shared.domain.pagination import Pagination
-
 
 FIELD_TYPES = {
     "id": "other",

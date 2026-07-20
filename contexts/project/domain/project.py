@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from contexts.shared.domain.base_aggregate_root import AggregateRoot
-from contexts.shared.domain.identifiers import ProjectId, UserId
-from contexts.shared.domain.exceptions import ValidationError
 from datetime import date
 from decimal import Decimal
+
+from contexts.shared.domain.base_aggregate_root import AggregateRoot
+from contexts.shared.domain.exceptions import ValidationError
+from contexts.shared.domain.identifiers import ProjectId, UserId
 
 
 class Project(AggregateRoot[ProjectId]):
@@ -114,7 +115,7 @@ class Project(AggregateRoot[ProjectId]):
 
     @classmethod
     def create(cls, project_id: ProjectId | None, code: str, name: str,
-               created_by: UserId | None = None, **details) -> "Project":
+               created_by: UserId | None = None, **details) -> Project:
         if not code.strip():
             raise ValidationError("project code must not be empty")
         if not name.strip():

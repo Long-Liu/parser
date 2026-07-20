@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # DDL helpers for Tortoise models.
-
 from contexts.shared.infrastructure.database.engine import ensure_initialized
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
@@ -11,6 +10,7 @@ async def migrate_db(config):
     ensure_initialized()
     from tortoise.context import get_current_context, set_global_context
     from tortoise.migrations.api import migrate
+
     from contexts.shared.infrastructure.database.engine import tortoise_config
 
     await migrate(

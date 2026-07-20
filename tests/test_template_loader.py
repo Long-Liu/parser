@@ -16,7 +16,6 @@ from tortoise import fields
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
-
 DECIMAL_RE = re.compile(r"^decimal\((\d+),\s*(\d+)\)$", re.IGNORECASE)
 
 

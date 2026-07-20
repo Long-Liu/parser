@@ -12,7 +12,10 @@ from typing import Protocol
 from contexts.shared.infrastructure.config import Settings
 from contexts.shared.infrastructure.database.engine import close as db_close
 from contexts.shared.infrastructure.database.engine import init as db_init
-from contexts.shared.infrastructure.database.schema import migrate_db, validate_data_table
+from contexts.shared.infrastructure.database.schema import (
+    migrate_db,
+    validate_data_table,
+)
 
 logger = logging.getLogger("parser")
 

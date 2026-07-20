@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # Seed default permissions, roles, and admin user on first startup.
-
 import logging
 from collections.abc import Callable
 

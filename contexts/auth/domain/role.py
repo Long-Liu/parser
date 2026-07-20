@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from contexts.auth.domain.events import RoleCreated, RolePermissionsChanged
+from contexts.auth.domain.name import Name
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import RoleId
-from contexts.auth.domain.name import Name
-from contexts.auth.domain.events import RoleCreated, RolePermissionsChanged
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class Role(AggregateRoot[RoleId]):
     def create(
         cls, code: str, name: str, description: str = "",
         permissions: list[PermissionRef] | None = None,
-    ) -> "Role":
+    ) -> Role:
         code = code.strip()
         if not code:
             raise ValidationError("role code must not be empty")

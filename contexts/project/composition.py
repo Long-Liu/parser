@@ -2,8 +2,11 @@
 
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.domain.repositories import (
-    ProjectDataCleanup, ProjectMetricsPort, ProjectNotificationPort,
-    ProjectRepository, UserDirectory,
+    ProjectDataCleanup,
+    ProjectMetricsPort,
+    ProjectNotificationPort,
+    ProjectRepository,
+    UserDirectory,
 )
 from contexts.shared.application.transaction import TransactionManager
 from contexts.shared.domain.event_publisher import EventPublisher

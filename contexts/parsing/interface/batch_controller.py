@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from sanic_ext import openapi
 
-from contexts.auth.interface.auth_middleware import require_auth, require_permission, require_batch_access
 from contexts.auth.application.project_access import ProjectAccessPolicy
-from contexts.parsing.application.batch_query_service import BatchQueryApplicationService
+from contexts.auth.interface.auth_middleware import (
+    require_auth,
+    require_batch_access,
+    require_permission,
+)
+from contexts.parsing.application.batch_query_service import (
+    BatchQueryApplicationService,
+)
 from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
 from contexts.shared.interface.base_controller import BaseController
 from contexts.shared.interface.controller_helpers import pagination_from, parse_int

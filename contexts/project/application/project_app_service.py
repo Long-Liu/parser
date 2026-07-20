@@ -1,17 +1,32 @@
 from __future__ import annotations
 
-from contexts.shared.domain.exceptions import ConflictError, NotFoundError, ValidationError
-from contexts.shared.domain.identifiers import ProjectId, UserId
-from contexts.shared.domain.pagination import Pagination
-from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
-from contexts.shared.domain.base_domain_event import DomainEvent
-from contexts.shared.domain.event_publisher import EventPublisher
-from contexts.project.domain.events import ProjectCreated, ProjectDeleted, ProjectUpdated
+from contexts.project.domain.events import (
+    ProjectCreated,
+    ProjectDeleted,
+    ProjectUpdated,
+)
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import (
-    ProjectRepository, ProjectDataCleanup, UserDirectory, ProjectNotificationPort,
+    ProjectDataCleanup,
     ProjectMetricsPort,
+    ProjectNotificationPort,
+    ProjectRepository,
+    UserDirectory,
 )
+from contexts.shared.application.transaction import (
+    TransactionalService,
+    TransactionManager,
+    transactional,
+)
+from contexts.shared.domain.base_domain_event import DomainEvent
+from contexts.shared.domain.event_publisher import EventPublisher
+from contexts.shared.domain.exceptions import (
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
+from contexts.shared.domain.identifiers import ProjectId, UserId
+from contexts.shared.domain.pagination import Pagination
 
 
 class _NullEventPublisher(EventPublisher):

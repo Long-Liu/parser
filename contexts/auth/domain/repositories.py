@@ -3,9 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from contexts.shared.domain.identifiers import RoleId, UserId
-from contexts.auth.domain.user import User
 from contexts.auth.domain.role import Role
+from contexts.auth.domain.user import User
+from contexts.shared.domain.identifiers import RoleId, UserId
 
 
 class UserRepository(ABC):

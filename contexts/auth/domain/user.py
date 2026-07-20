@@ -2,20 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from contexts.auth.domain.email import Email
 from contexts.auth.domain.events import (
+    UserDeleted,
     UserPasswordReset,
     UserProfileUpdated,
     UserRegistered,
     UserRolesAssigned,
     UserStatusChanged,
-    UserDeleted,
 )
+from contexts.auth.domain.phone import Phone
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
-from contexts.auth.domain.email import Email
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
-from contexts.auth.domain.phone import Phone
 
 
 @dataclass(frozen=True)
@@ -138,7 +138,7 @@ class User(AggregateRoot[UserId]):
     @classmethod
     def create(cls, user_id: UserId | None, username: str, password_hash: str,
                real_name: str = "", email: str = "", phone: str = "",
-               department: str = "") -> "User":
+               department: str = "") -> User:
         username = username.strip()
         email = email.strip()
         if not username:

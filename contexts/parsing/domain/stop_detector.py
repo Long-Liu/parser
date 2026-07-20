@@ -16,16 +16,14 @@ class StopDetector:
     ) -> StopRule | None:
         """Return the first rule that fires on this row, or None."""
         for rule in stop_rules:
-            if rule.rule_type == StopRuleType.CELL_MATCH:
-                if self._check_cell_match(
-                    grid, row_index, rule.patterns, rule.columns
-                ):
-                    return rule
-            elif rule.rule_type == StopRuleType.CONSECUTIVE_EMPTY:
-                if self._check_consecutive_empty(
-                    grid, row_index, rule.empty_row_count or 5
-                ):
-                    return rule
+            if rule.rule_type == StopRuleType.CELL_MATCH and self._check_cell_match(
+                grid, row_index, rule.patterns, rule.columns
+            ):
+                return rule
+            if rule.rule_type == StopRuleType.CONSECUTIVE_EMPTY and self._check_consecutive_empty(
+                grid, row_index, rule.empty_row_count or 5
+            ):
+                return rule
         return None
 
     def should_stop(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.domain.repositories import AlertPushDispatcher
@@ -53,7 +53,7 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
             return
         async with self._lock:
             from tortoise.expressions import Q
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             rows = await AlertOutboxModel.filter(
                 Q(status="pending"),
                 Q(next_retry_at__lte=now) | Q(next_retry_at=None),

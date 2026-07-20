@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+
 from sanic import Request
 
 logger = logging.getLogger("parser")

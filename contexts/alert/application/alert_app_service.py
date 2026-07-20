@@ -4,10 +4,15 @@ from decimal import Decimal
 
 from contexts.alert.domain.alert import Alert, AlertStatus
 from contexts.alert.domain.repositories import (
-    AlertMetricProvider, AlertPushDispatcher, AlertRepository,
+    AlertMetricProvider,
+    AlertPushDispatcher,
+    AlertRepository,
 )
 from contexts.shared.application.transaction import (
-    TransactionManager, TransactionalService, defer_after_commit, transactional,
+    TransactionalService,
+    TransactionManager,
+    defer_after_commit,
+    transactional,
 )
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination

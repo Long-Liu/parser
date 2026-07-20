@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -22,7 +22,7 @@ class JwtService(TokenService):
         return timedelta(hours=self.expiry_hours)
 
     def generate(self, user_id: UserId, username: str) -> str:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         exp = now + timedelta(hours=self.expiry_hours)
         # jti enables single-token revocation (logout); iat enables the
         # user-wide "revoke all tokens issued before T" rule (password change).

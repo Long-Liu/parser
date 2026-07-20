@@ -1,6 +1,7 @@
 from tortoise import migrations
 from tortoise.migrations import operations as ops
 
+
 class Migration(migrations.Migration):
     # Historical migrations 0002-0005 declare no dependencies and are ordered
     # by filename as independent graph roots; depending on all of them would

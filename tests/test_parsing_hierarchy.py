@@ -15,7 +15,6 @@ from contexts.template.domain.template import (
 )
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
-
 # ── parse_hierarchy_code：合法序号 ──────────────────────────────────
 
 @pytest.mark.parametrize("value,separator,expected", [

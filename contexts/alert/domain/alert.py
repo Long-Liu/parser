@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -70,7 +70,7 @@ class Alert(AggregateRoot[int]):
         self.ym = ym
         self.status = status
         self.trigger_count = trigger_count
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.first_triggered_at = first_triggered_at or now
         self.last_triggered_at = last_triggered_at or now
 
@@ -85,7 +85,7 @@ class Alert(AggregateRoot[int]):
         self.metric_value = value
         self.level = level
         self.message = message
-        self.last_triggered_at = datetime.now(timezone.utc)
+        self.last_triggered_at = datetime.now(UTC)
         self.trigger_count += 1
         if self.status in {AlertStatus.RESOLVED, AlertStatus.IGNORED}:
             self.status = AlertStatus.ACTIVE

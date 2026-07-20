@@ -5,7 +5,9 @@ import pytest
 from contexts.alert.application.event_handlers import AlertEventHandlers
 from contexts.parsing.domain.events import ParseJobCompleted, ParseJobConfirmed
 from contexts.project.domain.events import (
-    ProjectCreated, ProjectDeleted, ProjectUpdated,
+    ProjectCreated,
+    ProjectDeleted,
+    ProjectUpdated,
 )
 from contexts.shared.infrastructure.domain_event_bus import DomainEventBus
 

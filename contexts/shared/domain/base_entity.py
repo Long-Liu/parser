@@ -6,7 +6,9 @@ from typing import Generic, TypeVar
 IdType = TypeVar("IdType")
 
 
-class Entity(Generic[IdType], ABC):
+# noqa on UP046: PEP 695 syntax requires Python 3.12+, but the project venv
+# currently runs Python 3.11, so the legacy Generic[IdType] form must stay.
+class Entity(Generic[IdType], ABC):  # noqa: UP046
     """Domain entity base. Equality by identity (id), not attributes.
 
     Type parameter IdType specifies the identity type, e.g. Entity[int], Entity[UserId].

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json as jsonlib
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +13,9 @@ from sanic import Sanic
 from sanic.response import json
 
 from contexts.auth.application.auth_app_service import AuthApplicationService
-from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
+from contexts.auth.application.authorization_app_service import (
+    AuthorizationApplicationService,
+)
 from contexts.auth.application.dto import LoginCommand
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.domain.user import User
@@ -21,10 +23,10 @@ from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 from contexts.auth.interface.auth_controller import AuthController
 from contexts.auth.interface.auth_middleware import require_auth
+from contexts.auth.interface.request_services import RequestServices
 from contexts.shared.domain.exceptions import AuthenticationError, ValidationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.infrastructure.config import AuthConfig, Settings
-from contexts.auth.interface.request_services import RequestServices
 
 TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
 OLD_PASSWORD = "oldpassword1"
@@ -73,19 +75,19 @@ class FakeTokenRevocationRepository:
 
     async def revoke(self, *, jti, user_id, expires_at):
         self.entries.append(
-            (jti, user_id.value, expires_at, datetime.now(timezone.utc))
+            (jti, user_id.value, expires_at, datetime.now(UTC))
         )
 
     async def revoke_all_for_user(self, *, user_id, expires_at):
         marker = f"user:{user_id.value}"
         self.entries = [e for e in self.entries if e[0] != marker]
         self.entries.append(
-            (marker, user_id.value, expires_at, datetime.now(timezone.utc))
+            (marker, user_id.value, expires_at, datetime.now(UTC))
         )
 
     async def is_revoked(self, *, jti, user_id, issued_at):
         marker = f"user:{user_id.value}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for e_jti, _uid, e_expires, e_revoked in self.entries:
             if e_expires <= now:
                 continue

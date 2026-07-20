@@ -28,11 +28,11 @@ class AlertRepository(ABC):
 
     # Infrastructure convenience — not abstract. Default no-ops so test fakes
     # don't need to implement event/outbox persistence.
-    async def record_event(self, alert: Alert, event_type: str,
+    async def record_event(self, alert: Alert, event_type: str,  # noqa: B027
                            actor_id: int | None = None, note: str = "") -> None:
         pass
 
-    async def add_outbox(self, alert: Alert, event_type: str) -> None:
+    async def add_outbox(self, alert: Alert, event_type: str) -> None:  # noqa: B027
         pass
     @abstractmethod
     async def find(self, *, project_ids: list[int] | None, status: str,

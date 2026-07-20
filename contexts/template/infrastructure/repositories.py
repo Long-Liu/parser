@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from contexts.shared.domain.identifiers import TemplateId
-from contexts.template.domain.template import Template
 from contexts.template.domain.repositories import TemplateCatalog
+from contexts.template.domain.template import Template
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 

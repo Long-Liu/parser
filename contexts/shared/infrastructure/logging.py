@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # Application-wide logging configuration.
-
 import logging
 
 LOG_FORMAT = "%(asctime)s | %(levelname)-5s | %(name)s | %(message)s"

@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass
 
-from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
+from contexts.auth.application.authorization_app_service import (
+    AuthorizationApplicationService,
+)
 from contexts.auth.application.project_access import ProjectAccessPolicy
 
 

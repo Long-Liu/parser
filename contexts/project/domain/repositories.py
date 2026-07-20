@@ -23,7 +23,7 @@ class ProjectRepository(ABC):
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[Project], int]: ...
-    async def delete(self, project_id: ProjectId) -> None: ...
+    async def delete(self, project_id: ProjectId) -> None: ...  # noqa: B027
     # Optional project-membership extension. Kept non-abstract so existing
     # repository fakes and integrations remain source-compatible.
     async def assign_user(

@@ -27,7 +27,6 @@ from contexts.template.infrastructure.xlsx_template_builder import (
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 from contexts.template.interface.template_controller import TemplatesController
 
-
 # ── 骨架生成 ──────────────────────────────────────────────────────────
 
 def test_sheet_name_strips_wildcards():

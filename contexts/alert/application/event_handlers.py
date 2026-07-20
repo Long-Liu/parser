@@ -14,7 +14,9 @@ import logging
 from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.parsing.domain.events import ParseJobCompleted, ParseJobConfirmed
 from contexts.project.domain.events import (
-    ProjectCreated, ProjectDeleted, ProjectUpdated,
+    ProjectCreated,
+    ProjectDeleted,
+    ProjectUpdated,
 )
 from contexts.shared.domain.exceptions import NotFoundError
 

@@ -14,14 +14,24 @@ from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.alert.application.event_handlers import AlertEventHandlers
 from contexts.alert.composition import build_alert_service
 from contexts.alert.domain.repositories import AlertPushDispatcher
-from contexts.alert.infrastructure.push import AlertWebSocketHub, TortoiseAlertOutboxDispatcher
-from contexts.alert.infrastructure.repositories import TortoiseAlertMetricProvider, TortoiseAlertRepository
+from contexts.alert.infrastructure.push import (
+    AlertWebSocketHub,
+    TortoiseAlertOutboxDispatcher,
+)
+from contexts.alert.infrastructure.repositories import (
+    TortoiseAlertMetricProvider,
+    TortoiseAlertRepository,
+)
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.infrastructure.ai_provider import HttpAIAnalysisProvider
-from contexts.analytics.infrastructure.analytics_repository import TortoiseAnalyticsRepository
+from contexts.analytics.infrastructure.analytics_repository import (
+    TortoiseAnalyticsRepository,
+)
 from contexts.auth.application.auth_app_service import AuthApplicationService
-from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
+from contexts.auth.application.authorization_app_service import (
+    AuthorizationApplicationService,
+)
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.application.role_app_service import RoleApplicationService
 from contexts.auth.application.user_app_service import UserApplicationService
@@ -29,37 +39,55 @@ from contexts.auth.composition import build_auth_components
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
-from contexts.auth.infrastructure.project_access_repository import TortoiseProjectAccessRepository
-from contexts.auth.infrastructure.repositories import TortoiseRoleRepository, TortoiseUserRepository
+from contexts.auth.infrastructure.project_access_repository import (
+    TortoiseProjectAccessRepository,
+)
+from contexts.auth.infrastructure.repositories import (
+    TortoiseRoleRepository,
+    TortoiseUserRepository,
+)
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.infrastructure.repositories import TortoiseDataQueryRepository
-from contexts.parsing.application.batch_query_service import BatchQueryApplicationService
+from contexts.parsing.application.batch_query_service import (
+    BatchQueryApplicationService,
+)
+from contexts.parsing.application.file_storage import FileStorage
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.composition import build_upload_service
-from contexts.parsing.application.file_storage import FileStorage
+from contexts.parsing.domain.events import ParseJobCompleted, ParseJobConfirmed
+from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.data_writer import TortoiseParsedDataSink
 from contexts.parsing.infrastructure.file_storage import LocalUploadFileStorage
-from contexts.parsing.infrastructure.repositories import TortoiseParseJobRepository, TortoiseUploadPreviewRepository
+from contexts.parsing.infrastructure.repositories import (
+    TortoiseParseJobRepository,
+    TortoiseUploadPreviewRepository,
+)
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.composition import build_project_service
+from contexts.project.domain.events import (
+    ProjectCreated,
+    ProjectDeleted,
+    ProjectUpdated,
+)
+from contexts.project.domain.repositories import ProjectRepository
 from contexts.project.infrastructure.repositories import (
     ProjectNotificationAdapter,
     TortoiseProjectDataCleanup,
     TortoiseProjectRepository,
     TortoiseUserDirectory,
 )
-from contexts.shared.infrastructure.config import Settings
-from contexts.shared.infrastructure.database.transaction import TortoiseTransactionManager
 from contexts.shared.application.transaction import TransactionManager
+from contexts.shared.infrastructure.config import Settings
+from contexts.shared.infrastructure.database.transaction import (
+    TortoiseTransactionManager,
+)
 from contexts.shared.infrastructure.domain_event_bus import DomainEventBus
-from contexts.template.application.template_app_service import TemplateApplicationService
+from contexts.template.application.template_app_service import (
+    TemplateApplicationService,
+)
 from contexts.template.infrastructure.repositories import YamlTemplateCatalog
-from contexts.parsing.domain.events import ParseJobCompleted, ParseJobConfirmed
-from contexts.parsing.domain.repositories import ParseJobRepository
-from contexts.project.domain.events import ProjectCreated, ProjectDeleted, ProjectUpdated
-from contexts.project.domain.repositories import ProjectRepository
 
 if TYPE_CHECKING:
     from contexts.shared.interface.base_controller import BaseController
@@ -185,7 +213,7 @@ def build_container(
     )
 
 
-def build_controllers(components: ApplicationComponents) -> tuple["BaseController", ...]:
+def build_controllers(components: ApplicationComponents) -> tuple[BaseController, ...]:
     """Explicitly compose the HTTP adapters; no scanning or reflection involved."""
     from contexts.alert.interface.alert_controller import AlertController
     from contexts.analytics.interface.analytics_controller import AnalyticsController

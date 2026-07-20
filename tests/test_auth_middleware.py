@@ -2,6 +2,7 @@ import pytest
 
 from contexts.auth.infrastructure.jwt_service import JwtService
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
+from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.domain.identifiers import UserId
 
 TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
@@ -18,7 +19,7 @@ def test_token_roundtrip():
 def test_token_expiry():
     svc = JwtService(TEST_SECRET, expiry_hours=-1)
     token = svc.generate(user_id=UserId(1), username="admin")
-    with pytest.raises(Exception):
+    with pytest.raises(AuthenticationError):
         svc.verify(token)
 
 

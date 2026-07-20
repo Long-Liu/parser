@@ -15,7 +15,7 @@ Revocation scheme
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tortoise.exceptions import IntegrityError
 
@@ -31,7 +31,7 @@ def _user_marker(user_id: UserId) -> str:
 def _epoch(value: datetime) -> float:
     """Epoch seconds; Tortoise may return naive datetimes (treated as UTC)."""
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc).timestamp()
+        return value.replace(tzinfo=UTC).timestamp()
     return value.timestamp()
 
 
@@ -57,7 +57,7 @@ class TortoiseTokenRevocationRepository(TokenRevocationRepository):
                          issued_at: float | None) -> bool:
         # Lazy purge: rows past expires_at cover only naturally-expired tokens.
         await RevokedToken.filter(
-            expires_at__lte=datetime.now(timezone.utc),
+            expires_at__lte=datetime.now(UTC),
         ).delete()
         candidates = [_user_marker(user_id)]
         if jti:

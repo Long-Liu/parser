@@ -1,7 +1,11 @@
 """Alert bounded-context composition."""
 
 from contexts.alert.application.alert_app_service import AlertApplicationService
-from contexts.alert.domain.repositories import AlertMetricProvider, AlertPushDispatcher, AlertRepository
+from contexts.alert.domain.repositories import (
+    AlertMetricProvider,
+    AlertPushDispatcher,
+    AlertRepository,
+)
 from contexts.shared.application.transaction import TransactionManager
 
 

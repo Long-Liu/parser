@@ -84,8 +84,8 @@ class Settings(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
 
     @classmethod
-    def from_yaml(cls, path: str) -> "Settings":
-        with open(path, "r", encoding="utf-8") as f:
+    def from_yaml(cls, path: str) -> Settings:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls(**_expand_env_vars(data or {}))
 

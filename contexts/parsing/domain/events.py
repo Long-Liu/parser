@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 from contexts.shared.domain.base_domain_event import DomainEvent
 
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
-
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
+from contexts.shared.application.transaction import (
+    TransactionalService,
+    TransactionManager,
+    transactional,
+)
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import (
     ConflictError,

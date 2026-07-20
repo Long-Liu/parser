@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 
 import aiofiles
 
@@ -21,16 +22,11 @@ class LocalUploadFileStorage(FileStorage):
             async with aiofiles.open(path, "wb") as f:
                 await f.write(body)
         except Exception:
-            try:
+            with suppress(OSError):
                 os.remove(path)
-            except OSError:
-                pass
             raise
         return StoredFile(path=path, size=os.path.getsize(path))
 
     async def delete(self, stored_file: StoredFile) -> None:
-        try:
+        with suppress(OSError):
             os.remove(stored_file.path)
-        except OSError:
-            pass
-

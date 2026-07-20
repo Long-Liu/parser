@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
-
+from contexts.auth.domain.password import Password
+from contexts.auth.domain.ports import PasswordHasher
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.domain.user import User
-from contexts.auth.domain.ports import PasswordHasher
+from contexts.shared.application.transaction import (
+    TransactionalService,
+    TransactionManager,
+    transactional,
+)
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import (
     ConflictError,
@@ -13,7 +17,6 @@ from contexts.shared.domain.exceptions import (
 )
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.pagination import Pagination
-from contexts.auth.domain.password import Password
 
 
 class UserApplicationService(TransactionalService):

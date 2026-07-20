@@ -5,18 +5,18 @@ import logging
 from sanic import Sanic
 from sanic_ext import Extend
 
-from contexts.container import build_container, build_controllers
 from contexts.auth.infrastructure.seed import seed_defaults
+from contexts.auth.interface.request_services import RequestServices
+from contexts.container import build_container, build_controllers
 from contexts.shared.domain.exceptions import DomainError
 from contexts.shared.infrastructure.config import Settings, load_settings
 from contexts.shared.infrastructure.database.bootstrap import register as register_db
 from contexts.shared.infrastructure.logging import setup as setup_logging
 from contexts.shared.interface.base_controller import error_to_response
+from contexts.shared.interface.controller_registration import register_controllers
 from contexts.shared.interface.health_controller import bp as health_bp
 from contexts.shared.interface.middleware.cors import register as register_cors
 from contexts.shared.interface.middleware.logging import register as register_logging
-from contexts.shared.interface.controller_registration import register_controllers
-from contexts.auth.interface.request_services import RequestServices
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 _logger = logging.getLogger("sanic.error")

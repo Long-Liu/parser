@@ -1,6 +1,6 @@
 from tortoise import fields, migrations
-from tortoise.migrations import operations as ops
 from tortoise.indexes import Index
+from tortoise.migrations import operations as ops
 
 
 class Migration(migrations.Migration):

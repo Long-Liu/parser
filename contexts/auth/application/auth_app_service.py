@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from contexts.shared.domain.exceptions import AuthenticationError, ConflictError, ValidationError
-from contexts.shared.domain.event_publisher import EventPublisher
-from contexts.shared.application.transaction import TransactionManager, TransactionalService, transactional
-from contexts.shared.domain.identifiers import UserId
-from contexts.auth.domain.password import Password
-from contexts.auth.domain.user import User
-from contexts.auth.domain.ports import PasswordHasher, TokenService
-from contexts.auth.domain.auth_service import AuthenticationService
-from contexts.auth.domain.repositories import TokenRevocationRepository, UserRepository
 from contexts.auth.application.dto import LoginCommand, LoginResult, RegisterCommand
+from contexts.auth.domain.auth_service import AuthenticationService
+from contexts.auth.domain.password import Password
+from contexts.auth.domain.ports import PasswordHasher, TokenService
+from contexts.auth.domain.repositories import TokenRevocationRepository, UserRepository
+from contexts.auth.domain.user import User
+from contexts.shared.application.transaction import (
+    TransactionalService,
+    TransactionManager,
+    transactional,
+)
+from contexts.shared.domain.event_publisher import EventPublisher
+from contexts.shared.domain.exceptions import (
+    AuthenticationError,
+    ConflictError,
+    ValidationError,
+)
+from contexts.shared.domain.identifiers import UserId
 
 logger = logging.getLogger("parser.auth")
 
@@ -97,7 +105,7 @@ class AuthApplicationService(TransactionalService):
         # is needed here. The entry lives until all pre-change tokens would
         # have expired anyway (now + max token lifetime).
         if self._token_revocations is not None:
-            horizon = datetime.now(timezone.utc) + self._jwt.max_lifetime()
+            horizon = datetime.now(UTC) + self._jwt.max_lifetime()
             await self._token_revocations.revoke_all_for_user(
                 user_id=UserId(user_id), expires_at=horizon,
             )
@@ -110,9 +118,9 @@ class AuthApplicationService(TransactionalService):
             # individually; they expire naturally within max_lifetime().
             return
         if token_exp:
-            expires_at = datetime.fromtimestamp(float(token_exp), tz=timezone.utc)
+            expires_at = datetime.fromtimestamp(float(token_exp), tz=UTC)
         else:
-            expires_at = datetime.now(timezone.utc) + self._jwt.max_lifetime()
+            expires_at = datetime.now(UTC) + self._jwt.max_lifetime()
         await self._token_revocations.revoke(
             jti=token_jti, user_id=UserId(user_id), expires_at=expires_at,
         )

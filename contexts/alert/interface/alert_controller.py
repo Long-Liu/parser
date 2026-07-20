@@ -5,7 +5,9 @@ import json
 from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.infrastructure.push import AlertWebSocketHub
-from contexts.auth.application.authorization_app_service import AuthorizationApplicationService
+from contexts.auth.application.authorization_app_service import (
+    AuthorizationApplicationService,
+)
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.shared.domain.exceptions import AuthenticationError
