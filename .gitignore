@@ -6,6 +6,7 @@ uploads/
 .superpowers/
 .idea/
 .ccg/
+.reasonix/
 # Local dev config with secrets (template in config/local.example.yaml)
 config/local.yaml
 config/prod.yaml

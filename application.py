@@ -3,6 +3,8 @@
 import logging
 
 from sanic import Sanic
+from sanic.exceptions import SanicException
+from sanic.response import json
 from sanic_ext import Extend
 
 from contexts.auth.infrastructure.seed import seed_defaults
@@ -38,7 +40,17 @@ def create_app(settings: Settings | None = None) -> Sanic:
     app.config.API_TITLE = "Excel Parser API"
     app.config.API_VERSION = "1.0.0"
     app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
+    # Swagger supports interactive parameter entry and requests; ReDoc is
+    # read-only, so use Swagger for the main /docs entry point.
+    app.config.OAS_UI_DEFAULT = "swagger"
     Extend(app)
+    app.ext.openapi.add_security_scheme(
+        "bearerAuth",
+        "http",
+        scheme="bearer",
+        bearer_format="JWT",
+        description="在 Authorization 请求头中填写 Bearer JWT 访问令牌",
+    )
 
     setup_logging(debug=settings.debug)
     register_logging(app)
@@ -57,10 +69,19 @@ def create_app(settings: Settings | None = None) -> Sanic:
     async def on_domain_error(request, exception: DomainError):
         return error_to_response(exception)
 
+    @app.exception(SanicException)
+    async def on_sanic_error(request, exception: SanicException):
+        # Preserve framework HTTP errors such as 404. Without this handler the
+        # broad Exception handler below turns an ordinary missing route into a
+        # logged 500 response.
+        return json(
+            {"error": str(exception)},
+            status=getattr(exception, "status_code", 500),
+        )
+
     @app.exception(Exception)
     async def on_unhandled_error(request, exception: Exception):
         _logger.exception("unhandled exception on %s %s", request.method, request.path)
-        from sanic.response import json
         return json({"error": "internal server error"}, status=500)
 
     return app

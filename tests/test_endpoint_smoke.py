@@ -8,6 +8,7 @@
 
 import json as std_json
 from types import SimpleNamespace
+from uuid import uuid4
 
 from sanic import Sanic
 
@@ -54,7 +55,7 @@ async def _asgi_get(app, path: str):
 
 
 def _health_app(debug: bool) -> Sanic:
-    app = Sanic(f"health_smoke_{debug}")
+    app = Sanic(f"health_smoke_{debug}_{uuid4().hex}")
     app.asgi = True  # allow direct ASGI calls without app.run()
     app.ctx.settings = Settings(debug=debug)
     app.blueprint(health_bp)
@@ -73,6 +74,12 @@ async def test_health_returns_production_env_when_not_debug():
     code, body = await _asgi_get(_health_app(debug=False), "/health")
     assert code == 200
     assert std_json.loads(body) == {"status": "ok", "env": "production"}
+
+
+async def test_favicon_returns_no_content_instead_of_404():
+    code, body = await _asgi_get(_health_app(debug=False), "/favicon.ico")
+    assert code == 204
+    assert body == b""
 
 
 # ── AnalyticsController ─────────────────────────────────────────────────────
