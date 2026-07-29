@@ -50,6 +50,14 @@ class AnalyticsApplicationService:
                               project_ids: list[int] | None = None) -> dict:
         return await self._repository.project_profits(ym, pagination, project_ids)
 
+    async def budget_lease_writeoffs(
+        self, ym: str | None, pagination: Pagination,
+        project_ids: list[int] | None = None,
+    ) -> dict:
+        return await self._repository.budget_lease_writeoffs(
+            ym, pagination, project_ids,
+        )
+
     # ── milestones / progress ───────────────────────────────────────
 
     async def milestones(self, project_id: int, pagination: Pagination) -> dict:

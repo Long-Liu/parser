@@ -33,6 +33,7 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_FORECAST_PROFIT_RATE,
     SETTLE_FORECAST_REVENUE,
     DataConstructionDynamic,
+    DataBudgetLease,
     DataDynamicIndicator,
     DataInstallationDynamic,
     DataMaterialCost,
@@ -364,6 +365,103 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         items = [self._profit_item(p, batch_map, profit_map, indicator_map, ym)
                  for p in projects]
         return {"projects": items, "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
+
+    async def budget_lease_writeoffs(
+        self, ym: str | None, pagination: Pagination,
+        project_ids: list[int] | None = None,
+    ) -> dict:
+        """Aggregate 表10.3 by project for the budget lease/write-off UI.
+
+        The published UI renames the source workbook's three lease calibers:
+        定标/有源/无源 are exposed as 机械设备/周转材料/其他 respectively.
+        Only the latest successful batch per project is used so re-uploads do
+        not double count a project's figures.
+        """
+        query = Project.all()
+        if project_ids is not None:
+            query = query.filter(id__in=project_ids)
+        projects = await query.order_by("id")
+        total = len(projects)
+
+        pids = [project.id for project in projects]
+        batch_query = UploadBatch.filter(project_id__in=pids, status="success")
+        if ym:
+            batch_query = batch_query.filter(ym=ym)
+        batches = {}
+        for batch in await batch_query.order_by("project_id", "-ym", "-id"):
+            batches.setdefault(batch.project_id, batch)
+
+        rows_by_batch: dict[int, list[DataBudgetLease]] = {}
+        if batches:
+            for row in await DataBudgetLease.filter(
+                batch_id__in=[batch.id for batch in batches.values()]
+            ):
+                rows_by_batch.setdefault(row.batch_id, []).append(row)
+
+        items = []
+        for project in projects:
+            batch = batches.get(project.id)
+            rows = rows_by_batch.get(batch.id, []) if batch else []
+
+            def summed(field: str) -> float:
+                return round(sum(_number(getattr(row, field)) for row in rows), 2)
+
+            lease_total = summed("lease_total")
+            writeoff_total = summed("writeoff_total")
+            item = {
+                "project_id": project.id,
+                "project_code": project.code,
+                "project_name": project.name,
+                "ym": batch.ym if batch else ym,
+                "budget_lease_total": lease_total,
+                "cumulative_lease": {
+                    "machinery_equipment": summed("lease_bid"),
+                    "turnover_materials": summed("lease_active"),
+                    "other": summed("lease_passive"),
+                },
+                "written_off_total": writeoff_total,
+                "unwritten_off_total": round(lease_total - writeoff_total, 2),
+                "remaining_lease": {
+                    "machinery_equipment": summed("remaining_bid"),
+                    "turnover_materials": summed("remaining_active"),
+                    "other": summed("remaining_passive"),
+                },
+            }
+            items.append(item)
+
+        def total_for(path: tuple[str, ...]) -> float:
+            values = []
+            for item in items:
+                value = item
+                for key in path:
+                    value = value[key]
+                values.append(float(value))
+            return round(sum(values), 2)
+
+        summary = {
+            "budget_lease_total": total_for(("budget_lease_total",)),
+            "cumulative_lease": {
+                "machinery_equipment": total_for(("cumulative_lease", "machinery_equipment")),
+                "turnover_materials": total_for(("cumulative_lease", "turnover_materials")),
+                "other": total_for(("cumulative_lease", "other")),
+            },
+            "written_off_total": total_for(("written_off_total",)),
+            "unwritten_off_total": total_for(("unwritten_off_total",)),
+            "remaining_lease": {
+                "machinery_equipment": total_for(("remaining_lease", "machinery_equipment")),
+                "turnover_materials": total_for(("remaining_lease", "turnover_materials")),
+                "other": total_for(("remaining_lease", "other")),
+            },
+        }
+        return {
+            "summary": summary,
+            "projects": items[
+                pagination.offset:pagination.offset + pagination.size
+            ],
+            "pagination": {
+                "page": pagination.page, "size": pagination.size, "total": total,
+            },
+        }
 
     async def _load_batches(self, projects, ym):
         pids = [p.id for p in projects]

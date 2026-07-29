@@ -9,6 +9,7 @@ from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.analytics.application.analytics_service import AnalyticsApplicationService
 from contexts.analytics.infrastructure.xlsx_export import (
     build_compare_workbook,
+    build_budget_lease_writeoff_workbook,
     build_cost_categories_workbook,
     build_month_comparison_workbook,
     build_profits_workbook,
@@ -85,6 +86,7 @@ class AnalyticsController(BaseController):
         r(self.compare_projects,    "/projects/compare",                    methods=["POST"])
         r(self.cost_categories,     "/reports/cost-categories",             methods=["GET"])
         r(self.project_profits,     "/reports/project-profits",             methods=["GET"])
+        r(self.budget_lease_writeoffs, "/reports/budget-lease-writeoffs",    methods=["GET"])
         r(self.dashboard,           "/dashboard",                           methods=["GET"])
         r(self.dashboard_summary,   "/dashboard/summary",                   methods=["GET"])
         r(self.dashboard_trends,    "/dashboard/trends",                    methods=["GET"])
@@ -100,6 +102,8 @@ class AnalyticsController(BaseController):
         r(self.sync_status,         "/system/sync-status",                  methods=["GET"])
         r(self.export_profits,      "/reports/project-profits/export",      methods=["GET"])
         r(self.export_costs,        "/reports/cost-categories/export",      methods=["GET"])
+        r(self.export_budget_lease_writeoffs,
+          "/reports/budget-lease-writeoffs/export",                     methods=["GET"])
         r(self.export_project,      "/projects/<project_id:int>/export",    methods=["GET"])
         r(self.export_month_comparison,
           "/projects/<project_id:int>/month-comparison/export",         methods=["GET"])
@@ -237,6 +241,22 @@ class AnalyticsController(BaseController):
                 await self._project_scope(request),
             )
         )
+
+    @require_auth
+    @require_permission("data:view")
+    async def budget_lease_writeoffs(self, request):
+        try:
+            ids = [int(v) for v in request.args.get(
+                "project_ids", ""
+            ).split(",") if v.strip()]
+            ids = await self._project_scope(request, ids or None)
+        except ValueError:
+            raise ValidationError("invalid project_ids") from None
+        return self.json(await self.analytics_svc.budget_lease_writeoffs(
+            request.args.get("ym"),
+            pagination_from(request, max_size=100),
+            ids,
+        ))
     # ── dashboard endpoints ─────────────────────────────────────────────
 
     @require_auth
@@ -379,6 +399,27 @@ class AnalyticsController(BaseController):
             raise ValidationError("invalid project_ids") from None
         wb = build_cost_categories_workbook(result["projects"])
         return _xlsx(wb, f"成本科目_{ym or '全部'}.xlsx", "cost-categories.xlsx")
+
+    @require_auth
+    @require_permission("data:export")
+    async def export_budget_lease_writeoffs(self, request):
+        try:
+            ids = [int(v) for v in request.args.get(
+                "project_ids", ""
+            ).split(",") if v.strip()]
+            ids = await self._project_scope(request, ids or None)
+            ym = request.args.get("ym")
+            result = await self.analytics_svc.budget_lease_writeoffs(
+                ym, _EXPORT_PAGE, ids,
+            )
+        except ValueError:
+            raise ValidationError("invalid project_ids") from None
+        wb = build_budget_lease_writeoff_workbook(result)
+        return _xlsx(
+            wb,
+            f"预算租借核销表_{ym or '最新'}.xlsx",
+            "budget-lease-writeoffs.xlsx",
+        )
 
     @require_auth
     @require_permission("data:export")

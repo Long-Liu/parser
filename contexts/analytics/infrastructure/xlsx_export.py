@@ -107,6 +107,39 @@ def build_cost_categories_workbook(projects: list[dict]) -> Workbook:
     return wb
 
 
+def build_budget_lease_writeoff_workbook(data: dict) -> Workbook:
+    """预算租借核销汇总：与发布 UI 的两组三分类表头一致。"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "预算租借核销"
+    ws.append([
+        "序号", "项目名称", "月份", "预算租借合计",
+        "累计租借-机械设备租赁", "累计租借-周转材料租借",
+        "累计租借-其他租借费用", "已核销金额", "未核销金额",
+        "剩余未核销-机械设备租赁", "剩余未核销-周转材料租借",
+        "剩余未核销-其他租借费用",
+    ])
+
+    def values(item: dict) -> list:
+        return [
+            item["budget_lease_total"],
+            item["cumulative_lease"]["machinery_equipment"],
+            item["cumulative_lease"]["turnover_materials"],
+            item["cumulative_lease"]["other"],
+            item["written_off_total"],
+            item["unwritten_off_total"],
+            item["remaining_lease"]["machinery_equipment"],
+            item["remaining_lease"]["turnover_materials"],
+            item["remaining_lease"]["other"],
+        ]
+
+    ws.append(["", "合计", ""] + values(data["summary"]))
+    for index, item in enumerate(data["projects"], start=1):
+        ws.append([index, item["project_name"], item["ym"]] + values(item))
+    _autosize(ws)
+    return wb
+
+
 def build_month_comparison_workbook(data: dict) -> Workbook:
     """月度对比导出：指标 × 月份 + 最近两月环比（变化量/变化率）列。"""
     months = data["months"]

@@ -46,6 +46,12 @@ class AnalyticsRepository(ABC):
     async def project_profits(self, ym: str | None, pagination: Pagination,
                               project_ids: list[int] | None = None) -> dict: ...
 
+    @abstractmethod
+    async def budget_lease_writeoffs(
+        self, ym: str | None, pagination: Pagination,
+        project_ids: list[int] | None = None,
+    ) -> dict: ...
+
     # ── milestones / progress ───────────────────────────────────────
 
     @abstractmethod

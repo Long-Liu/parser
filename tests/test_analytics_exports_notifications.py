@@ -37,6 +37,7 @@ from contexts.analytics.infrastructure.analytics_repository import (
 )
 from contexts.analytics.infrastructure.xlsx_export import (
     build_compare_workbook,
+    build_budget_lease_writeoff_workbook,
     build_cost_categories_workbook,
     build_month_comparison_workbook,
     build_profits_workbook,
@@ -151,6 +152,35 @@ def test_content_disposition_rfc5987():
     disposition = content_disposition("项目毛利情况_2026-03.xlsx", "project-profits.xlsx")
     assert disposition.startswith('attachment; filename="project-profits.xlsx"')
     assert f"filename*=UTF-8''{quote('项目毛利情况_2026-03.xlsx')}" in disposition
+
+
+def test_budget_lease_writeoff_workbook_matches_ui_columns():
+    group = {
+        "machinery_equipment": 10.0,
+        "turnover_materials": 20.0,
+        "other": 30.0,
+    }
+    summary = {
+        "budget_lease_total": 60.0,
+        "cumulative_lease": group,
+        "written_off_total": 15.0,
+        "unwritten_off_total": 45.0,
+        "remaining_lease": group,
+    }
+    wb = build_budget_lease_writeoff_workbook({
+        "summary": summary,
+        "projects": [{
+            "project_name": "资阳项目",
+            "ym": "2026-03",
+            **summary,
+        }],
+    })
+    ws = wb.active
+    assert ws.title == "预算租借核销"
+    assert ws.cell(1, 5).value == "累计租借-机械设备租赁"
+    assert ws.cell(2, 2).value == "合计"
+    assert ws.cell(3, 2).value == "资阳项目"
+    assert ws.cell(3, 9).value == 45.0
 
 
 @pytest.mark.asyncio

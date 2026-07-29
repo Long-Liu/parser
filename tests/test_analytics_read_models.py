@@ -33,6 +33,7 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_FORECAST_PROFIT,
     SETTLE_FORECAST_REVENUE,
     DataDynamicIndicator,
+    DataBudgetLease,
     DataSettlementOutput,
 )
 
@@ -80,6 +81,50 @@ async def make_settlement(batch_id: int, **indicators) -> None:
 
 async def make_indicator(batch_id: int, **kwargs) -> DataDynamicIndicator:
     return await DataDynamicIndicator.create(batch_id=batch_id, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_budget_lease_writeoffs_uses_latest_batch_and_aggregates_ui_fields(db):
+    project = await make_project(name="资阳项目")
+    old_batch = await make_batch(project.id, "2026-02")
+    latest_batch = await make_batch(project.id, "2026-03")
+    await DataBudgetLease.create(
+        batch_id=old_batch.id, lease_total=Decimal("999"),
+    )
+    await DataBudgetLease.create(
+        batch_id=latest_batch.id,
+        lease_bid=Decimal("100"),
+        lease_active=Decimal("200"),
+        lease_passive=Decimal("283.19"),
+        lease_total=Decimal("583.19"),
+        writeoff_total=Decimal("80"),
+        remaining_bid=Decimal("20"),
+        remaining_active=Decimal("30"),
+        remaining_passive=Decimal("40"),
+    )
+
+    result = await TortoiseAnalyticsRepository().budget_lease_writeoffs(
+        None, Pagination(1, 20, max_size=100),
+    )
+
+    assert result["pagination"]["total"] == 1
+    item = result["projects"][0]
+    assert item["project_name"] == "资阳项目"
+    assert item["ym"] == "2026-03"
+    assert item["budget_lease_total"] == 583.19
+    assert item["cumulative_lease"] == {
+        "machinery_equipment": 100.0,
+        "turnover_materials": 200.0,
+        "other": 283.19,
+    }
+    assert item["written_off_total"] == 80.0
+    assert item["unwritten_off_total"] == 503.19
+    assert item["remaining_lease"] == {
+        "machinery_equipment": 20.0,
+        "turnover_materials": 30.0,
+        "other": 40.0,
+    }
+    assert result["summary"]["budget_lease_total"] == 583.19
 
 
 # ── monthly-data ─────────────────────────────────────────────────────
