@@ -35,17 +35,18 @@ class StopDetector:
         return self.match_rule(row_index, grid, stop_rules) is not None
 
     def _check_cell_match(
-        self, grid: list[list], row_index: int,
-        patterns: list[str], columns: list[str],
+        self,
+        grid: list[list],
+        row_index: int,
+        patterns: list[str],
+        columns: list[str],
     ) -> bool:
         if row_index >= len(grid):
             return True
         row = grid[row_index]
         # No columns configured → scan every cell of the row.
         col_indexes = (
-            [ord(col_letter.upper()) - ord("A") for col_letter in columns]
-            if columns
-            else list(range(len(row)))
+            [ord(col_letter.upper()) - ord("A") for col_letter in columns] if columns else list(range(len(row)))
         )
         for col_idx in col_indexes:
             if col_idx < len(row) and row[col_idx] is not None:
@@ -56,7 +57,10 @@ class StopDetector:
         return False
 
     def _check_consecutive_empty(
-        self, grid: list[list], row_index: int, count: int,
+        self,
+        grid: list[list],
+        row_index: int,
+        count: int,
     ) -> bool:
         for i in range(count):
             check_idx = row_index + i

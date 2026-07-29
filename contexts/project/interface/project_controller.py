@@ -19,7 +19,7 @@ from contexts.shared.interface.controller_helpers import pagination_from
 
 
 def _project_details(data: dict) -> dict:
-    result = {}
+    result: dict[str, object] = {}
     for key in ("project_type", "stage", "status", "description"):
         if key in data:
             result[key] = str(data[key] or "")
@@ -40,6 +40,22 @@ def _project_details(data: dict) -> dict:
     return result
 
 
+def _ui_project_payload(data: dict) -> dict:
+    """Accept both API names and the published project's form aliases."""
+    result = dict(data)
+    for source, target in {
+        "contract": "contract_price",
+        "startDate": "start_date",
+        "endDate": "end_date",
+        "notes": "description",
+    }.items():
+        if source in result and target not in result:
+            result[target] = result[source]
+    if "leader" in result and "manager_name" not in result:
+        result["manager_name"] = result["leader"]
+    return result
+
+
 class ProjectsController(BaseController):
     name = "project"
 
@@ -48,42 +64,47 @@ class ProjectsController(BaseController):
         self.svc = project_svc
 
     def setup(self):
-        self.bp.add_route(self.list_projects,   "/projects",                                      methods=["GET"])
-        self.bp.add_route(self.create_project,  "/projects",                                      methods=["POST"])
-        self.bp.add_route(self.get_project,     "/projects/<project_id:int>",                     methods=["GET"])
-        self.bp.add_route(self.update_project,  "/projects/<project_id:int>",                     methods=["PUT"])
-        self.bp.add_route(self.delete_project,  "/projects/<project_id:int>",                     methods=["DELETE"])
-        self.bp.add_route(self.assign_user,     "/projects/<project_id:int>/users/<user_id:int>", methods=["POST"])
-        self.bp.add_route(self.remove_user,     "/projects/<project_id:int>/users/<user_id:int>", methods=["DELETE"])
+        self.bp.add_route(self.list_projects, "/projects", methods=["GET"])
+        self.bp.add_route(self.create_project, "/projects", methods=["POST"])
+        self.bp.add_route(self.get_project, "/projects/<project_id:int>", methods=["GET"])
+        self.bp.add_route(self.update_project, "/projects/<project_id:int>", methods=["PUT"])
+        self.bp.add_route(self.delete_project, "/projects/<project_id:int>", methods=["DELETE"])
+        self.bp.add_route(self.assign_user, "/projects/<project_id:int>/users/<user_id:int>", methods=["POST"])
+        self.bp.add_route(self.remove_user, "/projects/<project_id:int>/users/<user_id:int>", methods=["DELETE"])
 
     @require_auth
     @require_permission("project:view")
     @openapi.tag("Project")
     @openapi.summary("List projects")
     async def list_projects(self, request):
-            permissions = set(request.ctx.permissions or set())
-            scoped_user_id = None
-            if not ProjectAccessPolicy.has_elevated_permission(permissions):
-                scoped_user_id = UserId(request.ctx.user_id)
-            result = await self.svc.list_all(
-                keyword=request.args.get("keyword", ""),
-                status=request.args.get("status", ""),
-                pagination=pagination_from(request),
-                user_id=scoped_user_id,
-            )
-            return self.json(result)
+        permissions = set(request.ctx.permissions or set())
+        scoped_user_id = None
+        if not ProjectAccessPolicy.has_elevated_permission(permissions):
+            scoped_user_id = UserId(request.ctx.user_id)
+        result = await self.svc.list_all(
+            keyword=request.args.get("keyword", ""),
+            status=request.args.get("status", ""),
+            pagination=pagination_from(request),
+            user_id=scoped_user_id,
+        )
+        return self.json(result)
 
     @require_auth
     @require_permission("project:create")
     @openapi.tag("Project")
     @openapi.summary("Create project")
     async def create_project(self, request):
-        data = request.json or {}
+        data = _ui_project_payload(request.json or {})
         raw_user_id = getattr(request.ctx, "user_id", None)
         created_by = UserId(raw_user_id) if raw_user_id else None
+        details = _project_details(data)
+        if data.get("manager_name"):
+            details["manager_name"] = str(data["manager_name"])
         result = await self.svc.create(
-            code=data.get("code", ""), name=data.get("name", ""),
-            created_by=created_by, **_project_details(data),
+            code=data.get("code", ""),
+            name=data.get("name", ""),
+            created_by=created_by,
+            **details,
         )
         return self.json(result, status=201)
 
@@ -91,24 +112,26 @@ class ProjectsController(BaseController):
     @require_permission("project:view")
     @require_project_access()
     async def get_project(self, request, project_id: int):
-            return self.json(await self.svc.get_by_id(ProjectId(project_id)))
+        return self.json(await self.svc.get_by_id(ProjectId(project_id)))
 
     @require_auth
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
     async def update_project(self, request, project_id: int):
-            data = request.json or {}
-            details = _project_details(data)
-            if "name" in data:
-                details["name"] = data["name"]
-            return self.json(await self.svc.update(project_id, **details))
+        data = _ui_project_payload(request.json or {})
+        details = _project_details(data)
+        if "name" in data:
+            details["name"] = data["name"]
+        if data.get("manager_name"):
+            details["manager_name"] = str(data["manager_name"])
+        return self.json(await self.svc.update(project_id, **details))
 
     @require_auth
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
     async def delete_project(self, request, project_id: int):
-            await self.svc.delete(project_id)
-            return self.json_ok()
+        await self.svc.delete(project_id)
+        return self.json_ok()
 
     @require_auth
     @require_permission("user:manage")
@@ -117,7 +140,9 @@ class ProjectsController(BaseController):
     async def assign_user(self, request, project_id: int, user_id: int):
         data = request.json or {}
         await self.svc.assign_user(
-            project_id, user_id, bool(data.get("is_primary", False)),
+            project_id,
+            user_id,
+            bool(data.get("is_primary", False)),
             data.get("role", "manager" if data.get("is_primary") else "viewer"),
         )
         return self.json_ok()

@@ -31,6 +31,7 @@ def _make_template(**kwargs) -> Template:
 
 # ── yaml_loader 读取 action ──────────────────────────────────────────
 
+
 def test_yaml_loader_reads_action_last():
     template = YamlTemplateLoader().load("material_cost")
     total_rules = [r for r in template.stop_rules if "^总计" in r.patterns]
@@ -63,14 +64,12 @@ def test_all_action_last_templates_load():
     }
     for template_id, pattern in expected.items():
         template = loader.load(template_id)
-        actions = {
-            r.action for r in template.stop_rules
-            if pattern in r.patterns
-        }
+        actions = {r.action for r in template.stop_rules if pattern in r.patterns}
         assert actions == {StopRuleAction.LAST}, template_id
 
 
 # ── StopDetector：match_rule 与空 columns 扫描全行 ──────────────────
+
 
 def test_match_rule_returns_fired_rule():
     rule = StopRule(
@@ -98,6 +97,7 @@ def test_cell_match_without_columns_scans_all_cells():
 
 # ── DataRowExtractor：action 语义 ────────────────────────────────────
 
+
 def _grid_with_total():
     return [
         ["名称", "金额"],
@@ -109,26 +109,26 @@ def _grid_with_total():
 
 
 def test_default_action_excludes_matched_row():
-    template = _make_template(stop_rules=[
-        StopRule(rule_type=StopRuleType.CELL_MATCH, patterns=[r"^总计"]),
-    ])
-    rows = DataRowExtractor().extract(
-        _grid_with_total(), ["名称", "金额"], template
+    template = _make_template(
+        stop_rules=[
+            StopRule(rule_type=StopRuleType.CELL_MATCH, patterns=[r"^总计"]),
+        ]
     )
+    rows = DataRowExtractor().extract(_grid_with_total(), ["名称", "金额"], template)
     assert [r.fields["name"] for r in rows] == ["混凝土", "钢筋"]
 
 
 def test_action_last_includes_matched_row_as_final_row():
-    template = _make_template(stop_rules=[
-        StopRule(
-            rule_type=StopRuleType.CELL_MATCH,
-            patterns=[r"^总计"],
-            action=StopRuleAction.LAST,
-        ),
-    ])
-    rows = DataRowExtractor().extract(
-        _grid_with_total(), ["名称", "金额"], template
+    template = _make_template(
+        stop_rules=[
+            StopRule(
+                rule_type=StopRuleType.CELL_MATCH,
+                patterns=[r"^总计"],
+                action=StopRuleAction.LAST,
+            ),
+        ]
     )
+    rows = DataRowExtractor().extract(_grid_with_total(), ["名称", "金额"], template)
     assert [r.fields.get("name") for r in rows] == ["混凝土", "钢筋", None]
     assert rows[-1].fields["amount"] == "总计"
     assert rows[-1].row_index == 4

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from contexts.project.domain.events import (
     ProjectCreated,
     ProjectDeleted,
@@ -37,13 +39,16 @@ class _NullEventPublisher(EventPublisher):
 
 
 class ProjectApplicationService(TransactionalService):
-    def __init__(self, repo: ProjectRepository,
-                 cleanup: ProjectDataCleanup | None = None,
-                 users: UserDirectory | None = None,
-                 notifications: ProjectNotificationPort | None = None,
-                 event_publisher: EventPublisher | None = None,
-                 transaction_manager: TransactionManager | None = None,
-                 metrics: ProjectMetricsPort | None = None) -> None:
+    def __init__(
+        self,
+        repo: ProjectRepository,
+        cleanup: ProjectDataCleanup | None = None,
+        users: UserDirectory | None = None,
+        notifications: ProjectNotificationPort | None = None,
+        event_publisher: EventPublisher | None = None,
+        transaction_manager: TransactionManager | None = None,
+        metrics: ProjectMetricsPort | None = None,
+    ) -> None:
         super().__init__(transaction_manager)
         self._repo = repo
         self._cleanup = cleanup
@@ -53,13 +58,20 @@ class ProjectApplicationService(TransactionalService):
         self._metrics = metrics
 
     @transactional
-    async def create(self, code: str, name: str, created_by: UserId | None = None,
-                     **details) -> dict:
+    async def create(self, code: str, name: str, created_by: UserId | None = None, **details) -> dict:
+        # The published UI does not expose a project-code input. Preserve
+        # caller-supplied codes, but generate one for UI-created projects.
+        code = code.strip() or f"PRJ-{uuid4().hex[:8].upper()}"
+        manager_name = str(details.pop("manager_name", "") or "").strip()
+        if manager_name and not details.get("manager_id"):
+            manager_id = await self._users.user_id_by_real_name(manager_name) if self._users is not None else None
+            if manager_id is None:
+                raise ValidationError(f"manager not found: {manager_name}")
+            details["manager_id"] = UserId(manager_id)
         existing = await self._repo.find_by_code(code)
         if existing:
             raise ConflictError("project code already exists")
-        project = Project.create(project_id=None, code=code, name=name,
-                                 created_by=created_by, **details)
+        project = Project.create(project_id=None, code=code, name=name, created_by=created_by, **details)
         await self._repo.save(project)
         if project.status == "warning" and self._notifications and project.id:
             await self._notifications.publish_warning(project.id, project.name)
@@ -67,26 +79,37 @@ class ProjectApplicationService(TransactionalService):
             raise RuntimeError("project repository did not assign an id")
         # Alert evaluation is event-driven: the alert context subscribes to
         # ProjectCreated and evaluates after this transaction commits.
-        project.record(ProjectCreated(
-            aggregate_id=project.id.value, code=project.code, name=project.name,
-        ))
+        project.record(
+            ProjectCreated(
+                aggregate_id=project.id.value,
+                code=project.code,
+                name=project.name,
+            )
+        )
         await self._event_publisher.publish(project.pull_events())
         return self._serialize(project)
 
-    async def list_all(self, *, keyword: str = "", status: str = "",
-                       pagination: Pagination,
-                       user_id: UserId | None = None) -> dict:
-        query = {
-            "keyword": keyword.strip(), "status": status.strip(),
-            "offset": pagination.offset, "limit": pagination.size,
-        }
-        if user_id is not None:
-            query["user_id"] = user_id
-        projects, total = await self._repo.list_all(**query)
+    async def list_all(
+        self, *, keyword: str = "", status: str = "", pagination: Pagination, user_id: UserId | None = None
+    ) -> dict:
+        if user_id is None:
+            projects, total = await self._repo.list_all(
+                keyword=keyword.strip(),
+                status=status.strip(),
+                offset=pagination.offset,
+                limit=pagination.size,
+            )
+        else:
+            projects, total = await self._repo.list_all(
+                keyword=keyword.strip(),
+                status=status.strip(),
+                user_id=user_id,
+                offset=pagination.offset,
+                limit=pagination.size,
+            )
         extras = await self._enrichment(projects)
         return {
-            "projects": [self._serialize(p, extras.get(p.id.value) if p.id else None)
-                         for p in projects],
+            "projects": [self._serialize(p, extras.get(p.id.value) if p.id else None) for p in projects],
             "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
         }
 
@@ -108,9 +131,7 @@ class ProjectApplicationService(TransactionalService):
             return {}
         names: dict[int, str | None] = {}
         if self._users is not None:
-            manager_ids = sorted(
-                {p.manager_id.value for p in projects if p.manager_id is not None}
-            )
+            manager_ids = sorted({p.manager_id.value for p in projects if p.manager_id is not None})
             if manager_ids:
                 names = await self._users.real_names(manager_ids)
         metrics: dict[int, dict] = {}
@@ -123,10 +144,16 @@ class ProjectApplicationService(TransactionalService):
             entry: dict = {
                 "manager_name": names.get(p.manager_id.value) if p.manager_id else None,
             }
-            entry.update(metrics.get(p.id.value) or {
-                "latest_ym": None, "revenue": None, "cost": None,
-                "profit": None, "profit_rate": None,
-            })
+            entry.update(
+                metrics.get(p.id.value)
+                or {
+                    "latest_ym": None,
+                    "revenue": None,
+                    "cost": None,
+                    "profit": None,
+                    "profit_rate": None,
+                }
+            )
             extras[p.id.value] = entry
         return extras
 
@@ -135,14 +162,23 @@ class ProjectApplicationService(TransactionalService):
         project = await self._repo.find_by_id(ProjectId(project_id))
         if project is None:
             raise NotFoundError(f"project {project_id} not found")
+        manager_name = str(details.pop("manager_name", "") or "").strip()
+        if manager_name:
+            manager_id = await self._users.user_id_by_real_name(manager_name) if self._users is not None else None
+            if manager_id is None:
+                raise ValidationError(f"manager not found: {manager_name}")
+            details["manager_id"] = UserId(manager_id)
         details.pop("code", None)
         project.update_details(**details)
         await self._repo.save(project)
-        if project.status == "warning" and self._notifications:
+        if project.status == "warning" and self._notifications and project.id:
             await self._notifications.publish_warning(project.id, project.name)
-        project.record(ProjectUpdated(
-            aggregate_id=project_id, changed_fields=tuple(sorted(details)),
-        ))
+        project.record(
+            ProjectUpdated(
+                aggregate_id=project_id,
+                changed_fields=tuple(sorted(details)),
+            )
+        )
         await self._event_publisher.publish(project.pull_events())
         return self._serialize(project)
 
@@ -161,8 +197,7 @@ class ProjectApplicationService(TransactionalService):
         await self._event_publisher.publish(project.pull_events())
 
     @transactional
-    async def assign_user(self, project_id: int, user_id: int,
-                          is_primary: bool = False, role: str = "viewer") -> None:
+    async def assign_user(self, project_id: int, user_id: int, is_primary: bool = False, role: str = "viewer") -> None:
         if await self._repo.find_by_id(ProjectId(project_id)) is None:
             raise NotFoundError(f"project {project_id} not found")
         if role not in {"manager", "viewer"}:
@@ -170,7 +205,10 @@ class ProjectApplicationService(TransactionalService):
         if self._users and not await self._users.exists(UserId(user_id)):
             raise NotFoundError(f"user {user_id} not found")
         await self._repo.assign_user(
-            ProjectId(project_id), UserId(user_id), is_primary, role,
+            ProjectId(project_id),
+            UserId(user_id),
+            is_primary,
+            role,
         )
 
     @transactional

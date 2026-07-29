@@ -48,14 +48,25 @@ class AlertRule:
 
 
 class Alert(AggregateRoot[int]):
-    def __init__(self, *, alert_id: int | None, project_id: int, rule_code: str,
-                 alert_type: str, level: AlertLevel, title: str, message: str,
-                 metric_value: Decimal, threshold_value: Decimal,
-                 fingerprint: str, ym: str | None = None,
-                 status: AlertStatus = AlertStatus.ACTIVE,
-                 trigger_count: int = 1,
-                 first_triggered_at: datetime | None = None,
-                 last_triggered_at: datetime | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        alert_id: int | None,
+        project_id: int,
+        rule_code: str,
+        alert_type: str,
+        level: AlertLevel,
+        title: str,
+        message: str,
+        metric_value: Decimal,
+        threshold_value: Decimal,
+        fingerprint: str,
+        ym: str | None = None,
+        status: AlertStatus = AlertStatus.ACTIVE,
+        trigger_count: int = 1,
+        first_triggered_at: datetime | None = None,
+        last_triggered_at: datetime | None = None,
+    ) -> None:
         super().__init__()
         self.id = alert_id
         self.project_id = project_id

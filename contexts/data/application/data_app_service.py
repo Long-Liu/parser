@@ -13,20 +13,24 @@ from contexts.shared.domain.pagination import Pagination
 
 
 class DataApplicationService(TransactionalService):
-    def __init__(self, repo: DataQueryRepository,
-                 transaction_manager: TransactionManager | None = None) -> None:
+    def __init__(self, repo: DataQueryRepository, transaction_manager: TransactionManager | None = None) -> None:
         super().__init__(transaction_manager)
         self._repo = repo
 
     async def query(
-        self, template_id: str, batch_id: int | None = None,
+        self,
+        template_id: str,
+        batch_id: int | None = None,
         pagination: Pagination | None = None,
         filters: list[FilterCriterion] | None = None,
     ) -> dict:
         if pagination is None:
             pagination = Pagination(1, 200, max_size=500)
         rows, total = await self._repo.query(
-            template_id, batch_id, filters or [], pagination,
+            template_id,
+            batch_id,
+            filters or [],
+            pagination,
         )
         return {
             "data": [r.fields for r in rows],
@@ -46,10 +50,12 @@ class DataApplicationService(TransactionalService):
             raise NotFoundError(f"row {row_id} not found in {template_id}")
         await self._repo.delete_by_id(template_id, row_id)
 
-
     @transactional
     async def update_by_id(
-        self, template_id: str, row_id: int, fields: dict,
+        self,
+        template_id: str,
+        row_id: int,
+        fields: dict,
     ) -> dict:
         field_types = await self._repo.field_types(template_id)
         updates = build_updates(field_types, fields)
@@ -63,4 +69,6 @@ class DataApplicationService(TransactionalService):
             updates["monthly_data"] = {**existing, **updates["monthly_data"]}
         await self._repo.update_by_id(template_id, row_id, updates)
         updated = await self._repo.get_by_id(template_id, row_id)
+        if updated is None:
+            raise NotFoundError(f"row {row_id} not found in {template_id}")
         return updated.fields

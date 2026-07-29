@@ -2,7 +2,7 @@
 
 ## Local setup
 
-1. Create and activate a Python 3.14 virtual environment.
+1. Create and activate a Python 3.11 or newer virtual environment.
 2. Install dependencies with `pip install -r requirements.txt`.
 3. Copy `config/local.example.yaml` to `config/local.yaml` and update the MySQL settings.
 4. Start the service with `python main.py`.
@@ -19,6 +19,8 @@ Run tests with `python -m pytest -q`.
 - `APP_ENV` selects which `config/{env}.yaml` file is loaded (default
   `local`). `APP_CONFIG_DIR` overrides the config directory location when it
   does not live at the project root.
+- `APP_HOST` and `APP_PORT` select the development server bind address and
+  port; they default to `127.0.0.1:8000`.
 - String values support `${ENV_VAR}` interpolation (e.g.
   `password: ${DB_PASSWORD}`), expanded at load time; unset variables expand
   to an empty string so missing secrets fail validation instead of silently
@@ -30,8 +32,8 @@ Run tests with `python -m pytest -q`.
 
 The seeded `admin` account takes its initial password from
 `admin.default_password` in the active config file (which may itself be
-`${ADMIN_PASSWORD}`). In `local`, leaving it empty falls back to `admin123`
-with a warning log; any other environment refuses to start without it.
+`${ADMIN_PASSWORD}`). It is required in every environment; startup fails
+instead of using a built-in password when it is missing.
 
 ## Database migrations
 

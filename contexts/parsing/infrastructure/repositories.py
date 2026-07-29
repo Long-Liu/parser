@@ -36,11 +36,7 @@ def _sheet_to_log_values(sheet: SheetResult, batch_id: int) -> dict:
         "batch_id": batch_id,
         "sheet_name": sheet.sheet_name,
         "template_id": str(sheet.template_id) if sheet.template_id else None,
-        "action": (
-            "matched"
-            if sheet.match_status == MatchStatus.MATCHED
-            else sheet.match_status.value
-        ),
+        "action": ("matched" if sheet.match_status == MatchStatus.MATCHED else sheet.match_status.value),
         "total_rows": sheet.total_rows,
         "success_rows": sheet.success_rows,
         "error_rows": sheet.error_rows,
@@ -85,14 +81,14 @@ class TortoiseParseJobRepository(ParseJobRepository):
             job.id = JobId(batch.id)
             return
 
-        batch = await OrmBatch.get_or_none(id=job.id.value)
-        if batch is None:
-            batch = OrmBatch(id=job.id.value, **batch_values)
-            await batch.save(force_create=True)
+        existing = await OrmBatch.get_or_none(id=job.id.value)
+        if existing is None:
+            created_batch = OrmBatch(id=job.id.value, **batch_values)
+            await created_batch.save(force_create=True)
         else:
             for key, value in batch_values.items():
-                setattr(batch, key, value)
-            await batch.save(update_fields=list(batch_values.keys()))
+                setattr(existing, key, value)
+            await existing.save(update_fields=list(batch_values.keys()))
             await OrmLog.filter(batch_id=job.id.value).delete()
 
         batch_id = job.id.value
@@ -107,12 +103,8 @@ class TortoiseParseJobRepository(ParseJobRepository):
         logs = await OrmLog.filter(batch_id=job_id.value)
         return _orm_to_job(batch, list(logs))
 
-    async def find_by_project(
-        self, project_id: ProjectId, limit: int = 20, offset: int = 0
-    ) -> list[ParseJob]:
-        batches = await OrmBatch.filter(project_id=project_id.value).order_by(
-            "-id"
-        ).limit(limit).offset(offset)
+    async def find_by_project(self, project_id: ProjectId, limit: int = 20, offset: int = 0) -> list[ParseJob]:
+        batches = await OrmBatch.filter(project_id=project_id.value).order_by("-id").limit(limit).offset(offset)
         return await self._jobs_with_logs(batches)
 
     async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]:
@@ -136,9 +128,11 @@ class TortoiseParseJobRepository(ParseJobRepository):
             query = query.filter(project_id=project_id.value)
         return await query.count()
 
+
 class TortoiseUploadPreviewRepository(UploadPreviewRepository):
     async def save(self, batch_id: int, payload: list[dict], summary: list[dict]) -> None:
         from tortoise.exceptions import IntegrityError
+
         existing = await UploadPreview.get_or_none(batch_id=batch_id)
         if existing:
             existing.payload = payload
@@ -169,13 +163,14 @@ class TortoiseUploadPreviewRepository(UploadPreviewRepository):
 
     async def cleanup_expired(self, max_age_hours: int = 24) -> int:
         cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
-        expired_ids = list(await UploadPreview.filter(
-            status="pending", created_at__lt=cutoff,
-        ).values_list("batch_id", flat=True))
+        expired_ids = list(
+            await UploadPreview.filter(
+                status="pending",
+                created_at__lt=cutoff,
+            ).values_list("batch_id", flat=True)
+        )
         if not expired_ids:
             return 0
         await UploadPreview.filter(batch_id__in=expired_ids).delete()
-        await OrmBatch.filter(id__in=expired_ids, status="preview").update(
-            status="cancelled"
-        )
+        await OrmBatch.filter(id__in=expired_ids, status="preview").update(status="cancelled")
         return len(expired_ids)

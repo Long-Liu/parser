@@ -31,7 +31,8 @@ def test_component_overrides_are_applied_to_all_transactional_services():
 
     transactions = NoopTransactionManager()
     components = build_container(
-        Settings(), ComponentOverrides(transaction_manager=transactions),
+        Settings(),
+        ComponentOverrides(transaction_manager=transactions),
     )
 
     assert components.auth_service.transaction_manager is transactions

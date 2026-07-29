@@ -7,9 +7,7 @@ class HeaderFlattener:
     def flatten(self, grid: list[list], header_rows: list[int]) -> list[str]:
         if not grid or not header_rows:
             return []
-        max_cols = max(
-            (len(grid[r]) for r in header_rows if r < len(grid)), default=0
-        )
+        max_cols = max((len(grid[r]) for r in header_rows if r < len(grid)), default=0)
         names = []
         for col in range(max_cols):
             parts = []

@@ -9,6 +9,7 @@ from contexts.shared.domain.exceptions import ValidationError
 @dataclass(frozen=True)
 class _IntId(ValueObject):
     """Base for integer identifiers — validates positive, provides str()."""
+
     value: int
 
     def __post_init__(self) -> None:
@@ -23,11 +24,14 @@ class _IntId(ValueObject):
 class UserId(_IntId):
     pass
 
+
 class ProjectId(_IntId):
     pass
 
+
 class JobId(_IntId):
     pass
+
 
 class RoleId(_IntId):
     pass

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from contexts.analytics.domain.ports import AIAnalysisPort
@@ -27,14 +28,21 @@ class HttpAIAnalysisProvider(AIAnalysisPort):
 
     @staticmethod
     def _request(url: str, api_key: str, payload: dict) -> dict:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("AI analysis provider URL must use HTTP or HTTPS")
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         request = Request(
-            url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers=headers, method="POST",
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
         )
-        with urlopen(request, timeout=30) as response:
+        # The URL is restricted to HTTP(S) above; Bandit's generic B310 warning
+        # cannot infer that validation.
+        with urlopen(request, timeout=30) as response:  # nosec B310
             result = json.loads(response.read().decode("utf-8"))
         if not isinstance(result, dict):
             raise ValueError("AI analysis provider must return a JSON object")

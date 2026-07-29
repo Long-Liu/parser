@@ -10,14 +10,11 @@ logger = logging.getLogger("parser.data_writer")
 
 
 class TortoiseParsedDataSink(ParsedDataSink):
-    async def insert_data_rows(
-        self, template_id: str, batch_id: int, rows: list[ParsedRow]
-    ) -> None:
+    async def insert_data_rows(self, template_id: str, batch_id: int, rows: list[ParsedRow]) -> None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
             raise RuntimeError(
-                f"No data table model for template_id={template_id!r}; "
-                f"refusing to drop {len(rows)} parsed rows"
+                f"No data table model for template_id={template_id!r}; refusing to drop {len(rows)} parsed rows"
             )
 
         data = []

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # Tortoise ORM lifecycle.
 import logging
+from typing import Any, cast
 
 from tortoise import Tortoise, connections
 
@@ -55,7 +56,12 @@ async def init(config: Settings) -> None:
     if _initialized:
         await close()
 
-    await Tortoise.init(config=tortoise_config(config), _enable_global_fallback=True)
+    # Tortoise accepts this runtime compatibility flag, but omits the private
+    # keyword from its public type signature.
+    await cast(Any, Tortoise).init(
+        config=tortoise_config(config),
+        _enable_global_fallback=True,
+    )
     _initialized = True
 
 

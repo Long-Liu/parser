@@ -40,9 +40,7 @@ class FakeRepo(ParseJobRepository):
     async def find_by_id(self, job_id: JobId) -> ParseJob | None:
         return self.jobs[-1] if self.jobs else None
 
-    async def find_by_project(
-        self, project_id: ProjectId, limit: int = 20, offset: int = 0
-    ) -> list[ParseJob]:
+    async def find_by_project(self, project_id: ProjectId, limit: int = 20, offset: int = 0) -> list[ParseJob]:
         return []
 
     async def list_recent(self, limit: int = 100, offset: int = 0) -> list[ParseJob]:
@@ -70,11 +68,7 @@ class FakeTemplateCatalog(TemplateCatalog):
                     empty_row_count=1,
                 )
             ],
-            fixed_columns=[
-                ColumnMapping(
-                    db_field="amount", match_headers=["Amount"], db_type="decimal"
-                )
-            ],
+            fixed_columns=[ColumnMapping(db_field="amount", match_headers=["Amount"], db_type="decimal")],
         )
 
 
@@ -140,8 +134,9 @@ class FakeProjectRepo(ProjectRepository):
     async def find_by_code(self, code: str) -> Project | None:
         return None
 
-    async def list_all(self, *, keyword: str = "", status: str = "",
-                       offset: int = 0, limit: int = 20) -> tuple[list[Project], int]:
+    async def list_all(
+        self, *, keyword: str = "", status: str = "", offset: int = 0, limit: int = 20
+    ) -> tuple[list[Project], int]:
         return [], 0
 
 
@@ -224,21 +219,29 @@ async def test_upload_preview_does_not_write_until_confirmed(monkeypatch):
     preview_repo = FakePreviewRepo()
     sink = FakeSink()
     service = UploadApplicationService(
-        repo=repo, template_repo=FakeTemplateCatalog(), data_sink=sink,
-        event_publisher=FakePublisher(), file_storage=FakeStorage(),
-        workbook_reader=FakeWorkbookReader(), project_repo=FakeProjectRepo(),
+        repo=repo,
+        template_repo=FakeTemplateCatalog(),
+        data_sink=sink,
+        event_publisher=FakePublisher(),
+        file_storage=FakeStorage(),
+        workbook_reader=FakeWorkbookReader(),
+        project_repo=FakeProjectRepo(),
         preview_repo=preview_repo,
     )
     preview = await service.preview(
-        UploadedFile(name="cost.xlsx", body=b"xlsx"), ProjectId(1),
-        YearMonth.parse("2026-07"), UserId(1),
+        UploadedFile(name="cost.xlsx", body=b"xlsx"),
+        ProjectId(1),
+        YearMonth.parse("2026-07"),
+        UserId(1),
     )
     assert preview["status"] == "preview"
     assert preview["sheets"][0]["preview"] == [{"amount": 1}]
     assert sink.rows == []
 
     confirmed = await UploadApplicationService.confirm.__wrapped__(
-        service, preview["batch_id"], UserId(1),
+        service,
+        preview["batch_id"],
+        UserId(1),
     )
     assert confirmed["status"] == "success"
     assert len(sink.rows) == 1

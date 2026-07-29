@@ -36,8 +36,8 @@ from contexts.analytics.infrastructure.analytics_repository import (
     TortoiseAnalyticsRepository,
 )
 from contexts.analytics.infrastructure.xlsx_export import (
-    build_compare_workbook,
     build_budget_lease_writeoff_workbook,
+    build_compare_workbook,
     build_cost_categories_workbook,
     build_month_comparison_workbook,
     build_profits_workbook,
@@ -84,8 +84,10 @@ _seq = count(1)
 async def make_project(**kwargs) -> Project:
     n = next(_seq)
     defaults = {
-        "code": f"P{n:04d}", "name": f"项目{n}",
-        "contract_price": Decimal("1000"), "progress": Decimal("80"),
+        "code": f"P{n:04d}",
+        "name": f"项目{n}",
+        "contract_price": Decimal("1000"),
+        "progress": Decimal("80"),
         "status": "normal",
     }
     defaults.update(kwargs)
@@ -94,8 +96,11 @@ async def make_project(**kwargs) -> Project:
 
 async def make_batch(project_id: int, ym: str) -> UploadBatch:
     return await UploadBatch.create(
-        batch_no=f"T{next(_seq):06d}", project_id=project_id, ym=ym,
-        file_name="cost.xlsx", status="success",
+        batch_no=f"T{next(_seq):06d}",
+        project_id=project_id,
+        ym=ym,
+        file_name="cost.xlsx",
+        status="success",
     )
 
 
@@ -103,7 +108,8 @@ async def make_settlement(batch_id: int, **indicators) -> None:
     """Create 表11 settlement rows: one vertical row per indicator name."""
     for name, value in indicators.items():
         await DataSettlementOutput.create(
-            batch_id=batch_id, indicator_name=name,
+            batch_id=batch_id,
+            indicator_name=name,
             cumulative_value=Decimal(str(value)),
         )
 
@@ -125,7 +131,7 @@ async def make_profit_with_calibers(batch_id: int) -> None:
             SETTLE_FORECAST_REVENUE: "1050",
             SETTLE_FORECAST_COST: "920",
             SETTLE_FORECAST_PROFIT: "130",
-        }
+        },
     )
 
 
@@ -167,14 +173,18 @@ def test_budget_lease_writeoff_workbook_matches_ui_columns():
         "unwritten_off_total": 45.0,
         "remaining_lease": group,
     }
-    wb = build_budget_lease_writeoff_workbook({
-        "summary": summary,
-        "projects": [{
-            "project_name": "资阳项目",
-            "ym": "2026-03",
-            **summary,
-        }],
-    })
+    wb = build_budget_lease_writeoff_workbook(
+        {
+            "summary": summary,
+            "projects": [
+                {
+                    "project_name": "资阳项目",
+                    "ym": "2026-03",
+                    **summary,
+                }
+            ],
+        }
+    )
     ws = wb.active
     assert ws.title == "预算租借核销"
     assert ws.cell(1, 5).value == "累计租借-机械设备租赁"
@@ -190,8 +200,11 @@ async def test_profits_workbook_has_four_calibers(db):
     await make_profit_with_calibers(batch.id)
     # 00 动态指标 sheet：指标口径预计完工成本 = 预计完工量含税指标合计 800
     await DataDynamicIndicator.create(
-        batch_id=batch.id, hierarchy_code="1", item_name="安装工程",
-        indicator_with_tax=Decimal("820"), estimated_with_tax=Decimal("800"),
+        batch_id=batch.id,
+        hierarchy_code="1",
+        item_name="安装工程",
+        indicator_with_tax=Decimal("820"),
+        estimated_with_tax=Decimal("800"),
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -201,18 +214,32 @@ async def test_profits_workbook_has_four_calibers(db):
 
     header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
     assert header == [
-        "项目编号", "项目名称", "月份",
-        "投标收入", "投标成本", "投标毛利", "投标毛利率(%)",
-        "指标收入", "指标成本", "指标毛利", "指标毛利率(%)",
-        "当前收入", "当前成本", "当前毛利", "当前毛利率(%)",
-        "预计完工收入", "预计完工成本", "预计完工毛利", "预计完工毛利率(%)",
+        "项目编号",
+        "项目名称",
+        "月份",
+        "投标收入",
+        "投标成本",
+        "投标毛利",
+        "投标毛利率(%)",
+        "指标收入",
+        "指标成本",
+        "指标毛利",
+        "指标毛利率(%)",
+        "当前收入",
+        "当前成本",
+        "当前毛利",
+        "当前毛利率(%)",
+        "预计完工收入",
+        "预计完工成本",
+        "预计完工毛利",
+        "预计完工毛利率(%)",
     ]
     row = [ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)]
     assert row[0] == project.code and row[2] == "2026-03"
-    assert row[3:7] == [0.0, 0.0, 0.0, 0.0]                 # bid: no source -> zeros
-    assert row[7:11] == [1000.0, 800.0, 200.0, 20.0]        # indicator: 合同价 - 含税指标合计
-    assert row[11:15] == [900.0, 810.0, 90.0, 10.0]         # current
-    assert row[15:19] == [1050.0, 920.0, 130.0, 12.38]      # forecast
+    assert row[3:7] == [0.0, 0.0, 0.0, 0.0]  # bid: no source -> zeros
+    assert row[7:11] == [1000.0, 800.0, 200.0, 20.0]  # indicator: 合同价 - 含税指标合计
+    assert row[11:15] == [900.0, 810.0, 90.0, 10.0]  # current
+    assert row[15:19] == [1050.0, 920.0, 130.0, 12.38]  # forecast
 
 
 @pytest.mark.asyncio
@@ -220,21 +247,34 @@ async def test_cost_categories_workbook_has_six_calibers(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
     await DataDynamicIndicator.create(
-        batch_id=batch.id, hierarchy_code="1", item_name="安装工程",
-        indicator_with_tax=Decimal("2230"), estimated_with_tax=Decimal("2183"),
-        adjusted_with_tax=Decimal("2108"), current_budget=Decimal("2032"),
+        batch_id=batch.id,
+        hierarchy_code="1",
+        item_name="安装工程",
+        indicator_with_tax=Decimal("2230"),
+        estimated_with_tax=Decimal("2183"),
+        adjusted_with_tax=Decimal("2108"),
+        current_budget=Decimal("2032"),
         incurred_cost=Decimal("1710"),
     )
 
     repo = TortoiseAnalyticsRepository()
-    result = await repo.cost_categories(
-        [project.id], "2026-03", Pagination(1, 10000, max_size=10000)
-    )
+    result = await repo.cost_categories([project.id], "2026-03", Pagination(1, 10000, max_size=10000))
     ws = build_cost_categories_workbook(result["projects"]).active
 
     header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
-    assert header == ["项目", "月份", "科目", "指标", "实际", "偏差", "偏差率(%)",
-                      "预计完工量含税指标", "调整后指标", "现执行预算", "预计完工成本"]
+    assert header == [
+        "项目",
+        "月份",
+        "科目",
+        "指标",
+        "实际",
+        "偏差",
+        "偏差率(%)",
+        "预计完工量含税指标",
+        "调整后指标",
+        "现执行预算",
+        "预计完工成本",
+    ]
     row = [ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)]
     assert row[2] == "安装工程"
     assert row[7:11] == [2183.0, 2108.0, 2032.0, 2183.0]
@@ -243,8 +283,7 @@ async def test_cost_categories_workbook_has_six_calibers(db):
 @pytest.mark.asyncio
 async def test_month_comparison_workbook_metrics_and_mom(db):
     project = await make_project()
-    for ym, revenue, cost, net in (
-            ("2026-02", "100", "90", "10"), ("2026-03", "150", "120", "30")):
+    for ym, revenue, cost, net in (("2026-02", "100", "90", "10"), ("2026-03", "150", "120", "30")):
         batch = await make_batch(project.id, ym)
         await make_settlement(
             batch.id,
@@ -252,7 +291,7 @@ async def test_month_comparison_workbook_metrics_and_mom(db):
                 SETTLE_CUMULATIVE_OUTPUT: revenue,
                 SETTLE_CUMULATIVE_COST: cost,
                 SETTLE_CURRENT_PROFIT: net,
-            }
+            },
         )
 
     repo = TortoiseAnalyticsRepository()
@@ -273,8 +312,10 @@ async def test_compare_workbook_metrics_scores_and_cost_sheet(db):
     batch_a = await make_batch(alpha.id, "2026-03")
     await make_profit_with_calibers(batch_a.id)
     await DataDynamicIndicator.create(
-        batch_id=batch_a.id, item_name="安装工程",
-        indicator_with_tax=Decimal("100"), incurred_cost=Decimal("90"),
+        batch_id=batch_a.id,
+        item_name="安装工程",
+        indicator_with_tax=Decimal("100"),
+        incurred_cost=Decimal("90"),
     )
     beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
     await make_batch(beta.id, "2026-03")
@@ -288,10 +329,22 @@ async def test_compare_workbook_metrics_scores_and_cost_sheet(db):
     assert header == ["指标", alpha.name, beta.name]
     labels = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
     assert labels == [
-        "进度(%)", "合同价", "结算产值", "营收", "总成本", "毛利",
-        "毛利率(%)", "结算完成率(%)", "营收比率(%)",
-        "盈利能力评分", "成本管控评分", "进度执行评分", "结算质量评分", "营收转化评分",
-        "综合评分", "综合评级",
+        "进度(%)",
+        "合同价",
+        "结算产值",
+        "营收",
+        "总成本",
+        "毛利",
+        "毛利率(%)",
+        "结算完成率(%)",
+        "营收比率(%)",
+        "盈利能力评分",
+        "成本管控评分",
+        "进度执行评分",
+        "结算质量评分",
+        "营收转化评分",
+        "综合评分",
+        "综合评级",
     ]
     grade_row = [ws.cell(row=ws.max_row, column=c).value for c in range(1, 4)]
     assert grade_row[1] in {"A", "B", "C", "D"} and grade_row[2] in {"A", "B", "C", "D"}
@@ -331,15 +384,15 @@ async def test_export_costs_endpoint_chinese_filename(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
     await DataDynamicIndicator.create(
-        batch_id=batch.id, item_name="安装工程",
-        indicator_with_tax=Decimal("100"), incurred_cost=Decimal("90"),
+        batch_id=batch.id,
+        item_name="安装工程",
+        indicator_with_tax=Decimal("100"),
+        incurred_cost=Decimal("90"),
     )
 
     controller = _controller()
     raw = AnalyticsController.export_costs.__wrapped__.__wrapped__
-    response = await raw(controller, _request(
-        args={"ym": "2026-03", "project_ids": str(project.id)}
-    ))
+    response = await raw(controller, _request(args={"ym": "2026-03", "project_ids": str(project.id)}))
 
     disposition = response.headers["Content-Disposition"]
     assert 'filename="cost-categories.xlsx"' in disposition
@@ -359,21 +412,22 @@ async def test_export_month_comparison_endpoint(db):
                 SETTLE_CUMULATIVE_OUTPUT: "100",
                 SETTLE_CUMULATIVE_COST: "90",
                 SETTLE_CURRENT_PROFIT: "10",
-            }
+            },
         )
 
     controller = _controller()
-    raw = (AnalyticsController.export_month_comparison
-           .__wrapped__.__wrapped__.__wrapped__)
-    response = await raw(controller, _request(
-        args={"months": "2026-02,2026-03"}
-    ), project.id)
+    raw = AnalyticsController.export_month_comparison.__wrapped__.__wrapped__.__wrapped__
+    response = await raw(controller, _request(args={"months": "2026-02,2026-03"}), project.id)
 
     disposition = response.headers["Content-Disposition"]
     assert f"filename*=UTF-8''{quote('月度对比_2026-02_2026-03.xlsx')}" in disposition
     ws = load_workbook(io.BytesIO(response.body)).active
     assert [ws.cell(row=1, column=c).value for c in range(1, 6)] == [
-        "指标", "2026-02", "2026-03", "环比变化", "环比变化率(%)",
+        "指标",
+        "2026-02",
+        "2026-03",
+        "环比变化",
+        "环比变化率(%)",
     ]
 
 
@@ -386,9 +440,7 @@ async def test_export_compare_endpoint(db):
 
     controller = _controller()
     raw = AnalyticsController.export_compare.__wrapped__.__wrapped__
-    response = await raw(controller, _request(
-        args={"project_ids": f"{alpha.id},{beta.id}", "ym": "2026-03"}
-    ))
+    response = await raw(controller, _request(args={"project_ids": f"{alpha.id},{beta.id}", "ym": "2026-03"}))
 
     disposition = response.headers["Content-Disposition"]
     assert f"filename*=UTF-8''{quote('多项目对比_2026-03.xlsx')}" in disposition
@@ -422,8 +474,10 @@ async def test_project_profits_report_endpoint_still_works(db):
 
 async def make_notification(user_id, title="通知") -> Notification:
     return await Notification.create(
-        user_id=user_id, notification_type="system",
-        title=title, message="内容",
+        user_id=user_id,
+        notification_type="system",
+        title=title,
+        message="内容",
     )
 
 
@@ -440,11 +494,9 @@ async def test_mark_all_notifications_read_own_and_broadcast(db):
     again = await repo.mark_all_notifications_read(1)
     assert again == 0  # 幂等
 
-    read_ids = set(await NotificationRead.filter(user_id=1).values_list(
-        "notification_id", flat=True))
+    read_ids = set(await NotificationRead.filter(user_id=1).values_list("notification_id", flat=True))
     assert read_ids == {own.id, broadcast.id}
-    assert not await NotificationRead.filter(
-        user_id=1, notification_id=other.id).exists()
+    assert not await NotificationRead.filter(user_id=1, notification_id=other.id).exists()
 
 
 @pytest.mark.asyncio
@@ -526,7 +578,7 @@ async def _seed_compare_projects():
             SETTLE_CUMULATIVE_OUTPUT: "10250",
             SETTLE_CUMULATIVE_COST: "8050",
             SETTLE_CURRENT_PROFIT: "2200",
-        }
+        },
     )
     beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
     batch_b = await make_batch(beta.id, "2026-03")
@@ -536,7 +588,7 @@ async def _seed_compare_projects():
             SETTLE_CUMULATIVE_OUTPUT: "6600",
             SETTLE_CUMULATIVE_COST: "5060",
             SETTLE_CURRENT_PROFIT: "1540",
-        }
+        },
     )
     return alpha, beta
 
@@ -553,11 +605,18 @@ async def test_compare_ai_analysis_fallback_chapters(db):
     assert result["generated_at"]  # 服务端生成时间，非硬编码
     chapters = result["chapters"]
     assert [c["key"] for c in chapters] == [
-        "overview", "progress", "cost", "profit", "rating",
+        "overview",
+        "progress",
+        "cost",
+        "profit",
+        "rating",
     ]
     assert [c["title"] for c in chapters] == [
-        "核心经营总览", "全项目进度对标", "成本专项经营分析",
-        "盈利专项分析", "项目综合评级",
+        "核心经营总览",
+        "全项目进度对标",
+        "成本专项经营分析",
+        "盈利专项分析",
+        "项目综合评级",
     ]
     assert all(c["content"] for c in chapters)
     assert {p["grade"] for p in result["projects"]} == {"A", "B"}
@@ -596,7 +655,11 @@ async def test_compare_ai_analysis_falls_back_when_provider_returns_none(db):
     repo = TortoiseAnalyticsRepository(_FakeProvider(None))
     result = await repo.compare_ai_analysis([alpha.id, beta.id], "2026-03")
     assert [c["key"] for c in result["chapters"]] == [
-        "overview", "progress", "cost", "profit", "rating",
+        "overview",
+        "progress",
+        "cost",
+        "profit",
+        "rating",
     ]
 
 
@@ -619,10 +682,13 @@ async def test_compare_ai_analysis_endpoint_enforces_project_scope(db):
     controller = _controller(access_policy=_DenyAccessPolicy())
     raw = AnalyticsController.compare_ai_analysis.__wrapped__.__wrapped__
     with pytest.raises(AuthorizationError):
-        await raw(controller, _request(
-            body={"project_ids": [1, 2], "ym": "2026-03"},
-            permissions=("data:view",),
-        ))
+        await raw(
+            controller,
+            _request(
+                body={"project_ids": [1, 2], "ym": "2026-03"},
+                permissions=("data:view",),
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -630,13 +696,15 @@ async def test_compare_ai_analysis_endpoint_returns_report(db):
     alpha, beta = await _seed_compare_projects()
     controller = _controller()
     raw = AnalyticsController.compare_ai_analysis.__wrapped__.__wrapped__
-    response = await raw(controller, _request(
-        body={"project_ids": [alpha.id, beta.id], "ym": "2026-03"}
-    ))
+    response = await raw(controller, _request(body={"project_ids": [alpha.id, beta.id], "ym": "2026-03"}))
     payload = jsonlib.loads(response.body)
     assert payload["generated_at"]
     assert [c["key"] for c in payload["chapters"]] == [
-        "overview", "progress", "cost", "profit", "rating",
+        "overview",
+        "progress",
+        "cost",
+        "profit",
+        "rating",
     ]
 
 
@@ -645,12 +713,28 @@ async def test_compare_ai_analysis_endpoint_returns_report(db):
 
 def test_build_compare_report_handles_none_metrics():
     projects = [
-        {"project_name": "甲", "contract": 100.0, "settlement": 0.0,
-         "profit": 0.0, "progress": 0.0, "profit_rate": None,
-         "unit_cost": None, "total_score": 44.0, "grade": "D"},
-        {"project_name": "乙", "contract": 200.0, "settlement": 150.0,
-         "profit": 30.0, "progress": 90.0, "profit_rate": 20.0,
-         "unit_cost": 80.0, "total_score": 85.0, "grade": "A"},
+        {
+            "project_name": "甲",
+            "contract": 100.0,
+            "settlement": 0.0,
+            "profit": 0.0,
+            "progress": 0.0,
+            "profit_rate": None,
+            "unit_cost": None,
+            "total_score": 44.0,
+            "grade": "D",
+        },
+        {
+            "project_name": "乙",
+            "contract": 200.0,
+            "settlement": 150.0,
+            "profit": 30.0,
+            "progress": 90.0,
+            "profit_rate": 20.0,
+            "unit_cost": 80.0,
+            "total_score": 85.0,
+            "grade": "A",
+        },
     ]
     chapters = build_compare_report(projects, None)
     assert len(chapters) == 5

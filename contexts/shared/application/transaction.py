@@ -18,9 +18,7 @@ class NoopTransactionManager(TransactionManager):
         yield
 
 
-_after_commit: ContextVar[list[Callable[[], Awaitable[None]]] | None] = ContextVar(
-    "after_commit", default=None
-)
+_after_commit: ContextVar[list[Callable[[], Awaitable[None]]] | None] = ContextVar("after_commit", default=None)
 
 
 class TransactionalService:
@@ -44,6 +42,7 @@ def defer_after_commit(callback: Callable[[], Awaitable[None]]) -> bool:
 
 def transactional(function: Callable):
     """Application transaction boundary independent of the selected ORM."""
+
     @wraps(function)
     async def wrapped(*args, **kwargs):
         if not args or not isinstance(args[0], TransactionalService):
@@ -61,4 +60,5 @@ def transactional(function: Callable):
         for callback in callbacks:
             await callback()
         return result
+
     return wrapped

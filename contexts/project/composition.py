@@ -25,8 +25,14 @@ def build_project_service(
         from contexts.project.infrastructure.repositories import (
             TortoiseProjectMetrics,
         )
+
         metrics = TortoiseProjectMetrics()
     return ProjectApplicationService(
-        repository, cleanup, users, notifications, events, transactions,
+        repository,
+        cleanup,
+        users,
+        notifications,
+        events,
+        transactions,
         metrics=metrics,
     )

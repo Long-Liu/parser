@@ -79,7 +79,8 @@ def register(
 
         app.ctx.alert_outbox_retry_task = asyncio.create_task(_retry_loop())
         logger.info(
-            "alert outbox retry scheduled every %ds", OUTBOX_RETRY_INTERVAL_SECONDS,
+            "alert outbox retry scheduled every %ds",
+            OUTBOX_RETRY_INTERVAL_SECONDS,
         )
 
     @app.listener("after_server_stop")

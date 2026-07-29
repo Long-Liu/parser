@@ -18,9 +18,7 @@ class Password(ValueObject):
 
     def __post_init__(self) -> None:
         if len(self.value) < MIN_PASSWORD_LENGTH:
-            raise ValidationError(
-                f"password must contain at least {MIN_PASSWORD_LENGTH} characters"
-            )
+            raise ValidationError(f"password must contain at least {MIN_PASSWORD_LENGTH} characters")
 
     def __str__(self) -> str:
         return self.value

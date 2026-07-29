@@ -20,7 +20,11 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def list_all(
-        self, *, keyword: str = "", offset: int = 0, limit: int = 20,
+        self,
+        *,
+        keyword: str = "",
+        offset: int = 0,
+        limit: int = 20,
     ) -> tuple[list[User], int]: ...
 
     @abstractmethod
@@ -35,8 +39,10 @@ class UserRepository(ABC):
     async def delete(self, user_id: UserId) -> None:
         raise NotImplementedError
 
-    async def set_project_permissions(self, user_id: UserId,
-                                      permissions: list[dict]) -> None:
+    async def set_project_permissions(self, user_id: UserId, permissions: list[dict]) -> None:
+        raise NotImplementedError
+
+    async def set_system_role(self, user_id: UserId, role_code: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -82,5 +88,4 @@ class TokenRevocationRepository(ABC):
     async def revoke_all_for_user(self, *, user_id: UserId, expires_at: datetime) -> None: ...
 
     @abstractmethod
-    async def is_revoked(self, *, jti: str | None, user_id: UserId,
-                         issued_at: float | None) -> bool: ...
+    async def is_revoked(self, *, jti: str | None, user_id: UserId, issued_at: float | None) -> bool: ...

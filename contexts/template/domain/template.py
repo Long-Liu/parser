@@ -47,6 +47,7 @@ class ColumnMapping(ValueObject):
     db_field: str
     match_headers: list[str]
     db_type: str = "varchar(255)"
+    occurrence: int = 1
 
 
 @dataclass(frozen=True)
@@ -57,13 +58,19 @@ class DynamicColumnMapping(ValueObject):
 
 
 class Template(AggregateRoot[TemplateId]):
-    def __init__(self, template_id: TemplateId, description: str = "",
-                 sheet_pattern: str = "", header_spec: HeaderSpec | None = None,
-                 hierarchy_config: HierarchyConfig | None = None,
-                 stop_rules: list[StopRule] | None = None,
-                 fixed_columns: list[ColumnMapping] | None = None,
-                 dynamic_columns: list[DynamicColumnMapping] | None = None,
-                 data_table: str = "", is_active: bool = True) -> None:
+    def __init__(
+        self,
+        template_id: TemplateId,
+        description: str = "",
+        sheet_pattern: str = "",
+        header_spec: HeaderSpec | None = None,
+        hierarchy_config: HierarchyConfig | None = None,
+        stop_rules: list[StopRule] | None = None,
+        fixed_columns: list[ColumnMapping] | None = None,
+        dynamic_columns: list[DynamicColumnMapping] | None = None,
+        data_table: str = "",
+        is_active: bool = True,
+    ) -> None:
         super().__init__()
         self.id = template_id
         self.description = description
@@ -85,9 +92,13 @@ class Template(AggregateRoot[TemplateId]):
     def matches_sheet(self, sheet_name: str) -> bool:
         return bool(self.sheet_pattern and fnmatch.fnmatch(sheet_name, self.sheet_pattern))
 
-    def find_column(self, flat_header: str) -> ColumnMapping | None:
+    def find_column(
+        self,
+        flat_header: str,
+        occurrence: int = 1,
+    ) -> ColumnMapping | None:
         for col in self.fixed_columns:
-            if all(kw in flat_header for kw in col.match_headers):
+            if col.occurrence == occurrence and all(kw in flat_header for kw in col.match_headers):
                 return col
         return None
 

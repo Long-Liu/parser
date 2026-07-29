@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 
@@ -8,17 +10,17 @@ from contexts.auth.domain.repositories import RoleRepository, UserRepository
 from contexts.auth.domain.role import PermissionRef, Role
 from contexts.auth.domain.user import RoleRef, User
 from contexts.auth.infrastructure.tables import (
-        Permission as OrmPermission,
+    Permission as OrmPermission,
 )
 from contexts.auth.infrastructure.tables import (
-        Role as OrmRole,
+    Role as OrmRole,
 )
 from contexts.auth.infrastructure.tables import (
-        RolePermission,
-        UserRole,
+    RolePermission,
+    UserRole,
 )
 from contexts.auth.infrastructure.tables import (
-        User as OrmUser,
+    User as OrmUser,
 )
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.project.infrastructure.tables import ProjectUser
@@ -27,7 +29,7 @@ from contexts.shared.domain.identifiers import RoleId, UserId
 
 
 def _user_to_entity(orm: OrmUser, roles: list[dict]) -> User:
-        return User(
+    return User(
         user_id=UserId(orm.id),
         username=orm.username,
         password_hash=orm.password,
@@ -44,14 +46,12 @@ async def _load_roles(user_id: int) -> list[dict]:
     role_ids = await UserRole.filter(user_id=user_id).values_list("role_id", flat=True)
     if not role_ids:
         return []
-    return list(
-        await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name")
-    )
+    return list(await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name"))
 
 
 class TortoiseUserRepository(UserRepository):
     async def save(self, user: User) -> None:
-        values = {
+        values: dict[str, Any] = {
             "username": user.username,
             "password": user.password_hash,
             "real_name": user.real_name,
@@ -61,7 +61,7 @@ class TortoiseUserRepository(UserRepository):
             "is_active": user.is_active,
         }
         if user.id is None:
-            orm = await OrmUser.create(**values)
+            orm = await OrmUser.create(**values)  # type: ignore[arg-type]
             user.id = UserId(orm.id)
             return
 
@@ -87,13 +87,15 @@ class TortoiseUserRepository(UserRepository):
         return _user_to_entity(orm, await _load_roles(orm.id))
 
     async def list_all(
-        self, *, keyword: str = "", offset: int = 0, limit: int = 20,
+        self,
+        *,
+        keyword: str = "",
+        offset: int = 0,
+        limit: int = 20,
     ) -> tuple[list[User], int]:
         query = OrmUser.all()
         if keyword:
-            query = query.filter(
-                Q(real_name__icontains=keyword) | Q(email__icontains=keyword)
-            )
+            query = query.filter(Q(real_name__icontains=keyword) | Q(email__icontains=keyword))
 
         total = await query.count()
         users = []
@@ -102,44 +104,41 @@ class TortoiseUserRepository(UserRepository):
         return users, total
 
     async def list_projects(self, user_id: UserId) -> list[dict]:
-        links = await ProjectUser.filter(user_id=user_id.value).values(
-            "project_id", "is_primary", "role"
-        )
+        links = await ProjectUser.filter(user_id=user_id.value).values("project_id", "is_primary", "role")
         if not links:
             return []
         projects = {
-            p.id: p for p in await OrmProject.filter(
-                id__in=[link["project_id"] for link in links]
-            ).values("id", "code", "name")
+            p["id"]: p
+            for p in await OrmProject.filter(id__in=[link["project_id"] for link in links]).values(
+                "id",
+                "code",
+                "name",
+            )
         }
         return [
-            {**projects[link["project_id"]], "is_primary": bool(link["is_primary"]),
-             "role": link["role"]}
-            for link in links if link["project_id"] in projects
+            {**projects[link["project_id"]], "is_primary": bool(link["is_primary"]), "role": link["role"]}
+            for link in links
+            if link["project_id"] in projects
         ]
 
     async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict]]:
         ids = [item.value for item in user_ids]
-        result = {user_id: [] for user_id in ids}
+        result: dict[int, list[dict]] = {user_id: [] for user_id in ids}
         if not ids:
             return result
-        links = await ProjectUser.filter(user_id__in=ids).values(
-            "user_id", "project_id", "is_primary", "role"
-        )
+        links = await ProjectUser.filter(user_id__in=ids).values("user_id", "project_id", "is_primary", "role")
         project_ids = {link["project_id"] for link in links}
-        projects = {
-            row["id"]: row for row in await OrmProject.filter(id__in=project_ids).values(
-                "id", "code", "name"
-            )
-        }
+        projects = {row["id"]: row for row in await OrmProject.filter(id__in=project_ids).values("id", "code", "name")}
         for link in links:
             project = projects.get(link["project_id"])
             if project:
-                result[int(link["user_id"])].append({
-                    **project,
-                    "is_primary": bool(link["is_primary"]),
-                    "role": link["role"],
-                })
+                result[int(link["user_id"])].append(
+                    {
+                        **project,
+                        "is_primary": bool(link["is_primary"]),
+                        "role": link["role"],
+                    }
+                )
         return result
 
     async def delete(self, user_id: UserId) -> None:
@@ -147,8 +146,7 @@ class TortoiseUserRepository(UserRepository):
         await UserRole.filter(user_id=user_id.value).delete()
         await OrmUser.filter(id=user_id.value).delete()
 
-    async def set_project_permissions(self, user_id: UserId,
-                                      permissions: list[dict]) -> None:
+    async def set_project_permissions(self, user_id: UserId, permissions: list[dict]) -> None:
         # Deduplicate by project_id — last entry wins. Validate types early.
         deduped: dict[int, str] = {}
         try:
@@ -158,9 +156,7 @@ class TortoiseUserRepository(UserRepository):
             raise ValidationError("each permission requires a valid numeric project_id") from None
         existing_ids = set()
         if deduped:
-            existing_ids = {row["id"] for row in await OrmProject.filter(
-                id__in=list(deduped.keys())
-            ).values("id")}
+            existing_ids = {row["id"] for row in await OrmProject.filter(id__in=list(deduped.keys())).values("id")}
         missing = set(deduped.keys()) - existing_ids
         if missing:
             raise ValidationError(f"unknown project ids: {sorted(missing)}")
@@ -175,32 +171,48 @@ class TortoiseUserRepository(UserRepository):
                 is_primary=role == "manager",
             )
 
+    async def set_system_role(self, user_id: UserId, role_code: str) -> None:
+        if role_code not in {"admin", "viewer"}:
+            raise ValidationError(f"unknown system role: {role_code}")
+        role = await OrmRole.get_or_none(code=role_code)
+        if role is None:
+            raise ValidationError(f"unknown system role: {role_code}")
+        if role_code == "admin":
+            await _ensure_user_role(user_id.value, role.id)
+            return
+
+        admin = await OrmRole.get_or_none(code="admin")
+        if admin is not None:
+            await UserRole.filter(
+                user_id=user_id.value,
+                role_id=admin.id,
+            ).delete()
+        if not await UserRole.filter(user_id=user_id.value).exists():
+            await _ensure_user_role(user_id.value, role.id)
+
     async def get_permissions(self, user_id: UserId) -> set[str]:
-        role_ids = await UserRole.filter(user_id=user_id.value).values_list(
-            "role_id", flat=True
-        )
+        role_ids = await UserRole.filter(user_id=user_id.value).values_list("role_id", flat=True)
         if not role_ids:
             return set()
-        permission_ids = await RolePermission.filter(
-            role_id__in=list(role_ids)
-        ).values_list("permission_id", flat=True)
+        permission_ids = await RolePermission.filter(role_id__in=list(role_ids)).values_list("permission_id", flat=True)
         if not permission_ids:
             return set()
         codes = await OrmPermission.filter(id__in=list(permission_ids)).values_list(
-            "code", flat=True
+            "code",
+            flat=True,
         )
-        return set(codes)
+        return {str(code) for code in codes}
 
 
 class TortoiseRoleRepository(RoleRepository):
     async def save(self, role: Role) -> None:
-        values = {
+        values: dict[str, Any] = {
             "code": role.code,
             "name": role.name,
             "description": role.description,
         }
         if role.id is None:
-            orm = await OrmRole.create(**values)
+            orm = await OrmRole.create(**values)  # type: ignore[arg-type]
             role.id = RoleId(orm.id)
         else:
             rid = role.id.value
@@ -241,9 +253,7 @@ class TortoiseRoleRepository(RoleRepository):
                     code=orm.code,
                     name=Name(orm.name),
                     description=orm.description or "",
-                    permissions=[
-                        PermissionRef(code=p.code, name=p.name) for p in perms
-                    ],
+                    permissions=[PermissionRef(code=p.code, name=p.name) for p in perms],
                 )
             )
         return roles
@@ -257,9 +267,7 @@ class TortoiseRoleRepository(RoleRepository):
         await _ensure_user_role(user_id.value, role_id.value)
 
     async def remove_from_user(self, user_id: UserId, role_id: RoleId) -> None:
-        await UserRole.filter(
-            user_id=user_id.value, role_id=role_id.value
-        ).delete()
+        await UserRole.filter(user_id=user_id.value, role_id=role_id.value).delete()
 
 
 async def _ensure_permission(code: str, name: str) -> int:
@@ -274,9 +282,7 @@ async def _ensure_permission(code: str, name: str) -> int:
 
 
 async def _ensure_role_permission(role_id: int, permission_id: int) -> None:
-    if await RolePermission.get_or_none(
-        role_id=role_id, permission_id=permission_id
-    ):
+    if await RolePermission.get_or_none(role_id=role_id, permission_id=permission_id):
         return
     try:
         await RolePermission.create(role_id=role_id, permission_id=permission_id)
@@ -294,9 +300,7 @@ async def _ensure_user_role(user_id: int, role_id: int) -> None:
 
 
 async def _load_permissions(role_id: int) -> list[OrmPermission]:
-    permission_ids = await RolePermission.filter(role_id=role_id).values_list(
-        "permission_id", flat=True
-    )
+    permission_ids = await RolePermission.filter(role_id=role_id).values_list("permission_id", flat=True)
     if not permission_ids:
         return []
     return list(await OrmPermission.filter(id__in=list(permission_ids)))

@@ -33,10 +33,10 @@ class UploadsController(BaseController):
         self.svc = upload_svc
 
     def setup(self):
-        self.bp.add_route(self.upload,           "/upload",                        methods=["POST"])
-        self.bp.add_route(self.preview,          "/upload/preview",                methods=["POST"])
-        self.bp.add_route(self.confirm,          "/upload/<batch_id:int>/confirm", methods=["POST"])
-        self.bp.add_route(self.cancel,           "/upload/<batch_id:int>/preview", methods=["DELETE"])
+        self.bp.add_route(self.upload, "/upload", methods=["POST"])
+        self.bp.add_route(self.preview, "/upload/preview", methods=["POST"])
+        self.bp.add_route(self.confirm, "/upload/<batch_id:int>/confirm", methods=["POST"])
+        self.bp.add_route(self.cancel, "/upload/<batch_id:int>/preview", methods=["DELETE"])
 
     @require_auth
     @require_permission("data:upload")
@@ -71,9 +71,10 @@ class UploadsController(BaseController):
             return self.json({"error": "not authenticated"}, status=401)
 
         result = await self.svc.process(
-            UploadedFile(name=file.name, body=file.body,
-                         content_type=getattr(file, "type", "")),
-            project_id, ym, UserId(user_id_raw),
+            UploadedFile(name=file.name, body=file.body, content_type=getattr(file, "type", "")),
+            project_id,
+            ym,
+            UserId(user_id_raw),
         )
         if result["status"] == "failed":
             return self.json(dict(result, error="upload processing failed"), status=500)
@@ -95,7 +96,9 @@ class UploadsController(BaseController):
         ym = YearMonth.parse(request.form.get("ym", ""))
         result = await self.svc.preview(
             UploadedFile(file.name, file.body, getattr(file, "type", "")),
-            project_id, ym, UserId(request.ctx.user_id),
+            project_id,
+            ym,
+            UserId(request.ctx.user_id),
         )
         return self.json(result)
 

@@ -53,12 +53,13 @@ class UserDirectory(ABC):
         # existing fakes and integrations remain source-compatible.
         return {}
 
+    async def user_id_by_real_name(self, real_name: str) -> int | None:
+        return None
+
 
 class ProjectNotificationPort(ABC):
     @abstractmethod
-    async def publish_warning(
-        self, project_id: ProjectId, project_name: str
-    ) -> None: ...
+    async def publish_warning(self, project_id: ProjectId, project_name: str) -> None: ...
 
 
 class ProjectMetricsPort(ABC):

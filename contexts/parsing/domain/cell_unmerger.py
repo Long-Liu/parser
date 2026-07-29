@@ -15,9 +15,7 @@ class MergedCellRange:
 class CellUnmerger:
     """Fill merged-cell regions so every cell carries the merged value."""
 
-    def unmerge(
-        self, grid: list[list], merged_ranges: list[MergedCellRange]
-    ) -> list[list]:
+    def unmerge(self, grid: list[list], merged_ranges: list[MergedCellRange]) -> list[list]:
         # ponytail: deepcopy avoids mutating caller's grid; acceptable for typical worksheet sizes
         result = deepcopy(grid)
         for merged_range in merged_ranges:
@@ -25,11 +23,7 @@ class CellUnmerger:
             max_col = merged_range.max_col
             min_row = merged_range.min_row
             max_row = merged_range.max_row
-            value = (
-                result[min_row][min_col]
-                if min_row < len(result) and min_col < len(result[min_row])
-                else None
-            )
+            value = result[min_row][min_col] if min_row < len(result) and min_col < len(result[min_row]) else None
             for r in range(min_row, min(max_row + 1, len(result))):
                 row_len = len(result[r]) if r < len(result) else 0
                 for c in range(min_col, min(max_col + 1, row_len)):

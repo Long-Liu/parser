@@ -30,8 +30,12 @@ class Migration(migrations.Migration):
                 ("completed_at", fields.DateField(null=True)),
                 ("created_at", fields.DatetimeField(auto_now_add=True)),
             ],
-            options={"table": "project_milestones", "app": "models",
-                     "indexes": [Index(fields=["project_id", "ym"])], "pk_attr": "id"},
+            options={
+                "table": "project_milestones",
+                "app": "models",
+                "indexes": [Index(fields=["project_id", "ym"])],
+                "pk_attr": "id",
+            },
             bases=["Model"],
         ),
         ops.CreateModel(
@@ -46,8 +50,12 @@ class Migration(migrations.Migration):
                 ("is_read", fields.BooleanField(default=False)),
                 ("created_at", fields.DatetimeField(auto_now_add=True)),
             ],
-            options={"table": "notifications", "app": "models",
-                     "indexes": [Index(fields=["user_id", "is_read"])], "pk_attr": "id"},
+            options={
+                "table": "notifications",
+                "app": "models",
+                "indexes": [Index(fields=["user_id", "is_read"])],
+                "pk_attr": "id",
+            },
             bases=["Model"],
         ),
         ops.AddField("Project", "project_type", fields.CharField(max_length=100, null=True)),
@@ -63,16 +71,25 @@ class Migration(migrations.Migration):
         ops.AddField("Project", "updated_at", fields.DatetimeField(auto_now=True, null=True)),
         ops.AddField("ProjectUser", "role", fields.CharField(max_length=20, default="viewer")),
         *[
-            ops.AddField("DataGrossProfit", name,
-                         fields.DecimalField(max_digits=15, decimal_places=decimals, null=True))
+            ops.AddField(
+                "DataGrossProfit", name, fields.DecimalField(max_digits=15, decimal_places=decimals, null=True)
+            )
             for name, decimals in [
-                ("bid_revenue", 2), ("bid_cost", 2), ("bid_profit", 2),
-                ("bid_profit_rate", 10), ("indicator_revenue", 2),
-                ("indicator_cost", 2), ("indicator_profit", 2),
-                ("indicator_profit_rate", 10), ("actual_revenue", 2),
-                ("actual_cost", 2), ("actual_profit", 2),
-                ("actual_profit_rate", 10), ("forecast_revenue", 2),
-                ("forecast_cost", 2), ("forecast_profit", 2),
+                ("bid_revenue", 2),
+                ("bid_cost", 2),
+                ("bid_profit", 2),
+                ("bid_profit_rate", 10),
+                ("indicator_revenue", 2),
+                ("indicator_cost", 2),
+                ("indicator_profit", 2),
+                ("indicator_profit_rate", 10),
+                ("actual_revenue", 2),
+                ("actual_cost", 2),
+                ("actual_profit", 2),
+                ("actual_profit_rate", 10),
+                ("forecast_revenue", 2),
+                ("forecast_cost", 2),
+                ("forecast_profit", 2),
                 ("forecast_profit_rate", 10),
             ]
         ],

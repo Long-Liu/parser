@@ -63,8 +63,11 @@ EXPECTED_NEW_ROW_COUNTS = {
 # Sheets that existed in the old workbook but lost their templates with the
 # format change; they must now be skipped instead of parsed.
 RETIRED_TEMPLATES = (
-    "gross_profit", "labor_cost_summary", "concrete_ledger",
-    "rebar_ledger", "installation_material",
+    "gross_profit",
+    "labor_cost_summary",
+    "concrete_ledger",
+    "rebar_ledger",
+    "installation_material",
 )
 
 
@@ -101,20 +104,40 @@ async def test_new_workbook_all_expected_sheets_extract():
 
 
 @pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
+async def test_dynamic_indicator_extracts_all_ui_detail_columns():
+    results = await _run_pipeline(NEW_WORKBOOK)
+    rows, errors = results["dynamic_indicator"]
+    assert not errors
+    first = rows[0].fields
+    for field in (
+        "display_level",
+        "linked_sheet",
+        "adjusted_tax_rate",
+        "adjusted_tax",
+        "adjustment",
+        "current_budget",
+        "incurred_cost",
+        "forecast_ex_tax",
+        "forecast_tax_rate",
+        "forecast_tax",
+        "forecast_with_tax",
+        "forecast_remark",
+    ):
+        assert field in first, field
+    assert first["display_level"] == "一级显示"
+    assert first["forecast_with_tax"] is not None
+
+
+@pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
 async def test_new_workbook_budget_and_settlement_sheets_exact_rows():
     results = await _run_pipeline(NEW_WORKBOOK)
     for template_id, expected in EXPECTED_NEW_ROW_COUNTS.items():
         valid, errors = results[template_id]
         assert not errors, f"{template_id}: validation errors: {errors[:3]}"
-        assert len(valid) == expected, (
-            f"{template_id}: {len(valid)} rows, expected {expected}"
-        )
+        assert len(valid) == expected, f"{template_id}: {len(valid)} rows, expected {expected}"
     # the 项目成本合计 grand-total row must be cut by the stop rule
     summary_rows, _ = results["budget_adjustment_summary"]
-    assert all(
-        not str(r.fields.get("item_name") or "").startswith("项目成本合计")
-        for r in summary_rows
-    )
+    assert all(not str(r.fields.get("item_name") or "").startswith("项目成本合计") for r in summary_rows)
 
 
 @pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
@@ -127,10 +150,7 @@ async def test_new_workbook_stop_rules_terminate():
     # 表9 must stop before the trailing 总计 row.
     material_rows, _ = results["material_cost"]
     assert 300 < len(material_rows) < 345
-    assert all(
-        not str(r.fields.get("budget_category") or "").startswith("总计")
-        for r in material_rows
-    )
+    assert all(not str(r.fields.get("budget_category") or "").startswith("总计") for r in material_rows)
 
 
 @pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
@@ -159,8 +179,7 @@ async def test_new_workbook_key_amount_fields():
 async def test_old_workbook_still_parses():
     """Backward-compat smoke check on the legacy workbook."""
     results = await _run_pipeline(OLD_WORKBOOK)
-    for template_id in ("dynamic_indicator", "bid_comparison", "other_items",
-                        "material_cost", "installation_dynamic"):
+    for template_id in ("dynamic_indicator", "bid_comparison", "other_items", "material_cost", "installation_dynamic"):
         valid, _ = results[template_id]
         assert len(valid) > 0, f"{template_id}: 0 valid rows on old workbook"
     # the 表5 runaway must be fixed for the old workbook too
@@ -173,6 +192,4 @@ async def test_old_workbook_retired_sheets_are_skipped():
     change; on the old workbook they must now be skipped, not parsed."""
     results = await _run_pipeline(OLD_WORKBOOK)
     for template_id in RETIRED_TEMPLATES:
-        assert template_id not in results, (
-            f"{template_id} unexpectedly matched a sheet on the old workbook"
-        )
+        assert template_id not in results, f"{template_id} unexpectedly matched a sheet on the old workbook"

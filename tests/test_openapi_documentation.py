@@ -10,32 +10,19 @@ from sanic_ext.extensions.openapi.builders import OperationStore, SpecificationB
 from application import app
 from contexts.shared.interface.api_documentation import CATALOG
 
-
 ROOT = Path(__file__).parents[1]
 
 
 def _controller_route_methods(path: Path) -> tuple[str, set[str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    controller = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name.endswith("Controller")
-    )
-    setup = next(
-        node
-        for node in controller.body
-        if isinstance(node, ast.FunctionDef) and node.name == "setup"
-    )
+    controller = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name.endswith("Controller"))
+    setup = next(node for node in controller.body if isinstance(node, ast.FunctionDef) and node.name == "setup")
     methods: set[str] = set()
     for call in (node for node in ast.walk(setup) if isinstance(node, ast.Call)):
         if not call.args:
             continue
         first = call.args[0]
-        if (
-            isinstance(first, ast.Attribute)
-            and isinstance(first.value, ast.Name)
-            and first.value.id == "self"
-        ):
+        if isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name) and first.value.id == "self":
             methods.add(first.attr)
     return controller.name, methods
 

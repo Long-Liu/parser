@@ -44,7 +44,12 @@ def build_auth_components(
     token_revocations = TortoiseTokenRevocationRepository()
     return AuthComponents(
         auth=AuthApplicationService(
-            users, authentication, tokens, password_hasher, events, transactions,
+            users,
+            authentication,
+            tokens,
+            password_hasher,
+            events,
+            transactions,
             token_revocations,
         ),
         authorization=AuthorizationApplicationService(users, tokens, token_revocations),

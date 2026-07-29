@@ -92,6 +92,7 @@ from contexts.template.infrastructure.repositories import YamlTemplateCatalog
 if TYPE_CHECKING:
     from contexts.shared.interface.base_controller import BaseController
 
+
 @dataclass(frozen=True, slots=True)
 class ApplicationComponents:
     """Strongly typed application graph exposed to the outer composition layer."""
@@ -125,6 +126,7 @@ class ComponentOverrides:
     file_storage: FileStorage | None = None
     ai_provider: AIAnalysisPort | None = None
 
+
 def build_container(
     settings: Settings,
     overrides: ComponentOverrides | None = None,
@@ -155,7 +157,9 @@ def build_container(
     workbook_reader = OpenPyxlWorkbookReader()
     ai_provider = overrides.ai_provider or HttpAIAnalysisProvider(settings.ai_analysis)
     analytics_repo = TortoiseAnalyticsRepository(
-        ai_provider, parsed_data_cleanup, transaction_manager,
+        ai_provider,
+        parsed_data_cleanup,
+        transaction_manager,
     )
     alert_repo = TortoiseAlertRepository()
     alert_metrics = TortoiseAlertMetricProvider()
@@ -163,7 +167,10 @@ def build_container(
     alert_dispatcher = TortoiseAlertOutboxDispatcher(alert_hub)
 
     alert_service = build_alert_service(
-        alert_repo, alert_metrics, alert_dispatcher, transaction_manager,
+        alert_repo,
+        alert_metrics,
+        alert_dispatcher,
+        transaction_manager,
     )
     # Cross-context wiring: alert evaluation reacts to parsing/project domain
     # events instead of being called directly by those contexts.
@@ -174,18 +181,33 @@ def build_container(
     event_bus.subscribe(ProjectUpdated, alert_handlers.on_project_updated)
     event_bus.subscribe(ProjectDeleted, alert_handlers.on_project_deleted)
     auth = build_auth_components(
-        user_repo, role_repo, project_access_repo, password_hasher, jwt_service,
-        event_bus, transaction_manager,
+        user_repo,
+        role_repo,
+        project_access_repo,
+        password_hasher,
+        jwt_service,
+        event_bus,
+        transaction_manager,
     )
     project_service = build_project_service(
-        project_repo, project_cleanup, user_directory, project_notifications, event_bus,
+        project_repo,
+        project_cleanup,
+        user_directory,
+        project_notifications,
+        event_bus,
         transaction_manager,
     )
     template_service = TemplateApplicationService(template_catalog)
     data_service = DataApplicationService(data_repo, transaction_manager)
     upload_service = build_upload_service(
-        parse_job_repo, template_catalog, data_sink, event_bus,
-        file_storage, workbook_reader, project_repo, preview_repo,
+        parse_job_repo,
+        template_catalog,
+        data_sink,
+        event_bus,
+        file_storage,
+        workbook_reader,
+        project_repo,
+        preview_repo,
         transaction_manager,
     )
     analytics_service = AnalyticsApplicationService(analytics_repo)

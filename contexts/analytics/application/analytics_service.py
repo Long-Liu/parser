@@ -35,27 +35,30 @@ class AnalyticsApplicationService:
 
     # ── cost / profit reports ───────────────────────────────────────
 
-    async def cost_categories(self, project_ids: list[int], ym: str | None,
-                              pagination: Pagination) -> dict:
+    async def cost_categories(self, project_ids: list[int], ym: str | None, pagination: Pagination) -> dict:
         return await self._repository.cost_categories(project_ids, ym, pagination)
 
-    async def cost_details(self, project_id: int, ym: str | None,
-                           pagination: Pagination) -> dict:
+    async def cost_details(self, project_id: int, ym: str | None, pagination: Pagination) -> dict:
         return await self._repository.cost_details(project_id, ym, pagination)
 
     async def project_analysis(self, project_id: int, ym: str | None) -> dict:
         return await self._repository.project_analysis(project_id, ym)
 
-    async def project_profits(self, ym: str | None, pagination: Pagination,
-                              project_ids: list[int] | None = None) -> dict:
+    async def project_profits(
+        self, ym: str | None, pagination: Pagination, project_ids: list[int] | None = None
+    ) -> dict:
         return await self._repository.project_profits(ym, pagination, project_ids)
 
     async def budget_lease_writeoffs(
-        self, ym: str | None, pagination: Pagination,
+        self,
+        ym: str | None,
+        pagination: Pagination,
         project_ids: list[int] | None = None,
     ) -> dict:
         return await self._repository.budget_lease_writeoffs(
-            ym, pagination, project_ids,
+            ym,
+            pagination,
+            project_ids,
         )
 
     # ── milestones / progress ───────────────────────────────────────
@@ -69,8 +72,7 @@ class AnalyticsApplicationService:
     async def create_milestone(self, project_id: int, data: dict) -> dict:
         return await self._repository.create_milestone(project_id, data)
 
-    async def update_milestone(self, project_id: int, milestone_id: int,
-                               data: dict) -> dict:
+    async def update_milestone(self, project_id: int, milestone_id: int, data: dict) -> dict:
         return await self._repository.update_milestone(project_id, milestone_id, data)
 
     async def delete_milestone(self, project_id: int, milestone_id: int) -> None:
@@ -92,11 +94,10 @@ class AnalyticsApplicationService:
 
     # ── notifications ───────────────────────────────────────────────
 
-    async def notifications(self, user_id: int, pagination: Pagination,
-                            unread_only: bool = False,
-                            project_ids: list[int] | None = None) -> dict:
-        return await self._repository.notifications(
-            user_id, pagination, unread_only, project_ids)
+    async def notifications(
+        self, user_id: int, pagination: Pagination, unread_only: bool = False, project_ids: list[int] | None = None
+    ) -> dict:
+        return await self._repository.notifications(user_id, pagination, unread_only, project_ids)
 
     async def create_notification(self, data: dict) -> dict:
         return await self._repository.create_notification(data)
@@ -121,11 +122,10 @@ class AnalyticsApplicationService:
     async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict:
         return await self._repository.compare_ai_analysis(project_ids, ym)
 
-    async def global_search(self, keyword: str, pagination: Pagination,
-                            project_ids: list[int] | None = None,
-                            include_users: bool = True) -> dict:
-        return await self._repository.global_search(
-            keyword, pagination, project_ids, include_users)
+    async def global_search(
+        self, keyword: str, pagination: Pagination, project_ids: list[int] | None = None, include_users: bool = True
+    ) -> dict:
+        return await self._repository.global_search(keyword, pagination, project_ids, include_users)
 
     async def sync_status(self) -> dict:
         return await self._repository.sync_status()

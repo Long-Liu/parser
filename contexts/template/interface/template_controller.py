@@ -13,9 +13,7 @@ from contexts.template.application.template_app_service import (
     TemplateApplicationService,
 )
 
-_XLSX_CONTENT_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 class TemplatesController(BaseController):
@@ -26,10 +24,9 @@ class TemplatesController(BaseController):
         self.svc = template_svc
 
     def setup(self):
-        self.bp.add_route(self.list_templates, "/templates",                   methods=["GET"])
-        self.bp.add_route(self.get_template,   "/templates/<template_id:str>", methods=["GET"])
-        self.bp.add_route(self.download_template,
-                          "/templates/<template_id:str>/download",             methods=["GET"])
+        self.bp.add_route(self.list_templates, "/templates", methods=["GET"])
+        self.bp.add_route(self.get_template, "/templates/<template_id:str>", methods=["GET"])
+        self.bp.add_route(self.download_template, "/templates/<template_id:str>/download", methods=["GET"])
 
     @require_auth
     @openapi.tag("Template")
@@ -49,9 +46,5 @@ class TemplatesController(BaseController):
     async def download_template(self, request, template_id: str):
         content, filename = await self.svc.build_download(TemplateId(template_id))
         # RFC 5987: ASCII fallback filename + percent-encoded UTF-8 filename*
-        disposition = (
-            f'attachment; filename="{template_id}.xlsx"; '
-            f"filename*=UTF-8''{quote(filename)}"
-        )
-        return raw(content, content_type=_XLSX_CONTENT_TYPE,
-                   headers={"Content-Disposition": disposition})
+        disposition = f"attachment; filename=\"{template_id}.xlsx\"; filename*=UTF-8''{quote(filename)}"
+        return raw(content, content_type=_XLSX_CONTENT_TYPE, headers={"Content-Disposition": disposition})

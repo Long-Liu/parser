@@ -30,7 +30,5 @@ class OpenPyxlWorkbookReader(WorkbookReader):
             sheets = []
             for sheet_name in wb.sheetnames:
                 grid, ranges = worksheet_to_grid(wb[sheet_name])
-                sheets.append(
-                    WorkbookSheet(name=sheet_name, grid=grid, merged_ranges=ranges)
-                )
+                sheets.append(WorkbookSheet(name=sheet_name, grid=grid, merged_ranges=ranges))
             return sheets

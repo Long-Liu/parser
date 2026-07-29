@@ -53,24 +53,31 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
             return
         async with self._lock:
             from tortoise.expressions import Q
+
             now = datetime.now(UTC)
-            rows = await AlertOutboxModel.filter(
-                Q(status="pending"),
-                Q(next_retry_at__lte=now) | Q(next_retry_at=None),
-            ).order_by("id").limit(100)
+            rows = (
+                await AlertOutboxModel.filter(
+                    Q(status="pending"),
+                    Q(next_retry_at__lte=now) | Q(next_retry_at=None),
+                )
+                .order_by("id")
+                .limit(100)
+            )
             for row in rows:
                 try:
-                    await self._hub.publish(row.project_id, {
-                        "event": row.event_type, "event_id": row.id,
-                        "data": row.payload,
-                    })
+                    await self._hub.publish(
+                        row.project_id,
+                        {
+                            "event": row.event_type,
+                            "event_id": row.id,
+                            "data": row.payload,
+                        },
+                    )
                     row.status = "sent"
                     row.sent_at = now
-                    row.last_error = None
+                    row.last_error = None  # type: ignore[assignment]
                 except Exception as exc:
                     row.retry_count += 1
                     row.last_error = str(exc)[:1000]
-                    row.next_retry_at = now + timedelta(
-                        seconds=min(300, 2 ** min(row.retry_count, 8))
-                    )
+                    row.next_retry_at = now + timedelta(seconds=min(300, 2 ** min(row.retry_count, 8)))
                 await row.save()

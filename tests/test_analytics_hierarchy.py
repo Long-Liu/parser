@@ -41,16 +41,21 @@ _seq = count(1)
 async def make_project() -> Project:
     n = next(_seq)
     return await Project.create(
-        code=f"H{n:04d}", name=f"层级项目{n}",
-        contract_price=Decimal("1000"), progress=Decimal("50"),
+        code=f"H{n:04d}",
+        name=f"层级项目{n}",
+        contract_price=Decimal("1000"),
+        progress=Decimal("50"),
         status="normal",
     )
 
 
 async def make_batch(project_id: int, ym: str = "2026-07") -> UploadBatch:
     return await UploadBatch.create(
-        batch_no=f"H{next(_seq):06d}", project_id=project_id, ym=ym,
-        file_name="cost.xlsx", status="success",
+        batch_no=f"H{next(_seq):06d}",
+        project_id=project_id,
+        ym=ym,
+        file_name="cost.xlsx",
+        status="success",
     )
 
 
@@ -70,7 +75,13 @@ def test_chinese_sections_restart_numbering_become_unique_paths():
     resolve_hierarchy_paths(items)
 
     assert [i["hierarchy_code"] for i in items] == [
-        "一", "一.1", "一.1.1", "二", "二.1", "二.1.1", "二.2.1",
+        "一",
+        "一.1",
+        "一.1.1",
+        "二",
+        "二.1",
+        "二.1.1",
+        "二.2.1",
     ]
     assert [i["level"] for i in items] == [1, 2, 3, 1, 2, 3, 3]
     codes = [i["hierarchy_code"] for i in items]
@@ -113,24 +124,34 @@ async def test_cost_categories_returns_full_paths_and_levels(db):
     project = await make_project()
     batch = await make_batch(project.id)
     rows = [
-        ("一", "项目管理费"), ("1", "人工费"), ("1.1", "基本人工费"),
-        ("二", "建筑工程"), ("1", "建筑施工费"), ("2.1", "混凝土"),
+        ("一", "项目管理费"),
+        ("1", "人工费"),
+        ("1.1", "基本人工费"),
+        ("二", "建筑工程"),
+        ("1", "建筑施工费"),
+        ("2.1", "混凝土"),
         (None, "其中：安全文明施工费"),
     ]
     for code, name in rows:
         await DataDynamicIndicator.create(
-            batch_id=batch.id, hierarchy_code=code, item_name=name,
-            indicator_with_tax=Decimal("100"), incurred_cost=Decimal("90"),
+            batch_id=batch.id,
+            hierarchy_code=code,
+            item_name=name,
+            indicator_with_tax=Decimal("100"),
+            incurred_cost=Decimal("90"),
         )
 
     repo = TortoiseAnalyticsRepository()
-    result = await repo.cost_categories([project.id], "2026-07",
-                                        Pagination(1, 20, max_size=100))
+    result = await repo.cost_categories([project.id], "2026-07", Pagination(1, 20, max_size=100))
     items = result["projects"][0]["items"]
 
     assert [(i["hierarchy_code"], i["level"]) for i in items] == [
-        ("一", 1), ("一.1", 2), ("一.1.1", 3),
-        ("二", 1), ("二.1", 2), ("二.2.1", 3),
+        ("一", 1),
+        ("一.1", 2),
+        ("一.1.1", 3),
+        ("二", 1),
+        ("二.1", 2),
+        ("二.2.1", 3),
         (None, None),
     ]
 
@@ -141,22 +162,28 @@ async def test_hierarchy_resolved_before_pagination_slice(db):
     project = await make_project()
     batch = await make_batch(project.id)
     rows = [
-        ("一", "项目管理费"), ("1", "人工费"),
-        ("二", "建筑工程"), ("1", "建筑施工费"), ("1.1", "土方"),
+        ("一", "项目管理费"),
+        ("1", "人工费"),
+        ("二", "建筑工程"),
+        ("1", "建筑施工费"),
+        ("1.1", "土方"),
     ]
     for code, name in rows:
         await DataDynamicIndicator.create(
-            batch_id=batch.id, hierarchy_code=code, item_name=name,
-            indicator_with_tax=Decimal("100"), incurred_cost=Decimal("90"),
+            batch_id=batch.id,
+            hierarchy_code=code,
+            item_name=name,
+            indicator_with_tax=Decimal("100"),
+            incurred_cost=Decimal("90"),
         )
 
     repo = TortoiseAnalyticsRepository()
-    page2 = await repo.cost_categories([project.id], "2026-07",
-                                       Pagination(2, 2, max_size=100))
+    page2 = await repo.cost_categories([project.id], "2026-07", Pagination(2, 2, max_size=100))
     items = page2["projects"][0]["items"]
 
     assert [(i["hierarchy_code"], i["level"]) for i in items] == [
-        ("二", 1), ("二.1", 2),
+        ("二", 1),
+        ("二.1", 2),
     ]
     assert page2["pagination"]["total"] == 5
 
@@ -166,17 +193,21 @@ async def test_null_name_garbage_rows_are_excluded(db):
     project = await make_project()
     batch = await make_batch(project.id)
     await DataDynamicIndicator.create(
-        batch_id=batch.id, hierarchy_code="一", item_name="项目管理费",
-        indicator_with_tax=Decimal("100"), incurred_cost=Decimal("90"),
+        batch_id=batch.id,
+        hierarchy_code="一",
+        item_name="项目管理费",
+        indicator_with_tax=Decimal("100"),
+        incurred_cost=Decimal("90"),
     )
     # 解析尾行产生的无名垃圾行不应进入报表
     await DataDynamicIndicator.create(
-        batch_id=batch.id, hierarchy_code=None, item_name=None,
+        batch_id=batch.id,
+        hierarchy_code=None,
+        item_name=None,
     )
 
     repo = TortoiseAnalyticsRepository()
-    result = await repo.cost_categories([project.id], "2026-07",
-                                        Pagination(1, 20, max_size=100))
+    result = await repo.cost_categories([project.id], "2026-07", Pagination(1, 20, max_size=100))
 
     assert result["pagination"]["total"] == 1
     items = result["projects"][0]["items"]

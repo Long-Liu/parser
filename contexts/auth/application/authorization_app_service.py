@@ -29,8 +29,12 @@ def _claim_epoch(value) -> float | None:
 
 
 class AuthorizationApplicationService:
-    def __init__(self, user_repo: UserRepository, jwt_service: TokenService,
-                 token_revocations: TokenRevocationRepository | None = None) -> None:
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        jwt_service: TokenService,
+        token_revocations: TokenRevocationRepository | None = None,
+    ) -> None:
         self._users = user_repo
         self._jwt = jwt_service
         self._revocations = token_revocations

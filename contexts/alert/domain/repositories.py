@@ -15,8 +15,7 @@ class AlertRepository(ABC):
     @abstractmethod
     async def update_rule(self, rule_id: int, values: dict) -> dict | None: ...
     @abstractmethod
-    async def register_match(self, project_id: int, rule_code: str,
-                             scope: str, matched: bool) -> int: ...
+    async def register_match(self, project_id: int, rule_code: str, scope: str, matched: bool) -> int: ...
     @abstractmethod
     async def find_open(self, fingerprint: str) -> Alert | None: ...
     @abstractmethod
@@ -28,15 +27,22 @@ class AlertRepository(ABC):
 
     # Infrastructure convenience — not abstract. Default no-ops so test fakes
     # don't need to implement event/outbox persistence.
-    async def record_event(self, alert: Alert, event_type: str,  # noqa: B027
-                           actor_id: int | None = None, note: str = "") -> None:
+    async def record_event(  # noqa: B027
+        self,
+        alert: Alert,
+        event_type: str,
+        actor_id: int | None = None,
+        note: str = "",
+    ) -> None:
         pass
 
     async def add_outbox(self, alert: Alert, event_type: str) -> None:  # noqa: B027
         pass
+
     @abstractmethod
-    async def find(self, *, project_ids: list[int] | None, status: str,
-                   level: str, pagination: Pagination) -> tuple[list[dict], int]: ...
+    async def find(
+        self, *, project_ids: list[int] | None, status: str, level: str, pagination: Pagination
+    ) -> tuple[list[dict], int]: ...
     @abstractmethod
     async def events(self, alert_id: int, pagination: Pagination) -> tuple[list[dict], int]: ...
     @abstractmethod
@@ -44,8 +50,7 @@ class AlertRepository(ABC):
     @abstractmethod
     async def delete_project(self, project_id: int) -> None: ...
 
-    async def missed_outbox(self, project_ids: list[int],
-                            since: str | None) -> list[dict]:
+    async def missed_outbox(self, project_ids: list[int], since: str | None) -> list[dict]:
         return []
 
 

@@ -35,18 +35,22 @@ class ProjectAccessPolicy:
         return bool(cls.ELEVATED_PERMISSIONS & set(permissions or ()))
 
     async def require(
-        self, user_id: UserId, project_id: int, allowed_roles: set[str] | None = None,
+        self,
+        user_id: UserId,
+        project_id: int,
+        allowed_roles: set[str] | None = None,
     ) -> None:
         role = await self._repository.membership_role(user_id.value, project_id)
         if role is None:
             raise AuthorizationError(f"no access to project {project_id}")
         if allowed_roles and role not in allowed_roles:
-            raise AuthorizationError(
-                f"project role {role!r} cannot perform this operation"
-            )
+            raise AuthorizationError(f"project role {role!r} cannot perform this operation")
 
     async def require_batch(
-        self, user_id: UserId, batch_id: int, allowed_roles: set[str] | None = None,
+        self,
+        user_id: UserId,
+        batch_id: int,
+        allowed_roles: set[str] | None = None,
     ) -> int:
         project_id = await self._repository.project_for_batch(batch_id)
         if project_id is None:
@@ -55,7 +59,10 @@ class ProjectAccessPolicy:
         return project_id
 
     async def require_data_row(
-        self, user_id: UserId, template_id: str, row_id: int,
+        self,
+        user_id: UserId,
+        template_id: str,
+        row_id: int,
         allowed_roles: set[str] | None = None,
     ) -> int:
         project_id = await self._repository.project_for_data_row(template_id, row_id)

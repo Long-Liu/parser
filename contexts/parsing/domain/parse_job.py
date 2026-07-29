@@ -208,11 +208,13 @@ class ParseJob(AggregateRoot[JobId]):
         """Record ParseJobSubmitted after persistence has assigned an id."""
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before confirm_submitted")
-        self.record(ParseJobSubmitted(
-            aggregate_id=self.id.value,
-            project_id=self.project_id.value,
-            file_name=self.file_info.filename,
-        ))
+        self.record(
+            ParseJobSubmitted(
+                aggregate_id=self.id.value,
+                project_id=self.project_id.value,
+                file_name=self.file_info.filename,
+            )
+        )
 
     def update_file_info(self, file_info: FileInfo) -> None:
         """Update file metadata after the stored file is saved."""
@@ -231,11 +233,13 @@ class ParseJob(AggregateRoot[JobId]):
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before confirming")
         self.status = JobStatus.DONE
-        self.record(ParseJobConfirmed(
-            aggregate_id=self.id.value,
-            project_id=self.project_id.value,
-            year_month=str(self.year_month),
-        ))
+        self.record(
+            ParseJobConfirmed(
+                aggregate_id=self.id.value,
+                project_id=self.project_id.value,
+                year_month=str(self.year_month),
+            )
+        )
 
     def cancel(self) -> None:
         """Cancel a preview batch."""
@@ -258,17 +262,21 @@ class ParseJob(AggregateRoot[JobId]):
             sr = self.add_sheet_result(sheet_name)
         if template_id:
             sr.mark_matched(TemplateId(template_id))
-            self.record(SheetMatched(
-                aggregate_id=self.id.value,
-                sheet_name=sheet_name,
-                template_id=template_id,
-            ))
+            self.record(
+                SheetMatched(
+                    aggregate_id=self.id.value,
+                    sheet_name=sheet_name,
+                    template_id=template_id,
+                )
+            )
         else:
             sr.mark_skipped()
-            self.record(SheetSkipped(
-                aggregate_id=self.id.value,
-                sheet_name=sheet_name,
-            ))
+            self.record(
+                SheetSkipped(
+                    aggregate_id=self.id.value,
+                    sheet_name=sheet_name,
+                )
+            )
         return sr
 
     def set_extracted(self, sheet_name: str, rows: list[ParsedRow]) -> None:
@@ -276,62 +284,62 @@ class ParseJob(AggregateRoot[JobId]):
             raise RuntimeError("ParseJob must be persisted before recording extraction")
         sr = self._sheets[sheet_name]
         sr.set_extracted(rows)
-        self.record(SheetExtracted(
-            aggregate_id=self.id.value,
-            sheet_name=sheet_name,
-            row_count=len(rows),
-        ))
+        self.record(
+            SheetExtracted(
+                aggregate_id=self.id.value,
+                sheet_name=sheet_name,
+                row_count=len(rows),
+            )
+        )
 
-    def set_validated(
-        self, sheet_name: str, valid_rows: list[ParsedRow], errors: list[RowError]
-    ) -> None:
+    def set_validated(self, sheet_name: str, valid_rows: list[ParsedRow], errors: list[RowError]) -> None:
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before recording validation")
         sr = self._sheets[sheet_name]
         sr.set_validated(valid_rows, errors)
-        self.record(SheetValidated(
-            aggregate_id=self.id.value,
-            sheet_name=sheet_name,
-            valid_count=len(valid_rows),
-            error_count=len(errors),
-        ))
+        self.record(
+            SheetValidated(
+                aggregate_id=self.id.value,
+                sheet_name=sheet_name,
+                valid_count=len(valid_rows),
+                error_count=len(errors),
+            )
+        )
 
     def complete(self) -> None:
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before completion")
         self.status = JobStatus.DONE
         total_sheets = len(self._sheets)
-        matched = sum(
-            1 for s in self._sheets.values()
-            if s.match_status == MatchStatus.MATCHED
-        )
+        matched = sum(1 for s in self._sheets.values() if s.match_status == MatchStatus.MATCHED)
         total_rows = sum(s.success_rows for s in self._sheets.values())
-        self.record(ParseJobCompleted(
-            aggregate_id=self.id.value,
-            project_id=self.project_id.value,
-            year_month=str(self.year_month),
-            total_sheets=total_sheets,
-            matched_sheets=matched,
-            total_rows=total_rows,
-            is_preview=self._is_preview,
-        ))
+        self.record(
+            ParseJobCompleted(
+                aggregate_id=self.id.value,
+                project_id=self.project_id.value,
+                year_month=str(self.year_month),
+                total_sheets=total_sheets,
+                matched_sheets=matched,
+                total_rows=total_rows,
+                is_preview=self._is_preview,
+            )
+        )
 
     def fail(self, reason: str) -> None:
         aggregate_id = self.id.value if self.id else None
         self.status = JobStatus.FAILED
-        self.record(ParseJobFailed(
-            aggregate_id=aggregate_id,
-            reason=reason,
-        ))
+        self.record(
+            ParseJobFailed(
+                aggregate_id=aggregate_id,
+                reason=reason,
+            )
+        )
 
     @property
     def result_status(self) -> str:
         if self.status == JobStatus.FAILED:
             return "failed"
-        successes = [
-            s for s in self._sheets.values()
-            if s.match_status == MatchStatus.MATCHED
-        ]
+        successes = [s for s in self._sheets.values() if s.match_status == MatchStatus.MATCHED]
         if not successes:
             return "skipped"
         if all(s.error_rows == 0 for s in successes):

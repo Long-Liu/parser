@@ -29,6 +29,7 @@ from contexts.template.interface.template_controller import TemplatesController
 
 # ── 骨架生成 ──────────────────────────────────────────────────────────
 
+
 def test_sheet_name_strips_wildcards():
     template = Template(
         template_id=TemplateId("material_cost"),
@@ -56,14 +57,11 @@ def test_build_workbook_from_real_material_cost():
     # match_header 完全重复的列（已付/未付三组）只铺一次：
     # (首行, 末行) 表头组合不得重复
     header_pairs = [
-        (ws.cell(row=1, column=c).value, ws.cell(row=2, column=c).value)
-        for c in range(1, ws.max_column + 1)
+        (ws.cell(row=1, column=c).value, ws.cell(row=2, column=c).value) for c in range(1, ws.max_column + 1)
     ]
     assert len(header_pairs) == len(set(header_pairs))
     # 数据起始行（第 3 行）留白
-    assert all(
-        ws.cell(row=3, column=c).value is None for c in range(1, ws.max_column + 1)
-    )
+    assert all(ws.cell(row=3, column=c).value is None for c in range(1, ws.max_column + 1))
 
 
 def test_build_workbook_marks_dynamic_columns_with_example_month():
@@ -90,13 +88,17 @@ def test_build_workbook_marks_dynamic_columns_with_example_month():
 # isinstance(sanic.request.Request) 定位请求对象，因此 401 契约改为经真实
 # Sanic app + ASGI 调用测试（同 tests/test_endpoint_smoke.py 风格）。
 
+
 class _FakeAuthService:
     async def authenticate(self, token: str):
         if token != "good-token":
             from contexts.shared.domain.exceptions import AuthenticationError
+
             raise AuthenticationError("bad token")
         return SimpleNamespace(
-            user_id=1, username="tester", permissions=set(),
+            user_id=1,
+            username="tester",
+            permissions=set(),
             claims={"jti": "t", "iat": 0, "exp": 0},
         )
 
@@ -106,11 +108,7 @@ def _fake_request(token: str | None = "good-token"):
     return SimpleNamespace(
         headers=headers,
         ctx=SimpleNamespace(),
-        app=SimpleNamespace(
-            ctx=SimpleNamespace(
-                services=SimpleNamespace(authorization=_FakeAuthService())
-            )
-        ),
+        app=SimpleNamespace(ctx=SimpleNamespace(services=SimpleNamespace(authorization=_FakeAuthService()))),
     )
 
 
@@ -122,9 +120,7 @@ def _controller() -> TemplatesController:
 
 async def test_download_endpoint_returns_xlsx_attachment():
     raw_handler = TemplatesController.download_template.__wrapped__
-    response = await raw_handler(
-        _controller(), _fake_request(), "material_cost"
-    )
+    response = await raw_handler(_controller(), _fake_request(), "material_cost")
     assert response.status == 200
     assert "spreadsheetml.sheet" in response.content_type
     disposition = response.headers["Content-Disposition"]
@@ -192,6 +188,4 @@ def test_download_route_registered_in_application():
     import application
 
     route_names = {route.name for route in application.app.router.routes}
-    assert any(
-        "template" in name and "download" in name for name in route_names
-    )
+    assert any("template" in name and "download" in name for name in route_names)

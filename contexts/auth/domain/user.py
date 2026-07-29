@@ -26,10 +26,18 @@ class RoleRef(ValueObject):
 
 
 class User(AggregateRoot[UserId]):
-    def __init__(self, user_id: UserId | None, username: str, password_hash: str,
-                 real_name: str = "", email: str = "", phone: str = "",
-                 department: str = "",
-                 roles: list[RoleRef] | None = None, is_active: bool = True) -> None:
+    def __init__(
+        self,
+        user_id: UserId | None,
+        username: str,
+        password_hash: str,
+        real_name: str = "",
+        email: str = "",
+        phone: str = "",
+        department: str = "",
+        roles: list[RoleRef] | None = None,
+        is_active: bool = True,
+    ) -> None:
         super().__init__()
         self.id = user_id
         self._username = username
@@ -75,35 +83,51 @@ class User(AggregateRoot[UserId]):
 
     def disable(self) -> None:
         self._is_active = False
-        self.record(UserStatusChanged(
-            aggregate_id=self.id.value if self.id else None,
-            username=self._username, is_active=False,
-        ))
+        self.record(
+            UserStatusChanged(
+                aggregate_id=self.id.value if self.id else None,
+                username=self._username,
+                is_active=False,
+            )
+        )
 
     def enable(self) -> None:
         self._is_active = True
-        self.record(UserStatusChanged(
-            aggregate_id=self.id.value if self.id else None,
-            username=self._username, is_active=True,
-        ))
+        self.record(
+            UserStatusChanged(
+                aggregate_id=self.id.value if self.id else None,
+                username=self._username,
+                is_active=True,
+            )
+        )
 
     def mark_deleted(self) -> None:
-        self.record(UserDeleted(
-            aggregate_id=self.id.value if self.id else None,
-            username=self._username,
-        ))
+        self.record(
+            UserDeleted(
+                aggregate_id=self.id.value if self.id else None,
+                username=self._username,
+            )
+        )
 
     def assign_roles(self, roles: list[RoleRef]) -> None:
         self._roles = list(roles)
-        self.record(UserRolesAssigned(
-            aggregate_id=self.id.value if self.id else None,
-            username=self._username, role_count=len(roles),
-        ))
+        self.record(
+            UserRolesAssigned(
+                aggregate_id=self.id.value if self.id else None,
+                username=self._username,
+                role_count=len(roles),
+            )
+        )
 
-    def update_profile(self, *, real_name: str | None = None,
-                       email: str | None = None, phone: str | None = None,
-                       department: str | None = None,
-                       is_active: bool | None = None) -> None:
+    def update_profile(
+        self,
+        *,
+        real_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        department: str | None = None,
+        is_active: bool | None = None,
+    ) -> None:
         changed = []
         if real_name is not None:
             self._real_name = real_name.strip()
@@ -121,36 +145,58 @@ class User(AggregateRoot[UserId]):
             self.enable() if is_active else self.disable()
             changed.append("is_active")
         if changed:
-            self.record(UserProfileUpdated(
-                aggregate_id=self.id.value if self.id else None,
-                username=self._username, changed_fields=changed,
-            ))
+            self.record(
+                UserProfileUpdated(
+                    aggregate_id=self.id.value if self.id else None,
+                    username=self._username,
+                    changed_fields=tuple(changed),
+                )
+            )
 
     def reset_password(self, password_hash: str) -> None:
         if not password_hash:
             raise ValidationError("password hash must not be empty")
         self._password_hash = password_hash
-        self.record(UserPasswordReset(
-            aggregate_id=self.id.value if self.id else None,
-            username=self._username,
-        ))
+        self.record(
+            UserPasswordReset(
+                aggregate_id=self.id.value if self.id else None,
+                username=self._username,
+            )
+        )
 
     @classmethod
-    def create(cls, user_id: UserId | None, username: str, password_hash: str,
-               real_name: str = "", email: str = "", phone: str = "",
-               department: str = "") -> User:
+    def create(
+        cls,
+        user_id: UserId | None,
+        username: str,
+        password_hash: str,
+        real_name: str = "",
+        email: str = "",
+        phone: str = "",
+        department: str = "",
+    ) -> User:
         username = username.strip()
         email = email.strip()
         if not username:
             raise ValidationError("username must not be empty")
         if not password_hash:
             raise ValidationError("password hash must not be empty")
-        user = cls(user_id=user_id, username=username, password_hash=password_hash,
-                   real_name=real_name.strip(), email=email, phone=phone.strip(),
-                   department=department.strip(),
-                   roles=[], is_active=True)
-        user.record(UserRegistered(
-            aggregate_id=user_id.value if user_id else None,
-            username=username, real_name=real_name.strip(),
-        ))
+        user = cls(
+            user_id=user_id,
+            username=username,
+            password_hash=password_hash,
+            real_name=real_name.strip(),
+            email=email,
+            phone=phone.strip(),
+            department=department.strip(),
+            roles=[],
+            is_active=True,
+        )
+        user.record(
+            UserRegistered(
+                aggregate_id=user_id.value if user_id else None,
+                username=username,
+                real_name=real_name.strip(),
+            )
+        )
         return user

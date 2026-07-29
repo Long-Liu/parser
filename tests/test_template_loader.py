@@ -102,9 +102,7 @@ def test_all_template_configs_match_data_tables():
         model_fields = model._meta.fields_map
         for col in template.fixed_columns:
             db_field = col.db_field
-            assert db_field in model_fields, (
-                f"{template_id}.{db_field} missing from {model._meta.db_table}"
-            )
+            assert db_field in model_fields, f"{template_id}.{db_field} missing from {model._meta.db_table}"
 
             match = DECIMAL_RE.match(col.db_type or "")
             if match:

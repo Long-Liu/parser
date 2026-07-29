@@ -12,14 +12,24 @@ class Project(AggregateRoot[ProjectId]):
     _VALID_STAGES = {"planning", "design", "construction", "completion", "maintenance"}
     _VALID_STATUSES = {"normal", "warning", "suspended", "closed"}
 
-    def __init__(self, project_id: ProjectId | None, code: str, name: str,
-                 created_by: UserId | None = None, *, project_type: str = "",
-                 capacity_mw: Decimal | None = None,
-                 contract_price: Decimal | None = None,
-                 start_date: date | None = None, end_date: date | None = None,
-                 manager_id: UserId | None = None, stage: str = "planning",
-                 status: str = "normal", progress: Decimal = Decimal("0"),
-                 description: str = "") -> None:
+    def __init__(
+        self,
+        project_id: ProjectId | None,
+        code: str,
+        name: str,
+        created_by: UserId | None = None,
+        *,
+        project_type: str = "",
+        capacity_mw: Decimal | None = None,
+        contract_price: Decimal | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        manager_id: UserId | None = None,
+        stage: str = "planning",
+        status: str = "normal",
+        progress: Decimal = Decimal("0"),
+        description: str = "",
+    ) -> None:
         super().__init__()
         self._validate_stage(stage)
         self._validate_status(status)
@@ -74,9 +84,16 @@ class Project(AggregateRoot[ProjectId]):
         self._name = new_name.strip()
 
     _ALLOWED_FIELDS: set[str] = {
-        "project_type", "capacity_mw", "contract_price",
-        "start_date", "end_date", "manager_id", "stage",
-        "status", "progress", "description",
+        "project_type",
+        "capacity_mw",
+        "contract_price",
+        "start_date",
+        "end_date",
+        "manager_id",
+        "stage",
+        "status",
+        "progress",
+        "description",
     }
 
     def update_details(self, **values) -> None:
@@ -114,11 +131,11 @@ class Project(AggregateRoot[ProjectId]):
         self.stage = stage
 
     @classmethod
-    def create(cls, project_id: ProjectId | None, code: str, name: str,
-               created_by: UserId | None = None, **details) -> Project:
+    def create(
+        cls, project_id: ProjectId | None, code: str, name: str, created_by: UserId | None = None, **details
+    ) -> Project:
         if not code.strip():
             raise ValidationError("project code must not be empty")
         if not name.strip():
             raise ValidationError("project name must not be empty")
-        return cls(project_id=project_id, code=code.strip(), name=name.strip(),
-                   created_by=created_by, **details)
+        return cls(project_id=project_id, code=code.strip(), name=name.strip(), created_by=created_by, **details)

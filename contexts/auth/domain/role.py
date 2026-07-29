@@ -32,9 +32,7 @@ class Role(AggregateRoot[RoleId]):
         self._code = code
         self._name = name
         self.description = description
-        self._permissions: dict[str, PermissionRef] = {
-            p.code: p for p in (permissions or [])
-        }
+        self._permissions: dict[str, PermissionRef] = {p.code: p for p in (permissions or [])}
 
     @property
     def code(self) -> str:
@@ -50,15 +48,21 @@ class Role(AggregateRoot[RoleId]):
 
     @classmethod
     def create(
-        cls, code: str, name: str, description: str = "",
+        cls,
+        code: str,
+        name: str,
+        description: str = "",
         permissions: list[PermissionRef] | None = None,
     ) -> Role:
         code = code.strip()
         if not code:
             raise ValidationError("role code must not be empty")
         role = cls(
-            role_id=None, code=code, name=Name(name),
-            description=description.strip(), permissions=permissions,
+            role_id=None,
+            code=code,
+            name=Name(name),
+            description=description.strip(),
+            permissions=permissions,
         )
         role.record(RoleCreated(aggregate_id=None, code=code, name=name))
         return role
@@ -72,10 +76,13 @@ class Role(AggregateRoot[RoleId]):
 
     def assign_permissions(self, permissions: list[PermissionRef]) -> None:
         self._permissions = {p.code: p for p in permissions}
-        self.record(RolePermissionsChanged(
-            aggregate_id=self.id, code=self._code,
-            permission_count=len(permissions),
-        ))
+        self.record(
+            RolePermissionsChanged(
+                aggregate_id=self.id,
+                code=self._code,
+                permission_count=len(permissions),
+            )
+        )
 
     def add_permission(self, perm: PermissionRef) -> None:
         self._permissions[perm.code] = perm

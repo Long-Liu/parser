@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from typing import TypeVar, cast
 
 from contexts.shared.application.transaction import defer_after_commit
 from contexts.shared.domain.base_domain_event import DomainEvent
@@ -10,14 +11,19 @@ from contexts.shared.domain.event_publisher import EventPublisher
 
 logger = logging.getLogger("parser.event_bus")
 EventHandler = Callable[[DomainEvent], Awaitable[None]]
+EventT = TypeVar("EventT", bound=DomainEvent)
 
 
 class DomainEventBus(EventPublisher):
     def __init__(self) -> None:
         self._handlers: dict[type[DomainEvent], list[EventHandler]] = defaultdict(list)
 
-    def subscribe(self, event_type: type[DomainEvent], handler: EventHandler) -> None:
-        self._handlers[event_type].append(handler)
+    def subscribe(
+        self,
+        event_type: type[EventT],
+        handler: Callable[[EventT], Awaitable[None]],
+    ) -> None:
+        self._handlers[event_type].append(cast(EventHandler, handler))
 
     def subscribers(self, event_type: type[DomainEvent]) -> tuple[EventHandler, ...]:
         """Read-only view of the handlers registered for an event type."""

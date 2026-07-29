@@ -1,4 +1,5 @@
 """Tests for PUT /api/data/<template_id>/<row_id> (row field update)."""
+
 import json as jsonlib
 from types import SimpleNamespace
 
@@ -24,6 +25,7 @@ FIELD_TYPES = {
 
 # ── domain: build_updates ────────────────────────────────────────────
 
+
 def test_build_updates_rejects_empty_fields():
     with pytest.raises(ValidationError, match="no fields"):
         build_updates(FIELD_TYPES, {})
@@ -41,9 +43,7 @@ def test_build_updates_rejects_protected_fields(protected):
 
 
 def test_build_updates_converts_decimal_and_keeps_plain_columns():
-    updates = build_updates(
-        FIELD_TYPES, {"budget_total": "12.50", "remark": "ok", "hierarchy_code": None}
-    )
+    updates = build_updates(FIELD_TYPES, {"budget_total": "12.50", "remark": "ok", "hierarchy_code": None})
     assert updates == {"budget_total": 12.5, "remark": "ok", "hierarchy_code": None}
 
 
@@ -62,6 +62,7 @@ def test_build_updates_monthly_data_must_be_dict():
 
 
 # ── application service (fake repository) ────────────────────────────
+
 
 class FakeRepo(DataQueryRepository):
     def __init__(self, rows=None, field_types=None):
@@ -98,18 +99,27 @@ def _service_with_row(row):
 
 
 async def test_update_by_id_updates_columns_and_merges_monthly_data():
-    svc, repo = _service_with_row({
-        "id": 5, "batch_id": 7, "budget_total": 1.0,
-        "monthly_data": {"2026-06_revenue": 100},
-    })
-    result = await svc.update_by_id("gross_profit", 5, {
-        "budget_total": "99.5",
-        "monthly_data": {"2026-07_revenue": 200},
-    })
+    svc, repo = _service_with_row(
+        {
+            "id": 5,
+            "batch_id": 7,
+            "budget_total": 1.0,
+            "monthly_data": {"2026-06_revenue": 100},
+        }
+    )
+    result = await svc.update_by_id(
+        "gross_profit",
+        5,
+        {
+            "budget_total": "99.5",
+            "monthly_data": {"2026-07_revenue": 200},
+        },
+    )
     assert repo.applied["budget_total"] == 99.5
     # merge, not replace: the pre-existing key survives
     assert repo.applied["monthly_data"] == {
-        "2026-06_revenue": 100, "2026-07_revenue": 200,
+        "2026-06_revenue": 100,
+        "2026-07_revenue": 200,
     }
     assert result["budget_total"] == 99.5
     assert result["monthly_data"]["2026-06_revenue"] == 100
@@ -155,13 +165,16 @@ async def test_update_by_id_unknown_template_raises_not_found():
 # app + ASGI call, because the auth decorators locate the request via
 # isinstance(sanic.request.Request) (same style as tests/test_endpoint_smoke.py).
 
+
 class FakeAuthorization:
     def __init__(self, permissions):
         self._permissions = permissions
 
     async def authenticate(self, token):
         return SimpleNamespace(
-            user_id=1, username="tester", permissions=self._permissions,
+            user_id=1,
+            username="tester",
+            permissions=self._permissions,
             claims={"jti": "t", "iat": 0, "exp": 0},
         )
 
@@ -178,9 +191,13 @@ class FakeAccessPolicy:
 def _request(body=None, token="tok", permissions=None):
     req = SimpleNamespace()
     req.headers = {"Authorization": f"Bearer {token}"} if token else {}
-    req.app = SimpleNamespace(ctx=SimpleNamespace(services=SimpleNamespace(
-        authorization=FakeAuthorization(permissions if permissions is not None else set()),
-    )))
+    req.app = SimpleNamespace(
+        ctx=SimpleNamespace(
+            services=SimpleNamespace(
+                authorization=FakeAuthorization(permissions if permissions is not None else set()),
+            )
+        )
+    )
     req.ctx = SimpleNamespace()
     req.json = body
     return req
@@ -188,10 +205,14 @@ def _request(body=None, token="tok", permissions=None):
 
 def _controller():
     repo = FakeRepo(
-        rows={("gross_profit", 5): {
-            "id": 5, "batch_id": 7, "budget_total": 1.0,
-            "monthly_data": {"2026-06_revenue": 100},
-        }},
+        rows={
+            ("gross_profit", 5): {
+                "id": 5,
+                "batch_id": 7,
+                "budget_total": 1.0,
+                "monthly_data": {"2026-06_revenue": 100},
+            }
+        },
         field_types={"gross_profit": FIELD_TYPES},
     )
     access = FakeAccessPolicy()
@@ -209,16 +230,19 @@ def _authed_request(controller, body, permissions=("data:upload",)):
 async def test_put_handler_returns_updated_row():
     controller, access = _controller()
     raw = DataController.update.__wrapped__.__wrapped__  # strip auth decorators
-    req = _authed_request(controller, {
-        "fields": {"budget_total": "99.5", "monthly_data": {"m": 2}},
-    })
+    req = _authed_request(
+        controller,
+        {
+            "fields": {"budget_total": "99.5", "monthly_data": {"m": 2}},
+        },
+    )
     resp = await raw(controller, req, template_id="gross_profit", row_id=5)
     assert resp.status == 200
     payload = jsonlib.loads(resp.body)
     assert payload["budget_total"] == 99.5
     assert payload["monthly_data"] == {"2026-06_revenue": 100, "m": 2}
     # batch access enforced via the row, manager role required
-    (uid, tpl, rid, roles), = access.calls
+    ((uid, tpl, rid, roles),) = access.calls
     assert (uid.value, tpl, rid, roles) == (1, "gross_profit", 5, {"manager"})
 
 
@@ -292,12 +316,14 @@ def _protected_app(permissions, *, with_permission: bool):
     )
 
     if with_permission:
+
         @app.get("/protected")
         @require_auth
         @require_permission("data:upload")
         async def protected(request):
             return json({"ok": True})
     else:
+
         @app.get("/protected")
         @require_auth
         async def protected(request):

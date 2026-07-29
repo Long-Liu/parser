@@ -32,23 +32,24 @@ class AnalyticsRepository(ABC):
     # ── cost / profit reports ───────────────────────────────────────
 
     @abstractmethod
-    async def cost_categories(self, project_ids: list[int], ym: str | None,
-                              pagination: Pagination) -> dict: ...
+    async def cost_categories(self, project_ids: list[int], ym: str | None, pagination: Pagination) -> dict: ...
 
     @abstractmethod
-    async def cost_details(self, project_id: int, ym: str | None,
-                           pagination: Pagination) -> dict: ...
+    async def cost_details(self, project_id: int, ym: str | None, pagination: Pagination) -> dict: ...
 
     @abstractmethod
     async def project_analysis(self, project_id: int, ym: str | None) -> dict: ...
 
     @abstractmethod
-    async def project_profits(self, ym: str | None, pagination: Pagination,
-                              project_ids: list[int] | None = None) -> dict: ...
+    async def project_profits(
+        self, ym: str | None, pagination: Pagination, project_ids: list[int] | None = None
+    ) -> dict: ...
 
     @abstractmethod
     async def budget_lease_writeoffs(
-        self, ym: str | None, pagination: Pagination,
+        self,
+        ym: str | None,
+        pagination: Pagination,
         project_ids: list[int] | None = None,
     ) -> dict: ...
 
@@ -64,8 +65,7 @@ class AnalyticsRepository(ABC):
     async def create_milestone(self, project_id: int, data: dict) -> dict: ...
 
     @abstractmethod
-    async def update_milestone(self, project_id: int, milestone_id: int,
-                               data: dict) -> dict: ...
+    async def update_milestone(self, project_id: int, milestone_id: int, data: dict) -> dict: ...
 
     @abstractmethod
     async def delete_milestone(self, project_id: int, milestone_id: int) -> None: ...
@@ -87,9 +87,9 @@ class AnalyticsRepository(ABC):
     # ── notifications ───────────────────────────────────────────────
 
     @abstractmethod
-    async def notifications(self, user_id: int, pagination: Pagination,
-                            unread_only: bool = False,
-                            project_ids: list[int] | None = None) -> dict: ...
+    async def notifications(
+        self, user_id: int, pagination: Pagination, unread_only: bool = False, project_ids: list[int] | None = None
+    ) -> dict: ...
 
     @abstractmethod
     async def create_notification(self, data: dict) -> dict: ...
@@ -115,9 +115,9 @@ class AnalyticsRepository(ABC):
     async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict: ...
 
     @abstractmethod
-    async def global_search(self, keyword: str, pagination: Pagination,
-                            project_ids: list[int] | None = None,
-                            include_users: bool = True) -> dict: ...
+    async def global_search(
+        self, keyword: str, pagination: Pagination, project_ids: list[int] | None = None, include_users: bool = True
+    ) -> dict: ...
 
     @abstractmethod
     async def sync_status(self) -> dict: ...

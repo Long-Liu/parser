@@ -19,10 +19,13 @@ from contexts.shared.interface.controller_helpers import pagination_from
 class AlertController(BaseController):
     name = "alerts"
 
-    def __init__(self, alert_svc: AlertApplicationService,
-                 access_policy: ProjectAccessPolicy,
-                 authorization_svc: AuthorizationApplicationService,
-                 websocket_hub: AlertWebSocketHub) -> None:
+    def __init__(
+        self,
+        alert_svc: AlertApplicationService,
+        access_policy: ProjectAccessPolicy,
+        authorization_svc: AuthorizationApplicationService,
+        websocket_hub: AlertWebSocketHub,
+    ) -> None:
         super().__init__()
         self.alert_svc = alert_svc
         self.access = access_policy
@@ -48,26 +51,28 @@ class AlertController(BaseController):
             return None
         return await self.access.accessible_project_ids(UserId(request.ctx.user_id))
 
-    async def _authorize_alert(self, request, alert_id: int,
-                               manager: bool = False) -> None:
+    async def _authorize_alert(self, request, alert_id: int, manager: bool = False) -> None:
         project_id = await self.alert_svc.project_id(alert_id)
         permissions = set(request.ctx.permissions or set())
         if ProjectAccessPolicy.has_elevated_permission(permissions):
             return
         await self.access.require(
-            UserId(request.ctx.user_id), project_id,
+            UserId(request.ctx.user_id),
+            project_id,
             {"manager"} if manager else None,
         )
 
     @require_auth
     @require_permission("data:view")
     async def list_alerts(self, request):
-        return self.json(await self.alert_svc.find(
-            project_ids=await self._scope(request),
-            status=request.args.get("status", ""),
-            level=request.args.get("level", ""),
-            pagination=pagination_from(request),
-        ))
+        return self.json(
+            await self.alert_svc.find(
+                project_ids=await self._scope(request),
+                status=request.args.get("status", ""),
+                level=request.args.get("level", ""),
+                pagination=pagination_from(request),
+            )
+        )
 
     @require_auth
     @require_permission("data:view")
@@ -101,22 +106,23 @@ class AlertController(BaseController):
     async def acknowledge(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id)
         body = request.json or {}
-        return self.json(await self.alert_svc.acknowledge(
-            alert_id, request.ctx.user_id, body.get("note", "")))
+        return self.json(await self.alert_svc.acknowledge(alert_id, request.ctx.user_id, body.get("note", "")))
 
     @require_auth
     @require_permission("data:delete")
     async def resolve(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id, manager=True)
-        return self.json(await self.alert_svc.resolve(
-            alert_id, request.ctx.user_id, (request.json or {}).get("note", "")))
+        return self.json(
+            await self.alert_svc.resolve(alert_id, request.ctx.user_id, (request.json or {}).get("note", ""))
+        )
 
     @require_auth
     @require_permission("data:delete")
     async def ignore(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id, manager=True)
-        return self.json(await self.alert_svc.ignore(
-            alert_id, request.ctx.user_id, (request.json or {}).get("note", "")))
+        return self.json(
+            await self.alert_svc.ignore(alert_id, request.ctx.user_id, (request.json or {}).get("note", ""))
+        )
 
     @require_auth
     @require_permission("data:upload")
@@ -124,8 +130,7 @@ class AlertController(BaseController):
         permissions = set(request.ctx.permissions or set())
         if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access.require(UserId(request.ctx.user_id), project_id, {"manager"})
-        return self.json(await self.alert_svc.evaluate(
-            project_id, (request.json or {}).get("ym")))
+        return self.json(await self.alert_svc.evaluate(project_id, (request.json or {}).get("ym")))
 
     async def stream(self, request, ws):
         token = request.args.get("token", "")

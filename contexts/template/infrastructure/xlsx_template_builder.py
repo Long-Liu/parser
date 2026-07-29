@@ -11,7 +11,7 @@ from contexts.template.domain.template import Template
 # Example monthly suffix shown on dynamic columns in the skeleton.
 EXAMPLE_MONTH = "2026-01"
 
-_INVALID_SHEET_CHARS = re.compile(r'[\\/*?\[\]:]')
+_INVALID_SHEET_CHARS = re.compile(r"[\\/*?\[\]:]")
 _MAX_SHEET_TITLE = 31
 _COLUMN_WIDTH = 20
 
@@ -39,7 +39,8 @@ def build_template_workbook(template: Template) -> bytes:
     col = 1
     if template.hierarchy_config is not None and template.hierarchy_config.column_name:
         ws.cell(
-            row=last_header_row, column=col,
+            row=last_header_row,
+            column=col,
             value=template.hierarchy_config.column_name.strip(),
         )
         col += 1
@@ -62,14 +63,16 @@ def build_template_workbook(template: Template) -> bytes:
             for i, keyword in enumerate(keywords[: header_rows - 1]):
                 ws.cell(row=i + 1, column=col, value=keyword)
             ws.cell(
-                row=last_header_row, column=col,
-                value="_".join(keywords[header_rows - 1:]),
+                row=last_header_row,
+                column=col,
+                value="_".join(keywords[header_rows - 1 :]),
             )
         col += 1
 
     for dyn in template.dynamic_columns:
         ws.cell(
-            row=last_header_row, column=col,
+            row=last_header_row,
+            column=col,
             value=f"{dyn.db_prefix}_{EXAMPLE_MONTH}",
         )
         col += 1

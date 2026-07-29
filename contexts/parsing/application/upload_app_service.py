@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
@@ -62,9 +62,7 @@ class UploadApplicationService(TransactionalService):
         self._extractor = DataRowExtractor(self._stop_detector)
         self._validator = DataValidator()
 
-    async def process(
-        self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId
-    ) -> dict:
+    async def process(self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId) -> dict:
         if await self._project_repo.find_by_id(project_id) is None:
             raise NotFoundError(f"project {project_id.value} not found")
         batch_no = self._make_batch_no()
@@ -109,9 +107,7 @@ class UploadApplicationService(TransactionalService):
         }
 
     @transactional
-    async def preview(
-        self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId
-    ) -> dict:
+    async def preview(self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId) -> dict:
         if self._preview_repo is None:
             raise RuntimeError("preview repository is not configured")
         await self._preview_repo.cleanup_expired()
@@ -135,9 +131,16 @@ class UploadApplicationService(TransactionalService):
             job.complete()
             await self._event_publisher.publish(job.pull_events())
             await self._repo.save(job)
-            await self._preview_repo.save(job.id.value, payload, summary)
-            return {"batch_id": job.id.value, "batch_no": batch_no,
-                    "status": "preview", "sheets": summary}
+            if job.id is None:
+                raise RuntimeError("ParseJob repository did not assign an id")
+            persisted_job_id = job.id.value
+            await self._preview_repo.save(persisted_job_id, payload, summary)
+            return {
+                "batch_id": persisted_job_id,
+                "batch_no": batch_no,
+                "status": "preview",
+                "sheets": summary,
+            }
         except Exception:
             logger.exception("preview failed for %s", batch_no)
             job.fail("preview error")
@@ -170,9 +173,7 @@ class UploadApplicationService(TransactionalService):
                 for row in sheet["rows"]
             ]
             if rows:
-                await self._data_sink.insert_data_rows(
-                    sheet["template"], batch_id, rows
-                )
+                await self._data_sink.insert_data_rows(sheet["template"], batch_id, rows)
         job.confirm()
         await self._repo.save(job)
         await self._preview_repo.delete(batch_id)
@@ -196,9 +197,7 @@ class UploadApplicationService(TransactionalService):
         try:
             await self._file_storage.delete(stored_file)
         except Exception:
-            logger.warning(
-                "failed to remove temp file %s", stored_file.path, exc_info=True
-            )
+            logger.warning("failed to remove temp file %s", stored_file.path, exc_info=True)
 
     @transactional
     async def _process_workbook(self, stored_path: str, job: ParseJob) -> list[dict]:
@@ -217,9 +216,7 @@ class UploadApplicationService(TransactionalService):
     async def _save_failed_job(self, job: ParseJob) -> None:
         await self._repo.save(job)
 
-    async def _process_sheet(
-        self, sheet: WorkbookSheet, job: ParseJob, write: bool = True
-    ) -> dict:
+    async def _process_sheet(self, sheet: WorkbookSheet, job: ParseJob, write: bool = True) -> dict:
         sheet_name = sheet.name
         template = await self._template_repo.find_matching(sheet_name)
 
@@ -227,18 +224,23 @@ class UploadApplicationService(TransactionalService):
             job.match_sheet(sheet_name, None)
             return {"name": sheet_name, "template": None, "rows": 0, "status": "skipped"}
 
-        job.match_sheet(sheet_name, template.id.value)
+        if template.id is None:
+            raise RuntimeError("matched template has no id")
+        template_id = template.id.value
+        job.match_sheet(sheet_name, template_id)
         valid_rows, errors = await self._run_parsing_pipeline(sheet, job, template)
 
         if valid_rows and write:
             if job.id is None:
                 raise RuntimeError("ParseJob repository did not assign an id")
-            await self._data_sink.insert_data_rows(
-                template.id.value, job.id.value, valid_rows)
+            await self._data_sink.insert_data_rows(template_id, job.id.value, valid_rows)
 
-        result = {"name": sheet_name, "template": template.id.value,
-                  "rows": len(valid_rows),
-                  "status": "success" if not errors else "partial"}
+        result = {
+            "name": sheet_name,
+            "template": template_id,
+            "rows": len(valid_rows),
+            "status": "success" if not errors else "partial",
+        }
         if not write:
             result.update(self._build_preview_data(valid_rows, errors))
         return result
@@ -266,13 +268,18 @@ class UploadApplicationService(TransactionalService):
     def _build_preview_data(self, valid_rows, errors) -> dict:
         return {
             "preview": [self._json_safe(r.fields) for r in valid_rows[:20]],
-            "errors": [{"row": e.row_index, "field": e.field,
-                         "value": e.value, "reason": e.reason}
-                        for e in errors[:20]],
-            "_rows": [{"row_index": r.row_index, "fields": self._json_safe(r.fields),
-                       "hierarchy_code": r.hierarchy_code,
-                       "monthly_data": self._json_safe(r.monthly_data)}
-                      for r in valid_rows],
+            "errors": [
+                {"row": e.row_index, "field": e.field, "value": e.value, "reason": e.reason} for e in errors[:20]
+            ],
+            "_rows": [
+                {
+                    "row_index": r.row_index,
+                    "fields": self._json_safe(r.fields),
+                    "hierarchy_code": r.hierarchy_code,
+                    "monthly_data": self._json_safe(r.monthly_data),
+                }
+                for r in valid_rows
+            ],
         }
 
     @classmethod
@@ -309,7 +316,7 @@ class UploadApplicationService(TransactionalService):
             # Try Decimal (numeric string)
             try:
                 return Decimal(value)
-            except Exception:
+            except InvalidOperation:
                 pass
         return value
 

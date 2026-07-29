@@ -61,4 +61,4 @@ class AlertEventHandlers:
 def _aggregate_int(aggregate_id: object) -> int:
     if aggregate_id is None:
         raise ValueError("project event without aggregate_id")
-    return int(aggregate_id)
+    return int(str(aggregate_id))

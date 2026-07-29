@@ -6,8 +6,10 @@ import re
 TEMPLATE_ID_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
 # Allowed MIME types for file upload
-ALLOWED_MIME_TYPES = frozenset({
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-})
+ALLOWED_MIME_TYPES = frozenset(
+    {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+)
 ALLOWED_EXTENSIONS = frozenset({".xlsx"})
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB

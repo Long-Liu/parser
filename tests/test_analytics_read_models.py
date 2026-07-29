@@ -32,8 +32,8 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_FORECAST_COST,
     SETTLE_FORECAST_PROFIT,
     SETTLE_FORECAST_REVENUE,
-    DataDynamicIndicator,
     DataBudgetLease,
+    DataDynamicIndicator,
     DataSettlementOutput,
 )
 
@@ -55,8 +55,10 @@ _seq = count(1)
 async def make_project(**kwargs) -> Project:
     n = next(_seq)
     defaults = {
-        "code": f"P{n:04d}", "name": f"项目{n}",
-        "contract_price": Decimal("1000"), "progress": Decimal("80"),
+        "code": f"P{n:04d}",
+        "name": f"项目{n}",
+        "contract_price": Decimal("1000"),
+        "progress": Decimal("80"),
         "status": "normal",
     }
     defaults.update(kwargs)
@@ -65,8 +67,11 @@ async def make_project(**kwargs) -> Project:
 
 async def make_batch(project_id: int, ym: str, file_name: str = "cost.xlsx") -> UploadBatch:
     return await UploadBatch.create(
-        batch_no=f"T{next(_seq):06d}", project_id=project_id, ym=ym,
-        file_name=file_name, status="success",
+        batch_no=f"T{next(_seq):06d}",
+        project_id=project_id,
+        ym=ym,
+        file_name=file_name,
+        status="success",
     )
 
 
@@ -74,7 +79,8 @@ async def make_settlement(batch_id: int, **indicators) -> None:
     """Create 表11 settlement rows: one vertical row per indicator name."""
     for name, value in indicators.items():
         await DataSettlementOutput.create(
-            batch_id=batch_id, indicator_name=name,
+            batch_id=batch_id,
+            indicator_name=name,
             cumulative_value=Decimal(str(value)),
         )
 
@@ -89,7 +95,8 @@ async def test_budget_lease_writeoffs_uses_latest_batch_and_aggregates_ui_fields
     old_batch = await make_batch(project.id, "2026-02")
     latest_batch = await make_batch(project.id, "2026-03")
     await DataBudgetLease.create(
-        batch_id=old_batch.id, lease_total=Decimal("999"),
+        batch_id=old_batch.id,
+        lease_total=Decimal("999"),
     )
     await DataBudgetLease.create(
         batch_id=latest_batch.id,
@@ -104,7 +111,8 @@ async def test_budget_lease_writeoffs_uses_latest_batch_and_aggregates_ui_fields
     )
 
     result = await TortoiseAnalyticsRepository().budget_lease_writeoffs(
-        None, Pagination(1, 20, max_size=100),
+        None,
+        Pagination(1, 20, max_size=100),
     )
 
     assert result["pagination"]["total"] == 1
@@ -144,7 +152,18 @@ async def test_monthly_data_exposes_full_metric_groups(db):
             SETTLE_FORECAST_REVENUE: "12500",
             SETTLE_FORECAST_COST: "10100",
             SETTLE_FORECAST_PROFIT: "2400",
-        }
+        },
+    )
+    await make_indicator(
+        batch.id,
+        display_level="一级显示",
+        item_name="项目成本合计",
+        indicator_with_tax=Decimal("10000"),
+    )
+    await DataBudgetLease.create(
+        batch_id=batch.id,
+        lease_total=Decimal("1200"),
+        writeoff_total=Decimal("850"),
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -165,19 +184,47 @@ async def test_monthly_data_exposes_full_metric_groups(db):
     # basic group
     assert item["contract_price"] == 12500.0
     assert item["estimated_completion_price"] == 12500.0
-    # target/indicator caliber has no column in the settlement sheet -> None
-    assert item["target_profit"] is None
-    assert item["target_profit_rate"] is None
+    assert item["target_profit"] == 2500.0
+    assert item["target_profit_rate"] == 20.0
     # forecast group
     assert item["expected_complete_settlement"] == 12500.0
     assert item["expected_complete_cost"] == 10100.0
     assert item["expected_complete_profit"] == 2400.0
     assert item["expected_complete_profit_rate"] == 19.2
-    # rental/write-off: no agreed settlement caliber yet -> always None
-    assert item["rental_expected_settlement"] is None
-    assert item["rental_cost"] is None
-    assert item["rental_profit"] is None
-    assert item["write_off_rate"] is None
+    assert item["rental_expected_settlement"] == 1200.0
+    assert item["rental_cost"] == 850.0
+    assert item["rental_profit"] == 350.0
+    assert item["write_off_rate"] == pytest.approx(70.83)
+
+
+@pytest.mark.asyncio
+async def test_monthly_data_historical_hierarchy_avoids_double_counting(db):
+    project = await make_project()
+    batch = await make_batch(project.id, "2026-02")
+    await make_settlement(batch.id, **{SETTLE_CONTRACT_PRICE: "1000"})
+    for hierarchy_code, item_name, amount in (
+        ("一", "项目管理费", "300"),
+        ("1", "人工费", "100"),
+        ("2", "现场管理费", "200"),
+        ("二", "建筑工程", "400"),
+        ("1", "建筑施工费", "400"),
+    ):
+        await make_indicator(
+            batch.id,
+            hierarchy_code=hierarchy_code,
+            item_name=item_name,
+            indicator_with_tax=Decimal(amount),
+        )
+
+    item = (
+        await TortoiseAnalyticsRepository().monthly_data(
+            project.id,
+            Pagination(1, 20, max_size=100),
+        )
+    )["data"][0]
+
+    assert item["target_profit"] == 300.0
+    assert item["target_profit_rate"] == 30.0
 
 
 @pytest.mark.asyncio
@@ -191,7 +238,7 @@ async def test_monthly_data_uses_stored_rate_rows_when_present(db):
             SETTLE_CURRENT_PROFIT: "1850",
             # rate rows are stored as ratios (0.x) and reported as percents
             SETTLE_CURRENT_PROFIT_RATE: "0.148",
-        }
+        },
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -211,7 +258,7 @@ async def test_monthly_data_falls_back_to_contract_price_row(db):
         **{
             SETTLE_CONTRACT_PRICE: "1100",
             SETTLE_CURRENT_PROFIT: "120",
-        }
+        },
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -231,10 +278,18 @@ async def test_monthly_data_without_settlement_rows_returns_zeros(db):
     repo = TortoiseAnalyticsRepository()
     item = (await repo.monthly_data(project.id, Pagination(1, 20, max_size=100)))["data"][0]
 
-    for key in ("revenue", "cost", "profit", "profit_rate", "contract_price",
-                "estimated_completion_price",
-                "expected_complete_settlement", "expected_complete_cost",
-                "expected_complete_profit", "expected_complete_profit_rate"):
+    for key in (
+        "revenue",
+        "cost",
+        "profit",
+        "profit_rate",
+        "contract_price",
+        "estimated_completion_price",
+        "expected_complete_settlement",
+        "expected_complete_cost",
+        "expected_complete_profit",
+        "expected_complete_profit_rate",
+    ):
         assert item[key] == 0.0, key
     # no settlement rows at all -> target/rental groups stay None
     assert item["target_profit"] is None
@@ -251,16 +306,25 @@ async def test_cost_details_expose_six_calibers_and_hierarchy_code(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
     await make_indicator(
-        batch.id, hierarchy_code="1", item_name="安装工程",
-        indicator_with_tax=Decimal("2230"), estimated_with_tax=Decimal("2183"),
-        adjusted_with_tax=Decimal("2108"), current_budget=Decimal("2032"),
+        batch.id,
+        hierarchy_code="1",
+        item_name="安装工程",
+        indicator_with_tax=Decimal("2230"),
+        estimated_with_tax=Decimal("2183"),
+        adjusted_with_tax=Decimal("2108"),
+        current_budget=Decimal("2032"),
         incurred_cost=Decimal("1710"),
+        forecast_with_tax=Decimal("1980"),
     )
     # legacy rows have NULL hierarchy_code and must stay flat without errors
     await make_indicator(
-        batch.id, hierarchy_code=None, item_name="机炉电施工费",
-        indicator_with_tax=Decimal("1000"), estimated_with_tax=Decimal("980"),
-        adjusted_with_tax=Decimal("950"), current_budget=Decimal("920"),
+        batch.id,
+        hierarchy_code=None,
+        item_name="机炉电施工费",
+        indicator_with_tax=Decimal("1000"),
+        estimated_with_tax=Decimal("980"),
+        adjusted_with_tax=Decimal("950"),
+        current_budget=Decimal("920"),
         incurred_cost=Decimal("780"),
     )
 
@@ -274,10 +338,10 @@ async def test_cost_details_expose_six_calibers_and_hierarchy_code(db):
     assert first["deviation"] == -520.0
     assert first["deviation_rate"] == pytest.approx(-23.32)
     # new calibers from data_dynamic_indicator
-    assert first["list_target"] == 2183.0   # 预计完工量含税指标
-    assert first["adj_target"] == 2108.0    # 调整后指标
-    assert first["budget"] == 2032.0        # 现执行预算
-    assert first["forecast"] == 2183.0      # 预计完工成本（近似口径）
+    assert first["list_target"] == 2183.0  # 预计完工量含税指标
+    assert first["adj_target"] == 2108.0  # 调整后指标
+    assert first["budget"] == 2032.0  # 现执行预算
+    assert first["forecast"] == 1980.0
 
     assert second["hierarchy_code"] is None
     assert second["list_target"] == 980.0
@@ -291,9 +355,13 @@ async def test_cost_categories_report_carries_extended_calibers(db):
     project = await make_project()
     batch = await make_batch(project.id, "2026-03")
     await make_indicator(
-        batch.id, hierarchy_code="2", item_name="其他项目费",
-        indicator_with_tax=Decimal("780"), estimated_with_tax=Decimal("752"),
-        adjusted_with_tax=Decimal("726"), current_budget=Decimal("700"),
+        batch.id,
+        hierarchy_code="2",
+        item_name="其他项目费",
+        indicator_with_tax=Decimal("780"),
+        estimated_with_tax=Decimal("752"),
+        adjusted_with_tax=Decimal("726"),
+        current_budget=Decimal("700"),
         incurred_cost=Decimal("600"),
     )
 
@@ -301,8 +369,18 @@ async def test_cost_categories_report_carries_extended_calibers(db):
     result = await repo.cost_categories([project.id], "2026-03", Pagination(1, 20, max_size=100))
 
     item = result["projects"][0]["items"][0]
-    for key in ("hierarchy_code", "name", "indicator", "actual", "deviation",
-                "deviation_rate", "list_target", "adj_target", "budget", "forecast"):
+    for key in (
+        "hierarchy_code",
+        "name",
+        "indicator",
+        "actual",
+        "deviation",
+        "deviation_rate",
+        "list_target",
+        "adj_target",
+        "budget",
+        "forecast",
+    ):
         assert key in item, key
     assert item["budget"] == 700.0
 
@@ -313,8 +391,7 @@ async def test_cost_categories_report_carries_extended_calibers(db):
 @pytest.mark.asyncio
 async def test_month_comparison_computes_mom_changes(db):
     project = await make_project()
-    for ym, revenue, cost, net in (
-            ("2026-02", "100", "90", "10"), ("2026-03", "150", "120", "30")):
+    for ym, revenue, cost, net in (("2026-02", "100", "90", "10"), ("2026-03", "150", "120", "30")):
         batch = await make_batch(project.id, ym)
         await make_settlement(
             batch.id,
@@ -322,7 +399,14 @@ async def test_month_comparison_computes_mom_changes(db):
                 SETTLE_CUMULATIVE_OUTPUT: revenue,
                 SETTLE_CUMULATIVE_COST: cost,
                 SETTLE_CURRENT_PROFIT: net,
-            }
+            },
+        )
+        await make_indicator(
+            batch.id,
+            hierarchy_code="一",
+            item_name="项目管理费",
+            incurred_cost=Decimal(cost),
+            forecast_with_tax=Decimal(str(Decimal(cost) + Decimal("5"))),
         )
 
     repo = TortoiseAnalyticsRepository()
@@ -331,6 +415,13 @@ async def test_month_comparison_computes_mom_changes(db):
     first, second = result["months"]
     assert first["ym"] == "2026-02"
     assert first["mom"] is None  # first selected month has no base period
+    assert first["cost_categories"][0] == {
+        "hierarchy_code": "一",
+        "level": 1,
+        "name": "项目管理费",
+        "actual": 90.0,
+        "forecast": 95.0,
+    }
 
     mom = second["mom"]
     assert mom["revenue"] == {"change": 50.0, "change_pct": 50.0}
@@ -345,10 +436,7 @@ async def test_month_comparison_computes_mom_changes(db):
 async def test_month_comparison_mom_returns_none_when_base_is_zero(db):
     project = await make_project()
     empty = await make_batch(project.id, "2026-01")
-    await make_settlement(
-        empty.id,
-        **{SETTLE_CUMULATIVE_OUTPUT: "0", SETTLE_CURRENT_PROFIT: "0"}
-    )
+    await make_settlement(empty.id, **{SETTLE_CUMULATIVE_OUTPUT: "0", SETTLE_CURRENT_PROFIT: "0"})
     filled = await make_batch(project.id, "2026-02")
     await make_settlement(
         filled.id,
@@ -356,7 +444,7 @@ async def test_month_comparison_mom_returns_none_when_base_is_zero(db):
             SETTLE_CUMULATIVE_OUTPUT: "100",
             SETTLE_CUMULATIVE_COST: "90",
             SETTLE_CURRENT_PROFIT: "10",
-        }
+        },
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -389,7 +477,7 @@ async def test_compare_projects_returns_metrics_scores_and_legacy_fields(db):
             SETTLE_CUMULATIVE_OUTPUT: "10250",
             SETTLE_CUMULATIVE_COST: "8050",
             SETTLE_CURRENT_PROFIT: "2200",
-        }
+        },
     )
     beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
     batch_b = await make_batch(beta.id, "2026-03")
@@ -399,7 +487,7 @@ async def test_compare_projects_returns_metrics_scores_and_legacy_fields(db):
             SETTLE_CUMULATIVE_OUTPUT: "6600",
             SETTLE_CUMULATIVE_COST: "5060",
             SETTLE_CURRENT_PROFIT: "1540",
-        }
+        },
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -422,8 +510,11 @@ async def test_compare_projects_returns_metrics_scores_and_legacy_fields(db):
     assert first["revenue_ratio"] == 100.0
     assert first["unit_cost"] == pytest.approx(78.54)
     assert first["scores"] == {
-        "profitability": 90, "cost_control": 90, "progress_execution": 75,
-        "settlement_quality": 74, "revenue_conversion": 88,
+        "profitability": 90,
+        "cost_control": 90,
+        "progress_execution": 75,
+        "settlement_quality": 74,
+        "revenue_conversion": 88,
     }
     assert first["total_score"] == 83.4
     assert first["grade"] == "A"
@@ -445,7 +536,7 @@ async def test_compare_profit_rate_boundary_18_scores_90(db):
             SETTLE_CUMULATIVE_OUTPUT: "100",
             SETTLE_CURRENT_PROFIT: "18",
             SETTLE_CUMULATIVE_COST: "82",
-        }
+        },
     )
     beta = await make_project(contract_price=Decimal("100"))
     batch_b = await make_batch(beta.id, "2026-03")
@@ -455,7 +546,7 @@ async def test_compare_profit_rate_boundary_18_scores_90(db):
             SETTLE_CUMULATIVE_OUTPUT: "100",
             SETTLE_CURRENT_PROFIT: "17.99",
             SETTLE_CUMULATIVE_COST: "82",
-        }
+        },
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -480,7 +571,7 @@ async def test_compare_stored_rate_row_preferred_over_computed(db):
             SETTLE_CURRENT_PROFIT: "18",
             SETTLE_CUMULATIVE_COST: "82",
             SETTLE_CURRENT_PROFIT_RATE: "0.185",
-        }
+        },
     )
     beta = await make_project(contract_price=Decimal("100"))
     await make_batch(beta.id, "2026-03")
@@ -502,7 +593,7 @@ async def test_compare_division_by_zero_yields_none_and_lowest_band(db):
             SETTLE_CUMULATIVE_OUTPUT: "6600",
             SETTLE_CUMULATIVE_COST: "5060",
             SETTLE_CURRENT_PROFIT: "1540",
-        }
+        },
     )
 
     repo = TortoiseAnalyticsRepository()
@@ -515,8 +606,11 @@ async def test_compare_division_by_zero_yields_none_and_lowest_band(db):
     assert first["revenue_ratio"] is None
     assert first["settlement_rate"] == 0.0
     assert first["scores"] == {
-        "profitability": 40, "cost_control": 40, "progress_execution": 50,
-        "settlement_quality": 45, "revenue_conversion": 45,
+        "profitability": 40,
+        "cost_control": 40,
+        "progress_execution": 50,
+        "settlement_quality": 45,
+        "revenue_conversion": 45,
     }
     assert first["total_score"] == 44.0
     assert first["grade"] == "D"
@@ -530,48 +624,80 @@ async def test_compare_requires_two_projects(db):
         await repo.compare_projects([1], None)
 
 
+@pytest.mark.asyncio
+async def test_dashboard_health_radar_matches_ui_six_dimensions(db):
+    await make_project(progress=Decimal("80"), status="normal")
+    dimensions = (await TortoiseAnalyticsRepository().health_radar())["dimensions"]
+    assert set(dimensions) == {
+        "progress",
+        "cost",
+        "quality",
+        "safety",
+        "efficiency",
+        "profit",
+    }
+
+
 # ── scoring model boundaries (pure domain) ───────────────────────────
 
 
 def test_scoring_dimension_boundaries():
     # 盈利能力: >=18 -> 90, >=15 -> 75, >=10 -> 60, else 40, None -> 40
-    assert compare_scores(profit_rate=18, unit_cost=82, progress=88,
-                          settlement_rate=85, revenue_ratio=94)["scores"] == {
-        "profitability": 90, "cost_control": 90, "progress_execution": 85,
-        "settlement_quality": 88, "revenue_conversion": 88,
+    assert compare_scores(profit_rate=18, unit_cost=82, progress=88, settlement_rate=85, revenue_ratio=94)[
+        "scores"
+    ] == {
+        "profitability": 90,
+        "cost_control": 90,
+        "progress_execution": 85,
+        "settlement_quality": 88,
+        "revenue_conversion": 88,
     }
-    assert compare_scores(profit_rate=15, unit_cost=86, progress=80,
-                          settlement_rate=78, revenue_ratio=90)["scores"] == {
-        "profitability": 75, "cost_control": 75, "progress_execution": 75,
-        "settlement_quality": 74, "revenue_conversion": 74,
+    assert compare_scores(profit_rate=15, unit_cost=86, progress=80, settlement_rate=78, revenue_ratio=90)[
+        "scores"
+    ] == {
+        "profitability": 75,
+        "cost_control": 75,
+        "progress_execution": 75,
+        "settlement_quality": 74,
+        "revenue_conversion": 74,
     }
-    assert compare_scores(profit_rate=10, unit_cost=90, progress=70,
-                          settlement_rate=70, revenue_ratio=85)["scores"] == {
-        "profitability": 60, "cost_control": 60, "progress_execution": 65,
-        "settlement_quality": 62, "revenue_conversion": 62,
+    assert compare_scores(profit_rate=10, unit_cost=90, progress=70, settlement_rate=70, revenue_ratio=85)[
+        "scores"
+    ] == {
+        "profitability": 60,
+        "cost_control": 60,
+        "progress_execution": 65,
+        "settlement_quality": 62,
+        "revenue_conversion": 62,
     }
-    assert compare_scores(profit_rate=9.99, unit_cost=90.01, progress=69,
-                          settlement_rate=69, revenue_ratio=84)["scores"] == {
-        "profitability": 40, "cost_control": 40, "progress_execution": 50,
-        "settlement_quality": 45, "revenue_conversion": 45,
+    assert compare_scores(profit_rate=9.99, unit_cost=90.01, progress=69, settlement_rate=69, revenue_ratio=84)[
+        "scores"
+    ] == {
+        "profitability": 40,
+        "cost_control": 40,
+        "progress_execution": 50,
+        "settlement_quality": 45,
+        "revenue_conversion": 45,
     }
     # division-by-zero metrics arrive as None -> lowest band per dimension
-    assert compare_scores(profit_rate=None, unit_cost=None, progress=None,
-                          settlement_rate=None, revenue_ratio=None)["scores"] == {
-        "profitability": 40, "cost_control": 40, "progress_execution": 50,
-        "settlement_quality": 45, "revenue_conversion": 45,
+    assert compare_scores(profit_rate=None, unit_cost=None, progress=None, settlement_rate=None, revenue_ratio=None)[
+        "scores"
+    ] == {
+        "profitability": 40,
+        "cost_control": 40,
+        "progress_execution": 50,
+        "settlement_quality": 45,
+        "revenue_conversion": 45,
     }
 
 
 def test_scoring_total_and_grade_boundaries():
     # total = 83.0 exactly -> A
-    scored = compare_scores(profit_rate=18, unit_cost=82, progress=88,
-                            settlement_rate=85, revenue_ratio=85)
+    scored = compare_scores(profit_rate=18, unit_cost=82, progress=88, settlement_rate=85, revenue_ratio=85)
     assert scored["total_score"] == 83.0
     assert scored["grade"] == "A"
     # total = 79.6 -> B
-    scored = compare_scores(profit_rate=18, unit_cost=82, progress=88,
-                            settlement_rate=85, revenue_ratio=84.9)
+    scored = compare_scores(profit_rate=18, unit_cost=82, progress=88, settlement_rate=85, revenue_ratio=84.9)
     assert scored["total_score"] == 79.6
     assert scored["grade"] == "B"
     # grade cut-offs 83 / 70 / 58

@@ -16,4 +16,3 @@ class WorkbookSheet:
 class WorkbookReader(ABC):
     @abstractmethod
     async def read(self, filepath: str) -> list[WorkbookSheet]: ...
-

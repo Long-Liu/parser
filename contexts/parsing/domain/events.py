@@ -50,6 +50,7 @@ class ParseJobCompleted(DomainEvent):
 @dataclass(frozen=True)
 class ParseJobConfirmed(DomainEvent):
     """A preview batch was confirmed and its data rows were persisted."""
+
     project_id: int | None = None
     year_month: str = ""
 

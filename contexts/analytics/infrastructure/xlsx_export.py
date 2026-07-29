@@ -84,16 +84,36 @@ def build_profits_workbook(items: list[dict]) -> Workbook:
 def _append_cost_rows(ws, projects: list[dict]) -> None:
     for proj in projects:
         for item in proj["items"]:
-            ws.append([
-                proj["project"]["name"], proj["ym"], item["name"],
-                item["indicator"], item["actual"], item["deviation"],
-                item["deviation_rate"], item["list_target"], item["adj_target"],
-                item["budget"], item["forecast"],
-            ])
+            ws.append(
+                [
+                    proj["project"]["name"],
+                    proj["ym"],
+                    item["name"],
+                    item["indicator"],
+                    item["actual"],
+                    item["deviation"],
+                    item["deviation_rate"],
+                    item["list_target"],
+                    item["adj_target"],
+                    item["budget"],
+                    item["forecast"],
+                ]
+            )
 
 
-_COST_HEADER = ["项目", "月份", "科目", "指标", "实际", "偏差", "偏差率(%)",
-                "预计完工量含税指标", "调整后指标", "现执行预算", "预计完工成本"]
+_COST_HEADER = [
+    "项目",
+    "月份",
+    "科目",
+    "指标",
+    "实际",
+    "偏差",
+    "偏差率(%)",
+    "预计完工量含税指标",
+    "调整后指标",
+    "现执行预算",
+    "预计完工成本",
+]
 
 
 def build_cost_categories_workbook(projects: list[dict]) -> Workbook:
@@ -112,13 +132,22 @@ def build_budget_lease_writeoff_workbook(data: dict) -> Workbook:
     wb = Workbook()
     ws = wb.active
     ws.title = "预算租借核销"
-    ws.append([
-        "序号", "项目名称", "月份", "预算租借合计",
-        "累计租借-机械设备租赁", "累计租借-周转材料租借",
-        "累计租借-其他租借费用", "已核销金额", "未核销金额",
-        "剩余未核销-机械设备租赁", "剩余未核销-周转材料租借",
-        "剩余未核销-其他租借费用",
-    ])
+    ws.append(
+        [
+            "序号",
+            "项目名称",
+            "月份",
+            "预算租借合计",
+            "累计租借-机械设备租赁",
+            "累计租借-周转材料租借",
+            "累计租借-其他租借费用",
+            "已核销金额",
+            "未核销金额",
+            "剩余未核销-机械设备租赁",
+            "剩余未核销-周转材料租借",
+            "剩余未核销-其他租借费用",
+        ]
+    )
 
     def values(item: dict) -> list:
         return [

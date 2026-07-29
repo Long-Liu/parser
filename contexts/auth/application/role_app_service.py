@@ -33,17 +33,17 @@ class RoleApplicationService(TransactionalService):
 
     @transactional
     async def create(
-        self, code: str, name: str, description: str = "",
+        self,
+        code: str,
+        name: str,
+        description: str = "",
         permission_codes: list[str] | None = None,
     ) -> dict:
         existing = await self._repo.find_all()
         if any(r.code == code for r in existing):
             raise ConflictError(f"role code '{code}' already exists")
-        permissions = [
-            PermissionRef(code=c) for c in (permission_codes or [])
-        ]
-        role = Role.create(code=code, name=name, description=description,
-                          permissions=permissions)
+        permissions = [PermissionRef(code=c) for c in (permission_codes or [])]
+        role = Role.create(code=code, name=name, description=description, permissions=permissions)
         await self._repo.save(role)
         if role.id is None:
             raise RuntimeError("role repository did not assign an id")
@@ -53,7 +53,10 @@ class RoleApplicationService(TransactionalService):
 
     @transactional
     async def update(
-        self, role_id: int, name: str, description: str = "",
+        self,
+        role_id: int,
+        name: str,
+        description: str = "",
         permission_codes: list[str] | None = None,
     ) -> dict:
         role = await self._repo.find_by_id(RoleId(role_id))
@@ -61,9 +64,7 @@ class RoleApplicationService(TransactionalService):
             raise NotFoundError(f"role {role_id} not found")
         role.rename(name, description)
         if permission_codes is not None:
-            role.assign_permissions(
-                [PermissionRef(code=c) for c in permission_codes]
-            )
+            role.assign_permissions([PermissionRef(code=c) for c in permission_codes])
         await self._repo.save(role)
         if self._event_publisher:
             await self._event_publisher.publish(role.pull_events())
@@ -84,7 +85,7 @@ class RoleApplicationService(TransactionalService):
 
     async def list_all(self, pagination: Pagination) -> dict:
         roles = await self._repo.find_all()
-        rows = roles[pagination.offset: pagination.offset + pagination.size]
+        rows = roles[pagination.offset : pagination.offset + pagination.size]
         return {
             "roles": [self._serialize(r) for r in rows],
             "pagination": {"page": pagination.page, "size": pagination.size, "total": len(roles)},
@@ -121,7 +122,9 @@ class RoleApplicationService(TransactionalService):
         if not set(role_ids).issubset(valid_ids):
             raise NotFoundError("one or more roles do not exist")
         for role in roles:
-            rid = role.id.value if role.id else None
+            if role.id is None:
+                continue
+            rid = role.id.value
             if rid in role_ids:
                 await self._repo.assign_to_user(UserId(user_id), RoleId(rid))
             else:

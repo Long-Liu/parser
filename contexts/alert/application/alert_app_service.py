@@ -19,9 +19,13 @@ from contexts.shared.domain.pagination import Pagination
 
 
 class AlertApplicationService(TransactionalService):
-    def __init__(self, repository: AlertRepository, metrics: AlertMetricProvider,
-                 dispatcher: AlertPushDispatcher,
-                 transaction_manager: TransactionManager | None = None) -> None:
+    def __init__(
+        self,
+        repository: AlertRepository,
+        metrics: AlertMetricProvider,
+        dispatcher: AlertPushDispatcher,
+        transaction_manager: TransactionManager | None = None,
+    ) -> None:
         super().__init__(transaction_manager)
         self._repository = repository
         self._metrics = metrics
@@ -38,21 +42,17 @@ class AlertApplicationService(TransactionalService):
             triggered += t
             resolved += r
         self._schedule_dispatch()
-        return {"project_id": project_id, "ym": period,
-                "triggered": triggered, "resolved": resolved}
+        return {"project_id": project_id, "ym": period, "triggered": triggered, "resolved": resolved}
 
     async def _evaluate_rule(self, rule, project_id, period, values):
         value = values.get(rule.metric)
         if value is None:
             return 0, 0
-        scope = (period or "current") if rule.metric in {
-            "cost_deviation_rate", "gross_profit_rate"
-        } else "current"
+        scope = (period or "current") if rule.metric in {"cost_deviation_rate", "gross_profit_rate"} else "current"
         fingerprint = f"{project_id}:{rule.code}:{scope}"
         existing = await self._repository.find_open(fingerprint)
         matched = rule.matches(value)
-        consecutive = await self._repository.register_match(
-            project_id, rule.code, scope, matched)
+        consecutive = await self._repository.register_match(project_id, rule.code, scope, matched)
         if matched and consecutive >= rule.consecutive_triggers:
             return await self._trigger_alert(rule, existing, project_id, period, value, fingerprint), 0
         if existing and existing.open and rule.auto_resolve:
@@ -67,10 +67,19 @@ class AlertApplicationService(TransactionalService):
             event_type = existing.retrigger(value, rule.level, message)
             alert = existing
         else:
-            alert = Alert(alert_id=None, project_id=project_id, rule_code=rule.code,
-                          alert_type=rule.metric, level=rule.level, title=rule.name,
-                          message=message, metric_value=value, threshold_value=rule.threshold,
-                          fingerprint=fingerprint, ym=period)
+            alert = Alert(
+                alert_id=None,
+                project_id=project_id,
+                rule_code=rule.code,
+                alert_type=rule.metric,
+                level=rule.level,
+                title=rule.name,
+                message=message,
+                metric_value=value,
+                threshold_value=rule.threshold,
+                fingerprint=fingerprint,
+                ym=period,
+            )
             event_type = "triggered"
         await self._repository.save(alert)
         await self._repository.record_event(alert, event_type)
@@ -84,26 +93,39 @@ class AlertApplicationService(TransactionalService):
         await self._repository.add_outbox(existing, "resolved")
         return 1
 
-    async def find(self, *, project_ids: list[int] | None, status: str = "",
-                   level: str = "", pagination: Pagination) -> dict:
+    async def find(
+        self, *, project_ids: list[int] | None, status: str = "", level: str = "", pagination: Pagination
+    ) -> dict:
         if status and status not in {item.value for item in AlertStatus}:
             raise ValidationError("invalid alert status")
         rows, total = await self._repository.find(
-            project_ids=project_ids, status=status, level=level,
+            project_ids=project_ids,
+            status=status,
+            level=level,
             pagination=pagination,
         )
-        return {"alerts": rows, "pagination": {
-            "page": pagination.page, "size": pagination.size, "total": total,
-        }}
+        return {
+            "alerts": rows,
+            "pagination": {
+                "page": pagination.page,
+                "size": pagination.size,
+                "total": total,
+            },
+        }
 
     async def summary(self, project_ids: list[int] | None) -> dict:
         return await self._repository.summary(project_ids)
 
     async def rules(self, pagination: Pagination) -> dict:
         rows, total = await self._repository.rule_records(pagination)
-        return {"rules": rows, "pagination": {
-            "page": pagination.page, "size": pagination.size, "total": total,
-        }}
+        return {
+            "rules": rows,
+            "pagination": {
+                "page": pagination.page,
+                "size": pagination.size,
+                "total": total,
+            },
+        }
 
     @transactional
     async def update_rule(self, rule_id: int, values: dict) -> dict:
@@ -134,9 +156,14 @@ class AlertApplicationService(TransactionalService):
     async def events(self, alert_id: int, pagination: Pagination) -> dict:
         await self._required(alert_id)
         rows, total = await self._repository.events(alert_id, pagination)
-        return {"events": rows, "pagination": {
-            "page": pagination.page, "size": pagination.size, "total": total,
-        }}
+        return {
+            "events": rows,
+            "pagination": {
+                "page": pagination.page,
+                "size": pagination.size,
+                "total": total,
+            },
+        }
 
     @transactional
     async def acknowledge(self, alert_id: int, actor_id: int, note: str = "") -> dict:
@@ -170,12 +197,10 @@ class AlertApplicationService(TransactionalService):
     async def delete_project(self, project_id: int) -> None:
         await self._repository.delete_project(project_id)
 
-    async def missed_notifications(self, project_ids: list[int],
-                                    since: str | None) -> list[dict]:
+    async def missed_notifications(self, project_ids: list[int], since: str | None) -> list[dict]:
         return await self._repository.missed_outbox(project_ids, since)
 
-    async def _persist_action(self, alert: Alert, event_type: str,
-                              actor_id: int, note: str) -> None:
+    async def _persist_action(self, alert: Alert, event_type: str, actor_id: int, note: str) -> None:
         await self._repository.save(alert)
         await self._repository.record_event(alert, event_type, actor_id, note)
         await self._repository.add_outbox(alert, event_type)

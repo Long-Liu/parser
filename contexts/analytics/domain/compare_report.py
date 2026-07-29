@@ -38,9 +38,7 @@ def build_compare_report(projects: list[dict], ym: str | None) -> list[dict]:
     )
 
     by_progress = _rank(projects, "progress")
-    progress_lines = "；".join(
-        f"{p['project_name']} {_fmt(p['progress'], '%')}" for p in by_progress
-    )
+    progress_lines = "；".join(f"{p['project_name']} {_fmt(p['progress'], '%')}" for p in by_progress)
     progress = (
         f"按形象进度排序：{progress_lines}。"
         f"进度领先项目「{by_progress[0]['project_name']}」"
@@ -51,9 +49,7 @@ def build_compare_report(projects: list[dict], ym: str | None) -> list[dict]:
     )
 
     by_unit_cost = _rank(projects, "unit_cost", reverse=False)
-    cost_lines = "；".join(
-        f"{p['project_name']} 单位成本 {_fmt(p['unit_cost'], '%')}" for p in by_unit_cost
-    )
+    cost_lines = "；".join(f"{p['project_name']} 单位成本 {_fmt(p['unit_cost'], '%')}" for p in by_unit_cost)
     cost = (
         f"成本管控对标：{cost_lines}。"
         f"「{by_unit_cost[0]['project_name']}」成本管控最优，"
@@ -62,9 +58,7 @@ def build_compare_report(projects: list[dict], ym: str | None) -> list[dict]:
     )
 
     by_profit_rate = _rank(projects, "profit_rate")
-    profit_lines = "；".join(
-        f"{p['project_name']} 毛利率 {_fmt(p['profit_rate'], '%')}" for p in by_profit_rate
-    )
+    profit_lines = "；".join(f"{p['project_name']} 毛利率 {_fmt(p['profit_rate'], '%')}" for p in by_profit_rate)
     profit = (
         f"盈利能力对标：{profit_lines}。"
         f"「{by_profit_rate[0]['project_name']}」盈利水平领先，"

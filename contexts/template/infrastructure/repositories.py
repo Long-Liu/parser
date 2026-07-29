@@ -13,9 +13,7 @@ class YamlTemplateCatalog(TemplateCatalog):
 
     def _ensure_cache(self) -> dict[str, Template]:
         if self._cache is None:
-            self._cache = {
-                str(t.id): t for t in self._yaml_loader.load_all()
-            }
+            self._cache = {str(t.id): t for t in self._yaml_loader.load_all()}
         return self._cache
 
     async def find_by_id(self, template_id: TemplateId) -> Template | None:

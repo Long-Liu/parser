@@ -61,9 +61,7 @@ class TortoiseDataQueryRepository(DataQueryRepository):
             for name, f in model._meta.fields_map.items()
         }
 
-    async def update_by_id(
-        self, template_id: str, row_id: int, updates: dict
-    ) -> None:
+    async def update_by_id(self, template_id: str, row_id: int, updates: dict) -> None:
         model = TEMPLATE_DATA_MODELS.get(template_id)
         if model is None:
             raise NotFoundError(f"template {template_id} not found")

@@ -26,6 +26,13 @@ def build_upload_service(
     transactions: TransactionManager,
 ) -> UploadApplicationService:
     return UploadApplicationService(
-        jobs, templates, sink, events, storage, workbooks, projects,
-        previews, transactions,
+        jobs,
+        templates,
+        sink,
+        events,
+        storage,
+        workbooks,
+        projects,
+        previews,
+        transactions,
     )

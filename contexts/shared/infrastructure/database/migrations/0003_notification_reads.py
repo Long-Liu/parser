@@ -7,14 +7,14 @@ class Migration(migrations.Migration):
         ops.CreateModel(
             name="NotificationRead",
             fields=[
-                ("id", fields.IntField(generated=True, primary_key=True,
-                                       unique=True, db_index=True)),
+                ("id", fields.IntField(generated=True, primary_key=True, unique=True, db_index=True)),
                 ("notification_id", fields.IntField()),
                 ("user_id", fields.IntField()),
                 ("read_at", fields.DatetimeField(auto_now_add=True)),
             ],
             options={
-                "table": "notification_reads", "app": "models",
+                "table": "notification_reads",
+                "app": "models",
                 "unique_together": (("notification_id", "user_id"),),
                 "pk_attr": "id",
             },

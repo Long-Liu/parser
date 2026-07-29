@@ -28,12 +28,15 @@ def register(app, settings: Settings):
     @app.middleware("request")
     async def cors_preflight(request: Request):
         if request.method == "OPTIONS":
-            return json({}, headers={
-                "Access-Control-Allow-Origin": _cors_origin(request, allowed),
-                "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type,Authorization",
-                "Access-Control-Max-Age": "3600",
-            })
+            return json(
+                {},
+                headers={
+                    "Access-Control-Allow-Origin": _cors_origin(request, allowed),
+                    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+                    "Access-Control-Max-Age": "3600",
+                },
+            )
 
     @app.middleware("response")
     async def cors_headers(request: Request, response):

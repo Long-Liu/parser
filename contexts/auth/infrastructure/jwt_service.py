@@ -42,4 +42,3 @@ class JwtService(TokenService):
             raise AuthenticationError("token expired") from None
         except jwt.InvalidTokenError:
             raise AuthenticationError("invalid token") from None
-

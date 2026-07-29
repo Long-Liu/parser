@@ -8,4 +8,3 @@ class UploadedFile:
     name: str
     body: bytes
     content_type: str = ""
-

@@ -16,4 +16,3 @@ class FileStorage(ABC):
 
     @abstractmethod
     async def delete(self, stored_file: StoredFile) -> None: ...
-

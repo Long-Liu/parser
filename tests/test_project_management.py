@@ -1,19 +1,38 @@
 from decimal import Decimal
 
 import pytest
+from tortoise import Tortoise
 
+from contexts.auth.infrastructure.tables import User as OrmUser
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.project.domain.project import Project
+from contexts.project.infrastructure.repositories import TortoiseUserDirectory
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId
 from contexts.shared.domain.pagination import Pagination
+from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
+
+
+@pytest.fixture
+async def db():
+    await Tortoise.init(
+        db_url="sqlite://:memory:",
+        modules={"models": list(_MODEL_MODULES)},
+    )
+    await Tortoise.generate_schemas()
+    yield
+    await Tortoise.close_connections()
 
 
 class FakeProjectRepository:
     def __init__(self):
         self.project = Project(
-            ProjectId(1), "P001", "上高项目", contract_price=Decimal("12500"),
-            status="normal", progress=Decimal("82"),
+            ProjectId(1),
+            "P001",
+            "上高项目",
+            contract_price=Decimal("12500"),
+            status="normal",
+            progress=Decimal("82"),
         )
         self.list_args = None
         self.deleted = None
@@ -49,18 +68,59 @@ class FakeUsers:
     async def exists(self, user_id):
         return user_id.value == 7
 
+    async def user_id_by_real_name(self, real_name):
+        return 7 if real_name == "张三" else None
+
 
 @pytest.mark.asyncio
 async def test_project_list_is_filtered_and_paginated():
     repo = FakeProjectRepository()
     result = await ProjectApplicationService(repo).list_all(
-        keyword=" 上高 ", status="normal", pagination=Pagination(2, 20, max_size=100),
+        keyword=" 上高 ",
+        status="normal",
+        pagination=Pagination(2, 20, max_size=100),
     )
     assert repo.list_args == {
-        "keyword": "上高", "status": "normal", "offset": 20, "limit": 20,
+        "keyword": "上高",
+        "status": "normal",
+        "offset": 20,
+        "limit": 20,
     }
     assert result["pagination"] == {"page": 2, "size": 20, "total": 21}
     assert result["projects"][0]["contract_price"] == 12500.0
+
+
+@pytest.mark.asyncio
+async def test_project_create_generates_code_for_ui_form_without_code():
+    repo = FakeProjectRepository()
+    result = await ProjectApplicationService.create.__wrapped__(
+        ProjectApplicationService(repo),
+        "",
+        "无编号项目",
+    )
+    assert result["code"].startswith("PRJ-")
+    assert result["name"] == "无编号项目"
+
+
+@pytest.mark.asyncio
+async def test_project_create_resolves_ui_leader_name():
+    repo = FakeProjectRepository()
+    result = await ProjectApplicationService.create.__wrapped__(
+        ProjectApplicationService(repo, users=FakeUsers()),
+        "",
+        "负责人项目",
+        manager_name="张三",
+    )
+    assert result["manager_id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_project_manager_lookup_rejects_duplicate_real_names(db):
+    await OrmUser.create(username="zhang-a", password="hash", real_name="张三")
+    await OrmUser.create(username="zhang-b", password="hash", real_name="张三")
+
+    with pytest.raises(ValidationError, match="multiple users"):
+        await TortoiseUserDirectory().user_id_by_real_name("张三")
 
 
 @pytest.mark.asyncio
@@ -69,7 +129,10 @@ async def test_project_update_and_delete():
     cleanup = FakeCleanup()
     service = ProjectApplicationService(repo, cleanup=cleanup)
     updated = await ProjectApplicationService.update.__wrapped__(
-        service, 1, name="新名称", progress=Decimal("90"),
+        service,
+        1,
+        name="新名称",
+        progress=Decimal("90"),
     )
     assert updated["name"] == "新名称"
     assert updated["progress"] == 90.0
@@ -85,7 +148,11 @@ async def test_project_assignment_rejects_unknown_user():
     service = ProjectApplicationService(FakeProjectRepository(), users=FakeUsers())
     with pytest.raises(NotFoundError, match="user 99"):
         await ProjectApplicationService.assign_user.__wrapped__(
-            service, 1, 99, False, "viewer",
+            service,
+            1,
+            99,
+            False,
+            "viewer",
         )
 
 
@@ -105,9 +172,7 @@ class EnrichFakeRepository:
         return self.projects, len(self.projects)
 
     async def find_by_id(self, project_id):
-        return next(
-            (p for p in self.projects if p.id.value == project_id.value), None
-        )
+        return next((p for p in self.projects if p.id.value == project_id.value), None)
 
 
 class FakeUsersWithNames:
@@ -137,22 +202,26 @@ def _make_project(pid, manager=None):
     from contexts.shared.domain.identifiers import UserId
 
     return Project(
-        ProjectId(pid), f"P{pid:03d}", f"项目{pid}",
+        ProjectId(pid),
+        f"P{pid:03d}",
+        f"项目{pid}",
         manager_id=UserId(manager) if manager else None,
     )
 
 
 @pytest.mark.asyncio
 async def test_project_list_enriched_with_manager_name_and_latest_metrics():
-    projects = [_make_project(1, manager=7), _make_project(2, manager=8),
-                _make_project(3)]
+    projects = [_make_project(1, manager=7), _make_project(2, manager=8), _make_project(3)]
     users = FakeUsersWithNames({7: "张三", 8: "李四"})
-    metrics = FakeMetrics({
-        1: {"latest_ym": "2025-05", "revenue": 1000.0, "cost": 800.0,
-            "profit": 200.0, "profit_rate": 0.2},
-    })
+    metrics = FakeMetrics(
+        {
+            1: {"latest_ym": "2025-05", "revenue": 1000.0, "cost": 800.0, "profit": 200.0, "profit_rate": 0.2},
+        }
+    )
     service = ProjectApplicationService(
-        EnrichFakeRepository(projects), users=users, metrics=metrics,
+        EnrichFakeRepository(projects),
+        users=users,
+        metrics=metrics,
     )
     result = await service.list_all(pagination=Pagination(1, 20, max_size=100))
     items = {p["id"]: p for p in result["projects"]}
@@ -186,13 +255,15 @@ async def test_project_list_enriched_with_manager_name_and_latest_metrics():
 @pytest.mark.asyncio
 async def test_project_detail_enriched_with_manager_name_and_latest_metrics():
     users = FakeUsersWithNames({7: "张三"})
-    metrics = FakeMetrics({
-        1: {"latest_ym": "2025-06", "revenue": 2000.0, "cost": 1500.0,
-            "profit": 500.0, "profit_rate": 0.25},
-    })
+    metrics = FakeMetrics(
+        {
+            1: {"latest_ym": "2025-06", "revenue": 2000.0, "cost": 1500.0, "profit": 500.0, "profit_rate": 0.25},
+        }
+    )
     service = ProjectApplicationService(
         EnrichFakeRepository([_make_project(1, manager=7)]),
-        users=users, metrics=metrics,
+        users=users,
+        metrics=metrics,
     )
     detail = await service.get_by_id(ProjectId(1))
     assert detail["manager_name"] == "张三"
@@ -208,8 +279,7 @@ async def test_project_detail_enriched_with_manager_name_and_latest_metrics():
 @pytest.mark.asyncio
 async def test_project_enrichment_defaults_to_none_without_providers():
     service = ProjectApplicationService(EnrichFakeRepository([_make_project(1, 7)]))
-    item = (await service.list_all(
-        pagination=Pagination(1, 20, max_size=100)))["projects"][0]
+    item = (await service.list_all(pagination=Pagination(1, 20, max_size=100)))["projects"][0]
     assert item["manager_name"] is None
     assert item["latest_ym"] is None
     assert item["revenue"] is None

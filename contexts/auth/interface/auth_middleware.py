@@ -51,6 +51,7 @@ def require_auth(f):
         # Verified JWT claims (jti/iat/exp) for logout / change-password.
         request.ctx.token_claims = ctx.claims
         return await f(*args, **kwargs)
+
     return decorated
 
 
@@ -63,16 +64,17 @@ def require_permission(perm_code: str):
             if permissions is None:
                 return json({"error": "not authenticated"}, status=401)
             if perm_code not in permissions:
-                return json(
-                    {"error": f"missing permission: {perm_code}"}, status=403
-                )
+                return json({"error": f"missing permission: {perm_code}"}, status=403)
             return await f(*args, **kwargs)
+
         return decorated
+
     return decorator
 
 
 def require_project_access(*, roles: set[str] | None = None):
     """Require membership of the project identified by route, query or form."""
+
     def decorator(f):
         @wraps(f)
         async def decorated(*args, **kwargs):
@@ -87,14 +89,18 @@ def require_project_access(*, roles: set[str] | None = None):
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require(
-                    UserId(int(request.ctx.user_id)), int(raw), roles,
+                    UserId(int(request.ctx.user_id)),
+                    int(raw),
+                    roles,
                 )
             except (TypeError, ValueError):
                 return json({"error": "valid project_id is required"}, status=400)
             except AuthorizationError as exc:
                 return json({"error": str(exc)}, status=403)
             return await f(*args, **kwargs)
+
         return decorated
+
     return decorator
 
 
@@ -115,7 +121,9 @@ def require_batch_access(*, roles: set[str] | None = None):
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require_batch(
-                    UserId(int(request.ctx.user_id)), int(raw), roles,
+                    UserId(int(request.ctx.user_id)),
+                    int(raw),
+                    roles,
                 )
             except (TypeError, ValueError):
                 return json({"error": "valid batch_id is required"}, status=400)
@@ -124,5 +132,7 @@ def require_batch_access(*, roles: set[str] | None = None):
             except DomainError as exc:
                 return error_to_response(exc)
             return await f(*args, **kwargs)
+
         return decorated
+
     return decorator

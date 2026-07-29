@@ -90,6 +90,8 @@ class DataDynamicIndicator(Model):
     id = fields.IntField(primary_key=True)
     batch_id = fields.IntField()
     hierarchy_code = fields.CharField(max_length=50, null=True)
+    display_level = fields.CharField(max_length=50, null=True)
+    linked_sheet = fields.CharField(max_length=100, null=True)
     item_name = fields.CharField(max_length=300, null=True)
     indicator_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     indicator_tax_rate = fields.DecimalField(max_digits=5, decimal_places=4, null=True)
@@ -108,9 +110,17 @@ class DataDynamicIndicator(Model):
     transfer_out = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     transfer_out_desc = fields.TextField(null=True)
     adjusted_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjusted_tax_rate = fields.DecimalField(max_digits=5, decimal_places=4, null=True)
+    adjusted_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     adjusted_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    adjustment = fields.CharField(max_length=100, null=True)
     current_budget = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     incurred_cost = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    forecast_ex_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    forecast_tax_rate = fields.DecimalField(max_digits=5, decimal_places=4, null=True)
+    forecast_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    forecast_with_tax = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    forecast_remark = fields.TextField(null=True)
     monthly_data = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
@@ -415,15 +425,12 @@ SETTLE_CURRENT_PROFIT_RATE = "截至当期毛利率"
 SETTLE_FORECAST_PROFIT = "预计毛利"
 SETTLE_FORECAST_PROFIT_RATE = "预计毛利率"
 
+
 # Rate indicators are stored as ratios (0.x); consumers that report percents
 # multiply by 100.
 def settlement_indicator_map(rows) -> dict:
     """Index settlement_output rows into {indicator_name: cumulative_value}."""
-    return {
-        row.indicator_name: row.cumulative_value
-        for row in rows
-        if row.indicator_name
-    }
+    return {row.indicator_name: row.cumulative_value for row in rows if row.indicator_name}
 
 
 TEMPLATE_DATA_MODELS: dict[str, type[Model]] = {

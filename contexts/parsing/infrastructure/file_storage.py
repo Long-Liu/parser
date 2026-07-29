@@ -11,9 +11,7 @@ from contexts.shared.infrastructure.config import UploadConfig
 
 class LocalUploadFileStorage(FileStorage):
     def __init__(self, config: UploadConfig, upload_dir: str | None = None) -> None:
-        self._upload_dir = os.path.abspath(
-            upload_dir or config.dir
-        )
+        self._upload_dir = os.path.abspath(upload_dir or config.dir)
 
     async def save(self, filename: str, body: bytes) -> StoredFile:
         os.makedirs(self._upload_dir, exist_ok=True)

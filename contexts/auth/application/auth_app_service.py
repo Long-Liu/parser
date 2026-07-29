@@ -26,12 +26,16 @@ logger = logging.getLogger("parser.auth")
 
 
 class AuthApplicationService(TransactionalService):
-    def __init__(self, user_repo: UserRepository, auth_service: AuthenticationService,
-                 jwt_service: TokenService,
-                 password_hasher: PasswordHasher,
-                 event_publisher: EventPublisher | None = None,
-                 transaction_manager: TransactionManager | None = None,
-                 token_revocations: TokenRevocationRepository | None = None) -> None:
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        auth_service: AuthenticationService,
+        jwt_service: TokenService,
+        password_hasher: PasswordHasher,
+        event_publisher: EventPublisher | None = None,
+        transaction_manager: TransactionManager | None = None,
+        token_revocations: TokenRevocationRepository | None = None,
+    ) -> None:
         super().__init__(transaction_manager)
         self._users = user_repo
         self._auth = auth_service
@@ -58,8 +62,7 @@ class AuthApplicationService(TransactionalService):
         if user.id is None:
             raise AuthenticationError("invalid credentials")
         token = self._jwt.generate(user.id, user.username)
-        return LoginResult(token=token, user_id=user.id.value,
-                           username=user.username, real_name=user.real_name)
+        return LoginResult(token=token, user_id=user.id.value, username=user.username, real_name=user.real_name)
 
     @transactional
     async def register(self, cmd: RegisterCommand) -> dict:
@@ -71,9 +74,15 @@ class AuthApplicationService(TransactionalService):
         if existing:
             raise ConflictError("username already exists")
         hashed = self._password_hasher.hash(cmd.password)
-        user = User.create(user_id=None, username=cmd.username, password_hash=hashed,
-                           real_name=cmd.real_name, email=cmd.email, phone=cmd.phone,
-                           department=cmd.department)
+        user = User.create(
+            user_id=None,
+            username=cmd.username,
+            password_hash=hashed,
+            real_name=cmd.real_name,
+            email=cmd.email,
+            phone=cmd.phone,
+            department=cmd.department,
+        )
         await self._users.save(user)
         if user.id is None:
             raise RuntimeError("user repository did not assign an id")
@@ -82,8 +91,7 @@ class AuthApplicationService(TransactionalService):
         return {"id": user.id.value, "username": cmd.username}
 
     @transactional
-    async def change_password(self, *, user_id: int, old_password: str,
-                              new_password: str) -> None:
+    async def change_password(self, *, user_id: int, old_password: str, new_password: str) -> None:
         """Self-service password change; invalidates all existing tokens.
 
         Error semantics mirror login: a wrong old password raises
@@ -107,11 +115,11 @@ class AuthApplicationService(TransactionalService):
         if self._token_revocations is not None:
             horizon = datetime.now(UTC) + self._jwt.max_lifetime()
             await self._token_revocations.revoke_all_for_user(
-                user_id=UserId(user_id), expires_at=horizon,
+                user_id=UserId(user_id),
+                expires_at=horizon,
             )
 
-    async def logout(self, *, user_id: int, token_jti: str | None = None,
-                     token_exp: int | float | None = None) -> None:
+    async def logout(self, *, user_id: int, token_jti: str | None = None, token_exp: int | float | None = None) -> None:
         """Blacklist the presented token until its natural expiry."""
         if self._token_revocations is None or not token_jti:
             # Tokens minted before jti support cannot be blacklisted
@@ -122,5 +130,7 @@ class AuthApplicationService(TransactionalService):
         else:
             expires_at = datetime.now(UTC) + self._jwt.max_lifetime()
         await self._token_revocations.revoke(
-            jti=token_jti, user_id=UserId(user_id), expires_at=expires_at,
+            jti=token_jti,
+            user_id=UserId(user_id),
+            expires_at=expires_at,
         )

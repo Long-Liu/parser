@@ -6,7 +6,7 @@ class Migration(migrations.Migration):
     # Chained onto 0006 (same pattern as 0006 -> 0005) so Tortoise replays the
     # migrations in filename order 0001..0007 instead of treating this file as
     # an independent graph root.
-    dependencies = [('models', '0006_drop_dead_tables')]
+    dependencies = [("models", "0006_drop_dead_tables")]
 
     initial = False
 

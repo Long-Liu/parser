@@ -17,14 +17,14 @@ class RolesController(BaseController):
 
     def setup(self):
         r = self.bp.add_route
-        r(self.list_roles,     "/roles",                              methods=["GET"])
-        r(self.create_role,    "/roles",                              methods=["POST"])
-        r(self.get_role,       "/roles/<role_id:int>",                methods=["GET"])
-        r(self.update_role,    "/roles/<role_id:int>",                methods=["PUT"])
-        r(self.delete_role,    "/roles/<role_id:int>",                methods=["DELETE"])
-        r(self.assign_role,    "/users/<user_id:int>/roles/<role_id:int>", methods=["POST"])
-        r(self.remove_role,    "/users/<user_id:int>/roles/<role_id:int>", methods=["DELETE"])
-        r(self.set_user_roles, "/users/<user_id:int>/roles",           methods=["PUT"])
+        r(self.list_roles, "/roles", methods=["GET"])
+        r(self.create_role, "/roles", methods=["POST"])
+        r(self.get_role, "/roles/<role_id:int>", methods=["GET"])
+        r(self.update_role, "/roles/<role_id:int>", methods=["PUT"])
+        r(self.delete_role, "/roles/<role_id:int>", methods=["DELETE"])
+        r(self.assign_role, "/users/<user_id:int>/roles/<role_id:int>", methods=["POST"])
+        r(self.remove_role, "/users/<user_id:int>/roles/<role_id:int>", methods=["DELETE"])
+        r(self.set_user_roles, "/users/<user_id:int>/roles", methods=["PUT"])
 
     @require_auth
     @require_permission("admin:roles")
@@ -40,7 +40,8 @@ class RolesController(BaseController):
     async def create_role(self, request):
         data = request.json or {}
         result = await self.svc.create(
-            code=data.get("code", ""), name=data.get("name", ""),
+            code=data.get("code", ""),
+            name=data.get("name", ""),
             description=data.get("description", ""),
             permission_codes=data.get("permissions", []),
         )
@@ -60,7 +61,8 @@ class RolesController(BaseController):
     async def update_role(self, request, role_id: int):
         data = request.json or {}
         result = await self.svc.update(
-            role_id=role_id, name=data.get("name", ""),
+            role_id=role_id,
+            name=data.get("name", ""),
             description=data.get("description", ""),
             permission_codes=data.get("permissions"),
         )
@@ -99,6 +101,7 @@ class RolesController(BaseController):
             role_ids = [int(v) for v in (request.json or {}).get("role_ids", [])]
         except (TypeError, ValueError):
             from contexts.shared.domain.exceptions import ValidationError
+
             raise ValidationError("invalid role_ids") from None
         await self.svc.set_user_roles(user_id, role_ids)
         return self.json_ok()

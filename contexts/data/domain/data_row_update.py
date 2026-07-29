@@ -22,17 +22,13 @@ def build_updates(field_types: dict[str, str], requested: dict) -> dict:
     updates: dict = {}
     for name, value in requested.items():
         if name in PROTECTED_FIELDS:
-            raise ValidationError(
-                f"field {name!r} is protected and cannot be updated"
-            )
+            raise ValidationError(f"field {name!r} is protected and cannot be updated")
         kind = field_types.get(name)
         if kind is None:
             raise ValidationError(f"unknown field: {name}")
         if name == "monthly_data":
             if not isinstance(value, dict):
-                raise ValidationError(
-                    "monthly_data must be an object of key/value pairs"
-                )
+                raise ValidationError("monthly_data must be an object of key/value pairs")
             updates[name] = dict(value)
         elif kind == "decimal" and value is not None:
             # Same conversion rule as parsing.domain.data_validator: decimal
@@ -41,9 +37,7 @@ def build_updates(field_types: dict[str, str], requested: dict) -> dict:
             try:
                 updates[name] = float(value)
             except (ValueError, TypeError):
-                raise ValidationError(
-                    f"field {name!r} expects a decimal value, got {value!r}"
-                ) from None
+                raise ValidationError(f"field {name!r} expects a decimal value, got {value!r}") from None
         else:
             updates[name] = value
     return updates

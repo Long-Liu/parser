@@ -21,9 +21,7 @@ from contexts.template.infrastructure.validators import TEMPLATE_ID_RE
 class YamlTemplateLoader:
     def __init__(self, config_dir: str | None = None) -> None:
         if config_dir is None:
-            config_dir = os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "config", "templates"
-            )
+            config_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "templates")
         self._config_dir = os.path.abspath(config_dir)
 
     def load(self, template_id: str) -> Template:
@@ -63,22 +61,21 @@ class YamlTemplateLoader:
         stop_rules = []
         for rule in data.get("stop_rules", []):
             rule_type = StopRuleType(rule["type"])
-            stop_rules.append(StopRule(
-                rule_type=rule_type,
-                patterns=rule.get("patterns", []),
-                columns=rule.get("columns", []),
-                empty_row_count=(
-                    rule.get("count")
-                    if rule_type == StopRuleType.CONSECUTIVE_EMPTY
-                    else None
-                ),
-                action=StopRuleAction(rule.get("action", StopRuleAction.EXCLUDE.value)),
-            ))
+            stop_rules.append(
+                StopRule(
+                    rule_type=rule_type,
+                    patterns=rule.get("patterns", []),
+                    columns=rule.get("columns", []),
+                    empty_row_count=(rule.get("count") if rule_type == StopRuleType.CONSECUTIVE_EMPTY else None),
+                    action=StopRuleAction(rule.get("action", StopRuleAction.EXCLUDE.value)),
+                )
+            )
         fixed_columns = [
             ColumnMapping(
                 db_field=column["db_field"],
                 match_headers=column["match_header"],
                 db_type=column.get("type", "varchar(255)"),
+                occurrence=int(column.get("occurrence", 1)),
             )
             for column in data.get("columns", [])
         ]
@@ -94,9 +91,7 @@ class YamlTemplateLoader:
             template_id=TemplateId(data["template_id"]),
             description=data.get("description", ""),
             sheet_pattern=data.get("sheet_pattern", ""),
-            header_spec=HeaderSpec(
-                header_rows=header_rows, data_start_row=data_start_row
-            ),
+            header_spec=HeaderSpec(header_rows=header_rows, data_start_row=data_start_row),
             hierarchy_config=hierarchy,
             stop_rules=stop_rules,
             fixed_columns=fixed_columns,

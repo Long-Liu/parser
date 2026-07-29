@@ -40,9 +40,15 @@ def _wired_bus(alerts: FakeAlertService) -> DomainEventBus:
 async def test_parse_job_completed_triggers_alert_evaluation():
     alerts = FakeAlertService()
     bus = _wired_bus(alerts)
-    await bus.publish([ParseJobCompleted(
-        aggregate_id=1, project_id=7, year_month="2026-07",
-    )])
+    await bus.publish(
+        [
+            ParseJobCompleted(
+                aggregate_id=1,
+                project_id=7,
+                year_month="2026-07",
+            )
+        ]
+    )
     assert alerts.evaluations == [(7, "2026-07")]
 
 
@@ -50,9 +56,16 @@ async def test_parse_job_completed_triggers_alert_evaluation():
 async def test_preview_completion_does_not_trigger_alert_evaluation():
     alerts = FakeAlertService()
     bus = _wired_bus(alerts)
-    await bus.publish([ParseJobCompleted(
-        aggregate_id=1, project_id=7, year_month="2026-07", is_preview=True,
-    )])
+    await bus.publish(
+        [
+            ParseJobCompleted(
+                aggregate_id=1,
+                project_id=7,
+                year_month="2026-07",
+                is_preview=True,
+            )
+        ]
+    )
     assert alerts.evaluations == []
 
 
@@ -60,9 +73,15 @@ async def test_preview_completion_does_not_trigger_alert_evaluation():
 async def test_parse_job_confirmed_triggers_alert_evaluation():
     alerts = FakeAlertService()
     bus = _wired_bus(alerts)
-    await bus.publish([ParseJobConfirmed(
-        aggregate_id=1, project_id=7, year_month="2026-07",
-    )])
+    await bus.publish(
+        [
+            ParseJobConfirmed(
+                aggregate_id=1,
+                project_id=7,
+                year_month="2026-07",
+            )
+        ]
+    )
     assert alerts.evaluations == [(7, "2026-07")]
 
 
@@ -91,9 +110,10 @@ def test_container_registers_alert_event_subscriptions():
     components = build_container(Settings())
     bus = components.event_bus
     for event_type in (
-        ParseJobCompleted, ParseJobConfirmed,
-        ProjectCreated, ProjectUpdated, ProjectDeleted,
+        ParseJobCompleted,
+        ParseJobConfirmed,
+        ProjectCreated,
+        ProjectUpdated,
+        ProjectDeleted,
     ):
-        assert bus.subscribers(event_type), (
-            f"no subscriber registered for {event_type.__name__}"
-        )
+        assert bus.subscribers(event_type), f"no subscriber registered for {event_type.__name__}"

@@ -7,9 +7,7 @@ from contexts.template.domain.template import Template
 class DataValidator:
     """Validate extracted rows against template column type specs."""
 
-    def validate(
-        self, rows: list[ParsedRow], template: Template
-    ) -> tuple[list[ParsedRow], list[RowError]]:
+    def validate(self, rows: list[ParsedRow], template: Template) -> tuple[list[ParsedRow], list[RowError]]:
         valid: list[ParsedRow] = []
         errors: list[RowError] = []
         for row in rows:
@@ -20,9 +18,7 @@ class DataValidator:
                 valid.append(row)
         return valid, errors
 
-    def _validate_row(
-        self, row: ParsedRow, template: Template
-    ) -> list[RowError]:
+    def _validate_row(self, row: ParsedRow, template: Template) -> list[RowError]:
         errs: list[RowError] = []
         for col in template.fixed_columns:
             if col.db_field in row.fields:
@@ -31,10 +27,12 @@ class DataValidator:
                     try:
                         float(value)
                     except (ValueError, TypeError):
-                        errs.append(RowError(
-                            row_index=row.row_index,
-                            field=col.db_field,
-                            value=str(value),
-                            reason="expected decimal",
-                        ))
+                        errs.append(
+                            RowError(
+                                row_index=row.row_index,
+                                field=col.db_field,
+                                value=str(value),
+                                reason="expected decimal",
+                            )
+                        )
         return errs

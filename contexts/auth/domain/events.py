@@ -25,7 +25,7 @@ class UserDeleted(DomainEvent):
 @dataclass(frozen=True)
 class UserProfileUpdated(DomainEvent):
     username: str = ""
-    changed_fields: list[str] = ()
+    changed_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

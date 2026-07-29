@@ -15,9 +15,7 @@ from contexts.shared.interface.base_controller import BaseController
 class AuthController(BaseController):
     name = "auth"
 
-    def __init__(
-        self, auth_svc: AuthApplicationService, user_svc: UserApplicationService
-    ):
+    def __init__(self, auth_svc: AuthApplicationService, user_svc: UserApplicationService):
         super().__init__()
         self.auth_svc = auth_svc
         self.user_svc = user_svc
@@ -34,9 +32,7 @@ class AuthController(BaseController):
     async def login(self, request):
         data = request.json or {}
         result = await self.auth_svc.login(
-            LoginCommand(
-                username=data.get("username", ""), password=data.get("password", "")
-            )
+            LoginCommand(username=data.get("username", ""), password=data.get("password", ""))
         )
         return self.json(
             {

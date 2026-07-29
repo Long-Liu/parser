@@ -16,6 +16,7 @@ from contexts.project.domain.repositories import (
 )
 from contexts.project.infrastructure.tables import Project as OrmProject
 from contexts.project.infrastructure.tables import ProjectMilestone, ProjectUser
+from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId, UserId
 from contexts.shared.infrastructure.database.tables import (
     SETTLE_CONTRACT_PRICE,
@@ -64,7 +65,7 @@ class TortoiseProjectRepository(ProjectRepository):
             "created_by": project.created_by.value if project.created_by else None,
         }
         if project.id is None:
-            orm = await OrmProject.create(**values)
+            orm = await OrmProject.create(**values)  # type: ignore[arg-type]
             project.id = ProjectId(orm.id)
             return
         existing = await OrmProject.get_or_none(id=project.id.value)
@@ -84,14 +85,12 @@ class TortoiseProjectRepository(ProjectRepository):
         orm = await OrmProject.get_or_none(code=code)
         return _to_entity(orm) if orm else None
 
-    async def list_all(self, *, keyword: str = "", status: str = "",
-                       user_id: UserId | None = None,
-                       offset: int = 0, limit: int = 20) -> tuple[list[Project], int]:
+    async def list_all(
+        self, *, keyword: str = "", status: str = "", user_id: UserId | None = None, offset: int = 0, limit: int = 20
+    ) -> tuple[list[Project], int]:
         query = OrmProject.all()
         if user_id is not None:
-            project_ids = await ProjectUser.filter(user_id=user_id.value).values_list(
-                "project_id", flat=True
-            )
+            project_ids = await ProjectUser.filter(user_id=user_id.value).values_list("project_id", flat=True)
             query = query.filter(id__in=list(project_ids))
         if keyword:
             query = query.filter(Q(name__icontains=keyword) | Q(code__icontains=keyword))
@@ -106,17 +105,18 @@ class TortoiseProjectRepository(ProjectRepository):
         await ProjectMilestone.filter(project_id=project_id.value).delete()
         await OrmProject.filter(id=project_id.value).delete()
 
-    async def assign_user(self, project_id: ProjectId, user_id: UserId,
-                          is_primary: bool = False, role: str = "viewer") -> None:
+    async def assign_user(
+        self, project_id: ProjectId, user_id: UserId, is_primary: bool = False, role: str = "viewer"
+    ) -> None:
         if is_primary:
             await ProjectUser.filter(user_id=user_id.value).update(is_primary=False)
-        existing = await ProjectUser.get_or_none(
-            project_id=project_id.value, user_id=user_id.value
-        )
+        existing = await ProjectUser.get_or_none(project_id=project_id.value, user_id=user_id.value)
         if existing is None:
             await ProjectUser.create(
-                project_id=project_id.value, user_id=user_id.value,
-                is_primary=is_primary, role=role,
+                project_id=project_id.value,
+                user_id=user_id.value,
+                is_primary=is_primary,
+                role=role,
             )
         else:
             existing.is_primary = is_primary
@@ -124,9 +124,7 @@ class TortoiseProjectRepository(ProjectRepository):
             await existing.save(update_fields=["is_primary", "role"])
 
     async def remove_user(self, project_id: ProjectId, user_id: UserId) -> None:
-        await ProjectUser.filter(
-            project_id=project_id.value, user_id=user_id.value
-        ).delete()
+        await ProjectUser.filter(project_id=project_id.value, user_id=user_id.value).delete()
 
 
 class TortoiseProjectDataCleanup(ProjectDataCleanup):
@@ -149,6 +147,18 @@ class TortoiseUserDirectory(UserDirectory):
         rows = await OrmUser.filter(id__in=list(user_ids)).values("id", "real_name")
         return {row["id"]: row["real_name"] for row in rows}
 
+    async def user_id_by_real_name(self, real_name: str) -> int | None:
+        rows = (
+            await OrmUser.filter(
+                real_name=real_name.strip(),
+            )
+            .order_by("id")
+            .limit(2)
+        )
+        if len(rows) > 1:
+            raise ValidationError(f"multiple users found with real name: {real_name.strip()}")
+        return rows[0].id if rows else None
+
 
 class TortoiseProjectMetrics(ProjectMetricsPort):
     """Batch read model over shared tables (no analytics-context import).
@@ -162,9 +172,14 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
     async def latest_gross_profit(self, project_ids: list[int]) -> dict[int, dict]:
         if not project_ids:
             return {}
-        batches = await UploadBatch.filter(
-            project_id__in=list(project_ids), status="success",
-        ).order_by("project_id", "-ym", "-id").values("id", "project_id", "ym")
+        batches = (
+            await UploadBatch.filter(
+                project_id__in=list(project_ids),
+                status="success",
+            )
+            .order_by("project_id", "-ym", "-id")
+            .values("id", "project_id", "ym")
+        )
         latest: dict[int, dict] = {}
         for batch in batches:
             latest.setdefault(batch["project_id"], batch)
@@ -176,8 +191,7 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
         by_batch: dict[int, dict] = {}
         for row in rows:
             if row["indicator_name"]:
-                by_batch.setdefault(row["batch_id"], {})[
-                    row["indicator_name"]] = row["cumulative_value"]
+                by_batch.setdefault(row["batch_id"], {})[row["indicator_name"]] = row["cumulative_value"]
         return {
             project_id: {
                 "latest_ym": batch["ym"],
@@ -217,14 +231,16 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
 
 
 class ProjectNotificationAdapter(ProjectNotificationPort):
-    async def publish_warning(self, project_id: ProjectId,
-                              project_name: str) -> None:
+    async def publish_warning(self, project_id: ProjectId, project_name: str) -> None:
         exists = await Notification.filter(
-            notification_type="project_warning", project_id=project_id.value,
+            notification_type="project_warning",
+            project_id=project_id.value,
             title=project_name,
         ).exists()
         if not exists:
             await Notification.create(
-                notification_type="project_warning", title=project_name,
-                message="项目处于预警状态", project_id=project_id.value,
+                notification_type="project_warning",
+                title=project_name,
+                message="项目处于预警状态",
+                project_id=project_id.value,
             )

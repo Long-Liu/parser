@@ -27,10 +27,16 @@ class FakeRepository:
         self.counts = {}
 
     async def rules(self):
-        return [AlertRule(
-            "GROSS_PROFIT_LOW", "项目毛利率过低", "gross_profit_rate",
-            "lt", Decimal("10"), AlertLevel.CRITICAL,
-        )]
+        return [
+            AlertRule(
+                "GROSS_PROFIT_LOW",
+                "项目毛利率过低",
+                "gross_profit_rate",
+                "lt",
+                Decimal("10"),
+                AlertLevel.CRITICAL,
+            )
+        ]
 
     async def register_match(self, project_id, rule_code, scope, matched):
         key = (project_id, rule_code, scope)

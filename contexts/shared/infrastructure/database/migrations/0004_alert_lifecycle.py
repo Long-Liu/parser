@@ -50,8 +50,12 @@ class Migration(migrations.Migration):
                 ("created_at", fields.DatetimeField(auto_now_add=True)),
                 ("updated_at", fields.DatetimeField(auto_now=True)),
             ],
-            options={"table": "alerts", "app": "models", "pk_attr": "id",
-                     "indexes": (("project_id", "status"), ("fingerprint", "status"))},
+            options={
+                "table": "alerts",
+                "app": "models",
+                "pk_attr": "id",
+                "indexes": (("project_id", "status"), ("fingerprint", "status")),
+            },
             bases=["Model"],
         ),
         ops.CreateModel(
@@ -78,8 +82,12 @@ class Migration(migrations.Migration):
                 ("consecutive_count", fields.IntField(default=0)),
                 ("updated_at", fields.DatetimeField(auto_now=True)),
             ],
-            options={"table": "alert_rule_states", "app": "models", "pk_attr": "id",
-                     "unique_together": (("project_id", "rule_code", "scope"),)},
+            options={
+                "table": "alert_rule_states",
+                "app": "models",
+                "pk_attr": "id",
+                "unique_together": (("project_id", "rule_code", "scope"),),
+            },
             bases=["Model"],
         ),
         ops.CreateModel(

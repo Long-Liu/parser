@@ -27,6 +27,7 @@ def _make_job(job_id: int = 1) -> ParseJob:
 
 # ── ParseJob lifecycle ──────────────────────────────────────────────
 
+
 def test_submit_creates_job_with_submitted_status():
     job = _make_job()
     assert job.status == JobStatus.SUBMITTED
@@ -43,7 +44,8 @@ def test_confirm_submitted_records_event():
 
 def test_confirm_submitted_raises_if_no_id():
     job = ParseJob.submit(
-        job_id=None, project_id=ProjectId(1),
+        job_id=None,
+        project_id=ProjectId(1),
         year_month=YearMonth.parse("2026-07"),
         file_info=FileInfo(filename="f.xlsx", size=1),
     )
@@ -153,6 +155,7 @@ def test_result_status_failed():
 
 # ── SheetResult ──────────────────────────────────────────────────────
 
+
 def test_sheet_result_initial_state():
     sr = SheetResult("Cost")
     assert sr.sheet_name == "Cost"
@@ -187,10 +190,12 @@ def test_sheet_result_set_extracted():
 
 def test_sheet_result_set_validated():
     sr = SheetResult("Cost")
-    sr.set_extracted([
-        ParsedRow(row_index=1, fields={"a": 1}),
-        ParsedRow(row_index=2, fields={"a": "bad"}),
-    ])
+    sr.set_extracted(
+        [
+            ParsedRow(row_index=1, fields={"a": 1}),
+            ParsedRow(row_index=2, fields={"a": "bad"}),
+        ]
+    )
     valid = [ParsedRow(row_index=1, fields={"a": 1})]
     errors = [RowError(row_index=2, field="a", reason="expected decimal")]
     sr.set_validated(valid, errors)
@@ -208,6 +213,7 @@ def test_sheet_result_errors_are_immutable_view():
 
 
 # ── Rehydration ──────────────────────────────────────────────────────
+
 
 def test_rehydrate_restores_full_state():
     """Infrastructure reconstructs a ParseJob from persisted state by
@@ -238,11 +244,16 @@ def test_rehydrate_restores_full_state():
 
 # ── Entity identity ──────────────────────────────────────────────────
 
+
 def test_parse_job_equality_by_id():
     a = _make_job(1)
     b = ParseJob(
-        JobId(1), ProjectId(9), YearMonth.parse("2025-01"),
-        FileInfo(filename="other.xlsx", size=0), "B002", None,
+        JobId(1),
+        ProjectId(9),
+        YearMonth.parse("2025-01"),
+        FileInfo(filename="other.xlsx", size=0),
+        "B002",
+        None,
     )
     b.status = JobStatus.DONE
     b._sheets = {}

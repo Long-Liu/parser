@@ -20,15 +20,14 @@ class BatchesController(BaseController):
     name = "batches"
     url_prefix = "/api/batches"
 
-    def __init__(self, batch_query_svc: BatchQueryApplicationService,
-                 access_policy: ProjectAccessPolicy):
+    def __init__(self, batch_query_svc: BatchQueryApplicationService, access_policy: ProjectAccessPolicy):
         super().__init__()
         self.batch_query_svc = batch_query_svc
         self.access_policy = access_policy
 
     def setup(self):
-        self.bp.add_route(self.list_batches, "/",               methods=["GET"])
-        self.bp.add_route(self.get_batch,    "/<batch_id:int>", methods=["GET"])
+        self.bp.add_route(self.list_batches, "/", methods=["GET"])
+        self.bp.add_route(self.get_batch, "/<batch_id:int>", methods=["GET"])
 
     @require_auth
     @require_permission("data:view")
@@ -41,9 +40,7 @@ class BatchesController(BaseController):
         if project_id_raw:
             permissions = set(request.ctx.permissions or set())
             if not ProjectAccessPolicy.has_elevated_permission(permissions):
-                await self.access_policy.require(
-                    UserId(request.ctx.user_id), int(project_id_raw)
-                )
+                await self.access_policy.require(UserId(request.ctx.user_id), int(project_id_raw))
             project_id = ProjectId(parse_int(project_id_raw, 0))
         result = await self.batch_query_svc.list_batches(project_id, pagination)
         if result is None:

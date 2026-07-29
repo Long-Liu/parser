@@ -46,15 +46,15 @@ def _settlement_row(name, value):
 
 def _patch_models(monkeypatch, *, settlement_rows=(), indicator_rows=()):
     project = SimpleNamespace(
-        id=1, status="normal", progress=0, start_date=None, end_date=None,
+        id=1,
+        status="normal",
+        progress=0,
+        start_date=None,
+        end_date=None,
     )
     batch = SimpleNamespace(id=7, ym="2026-07")
-    monkeypatch.setattr(
-        alert_repositories.Project, "get_or_none", AsyncMock(return_value=project)
-    )
-    monkeypatch.setattr(
-        alert_repositories.UploadBatch, "filter", lambda **kw: _FakeQuery(batch)
-    )
+    monkeypatch.setattr(alert_repositories.Project, "get_or_none", AsyncMock(return_value=project))
+    monkeypatch.setattr(alert_repositories.UploadBatch, "filter", lambda **kw: _FakeQuery(batch))
     monkeypatch.setattr(
         alert_repositories.DataSettlementOutput,
         "filter",
@@ -81,9 +81,12 @@ async def test_snapshot_omits_gross_profit_rate_when_no_settlement_rows(monkeypa
 
 @pytest.mark.asyncio
 async def test_snapshot_omits_gross_profit_rate_when_rate_row_missing(monkeypatch):
-    _patch_models(monkeypatch, settlement_rows=[
-        _settlement_row("截至当期毛利", Decimal("106716.415051")),
-    ])
+    _patch_models(
+        monkeypatch,
+        settlement_rows=[
+            _settlement_row("截至当期毛利", Decimal("106716.415051")),
+        ],
+    )
 
     _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
 
@@ -92,9 +95,12 @@ async def test_snapshot_omits_gross_profit_rate_when_rate_row_missing(monkeypatc
 
 @pytest.mark.asyncio
 async def test_snapshot_converts_settlement_rate_to_percent(monkeypatch):
-    _patch_models(monkeypatch, settlement_rows=[
-        _settlement_row("截至当期毛利率", Decimal("0.106968")),
-    ])
+    _patch_models(
+        monkeypatch,
+        settlement_rows=[
+            _settlement_row("截至当期毛利率", Decimal("0.106968")),
+        ],
+    )
 
     _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
 

@@ -74,16 +74,12 @@ class FakeTokenRevocationRepository:
         self.entries: list[tuple[str, int, datetime, datetime]] = []
 
     async def revoke(self, *, jti, user_id, expires_at):
-        self.entries.append(
-            (jti, user_id.value, expires_at, datetime.now(UTC))
-        )
+        self.entries.append((jti, user_id.value, expires_at, datetime.now(UTC)))
 
     async def revoke_all_for_user(self, *, user_id, expires_at):
         marker = f"user:{user_id.value}"
         self.entries = [e for e in self.entries if e[0] != marker]
-        self.entries.append(
-            (marker, user_id.value, expires_at, datetime.now(UTC))
-        )
+        self.entries.append((marker, user_id.value, expires_at, datetime.now(UTC)))
 
     async def is_revoked(self, *, jti, user_id, issued_at):
         marker = f"user:{user_id.value}"
@@ -93,8 +89,7 @@ class FakeTokenRevocationRepository:
                 continue
             if jti and e_jti == jti:
                 return True
-            if (e_jti == marker and issued_at is not None
-                    and e_revoked.timestamp() >= issued_at):
+            if e_jti == marker and issued_at is not None and e_revoked.timestamp() >= issued_at:
                 return True
         return False
 
@@ -105,12 +100,21 @@ def stack():
     jwt_svc = JwtService(TEST_SECRET)
     revocations = FakeTokenRevocationRepository()
     auth_svc = AuthApplicationService(
-        repo, AuthenticationService(_hasher), jwt_svc, _hasher,
-        None, None, revocations,
+        repo,
+        AuthenticationService(_hasher),
+        jwt_svc,
+        _hasher,
+        None,
+        None,
+        revocations,
     )
     authz = AuthorizationApplicationService(repo, jwt_svc, revocations)
     return SimpleNamespace(
-        repo=repo, jwt=jwt_svc, revocations=revocations, auth=auth_svc, authz=authz,
+        repo=repo,
+        jwt=jwt_svc,
+        revocations=revocations,
+        auth=auth_svc,
+        authz=authz,
     )
 
 
@@ -120,9 +124,7 @@ def _request(*, settings=None, services=None, body=None, headers=None):
         headers=headers or {},
         args={},
         form={},
-        app=SimpleNamespace(
-            ctx=SimpleNamespace(settings=settings, services=services)
-        ),
+        app=SimpleNamespace(ctx=SimpleNamespace(settings=settings, services=services)),
         ctx=SimpleNamespace(),
     )
 
@@ -147,7 +149,9 @@ async def test_change_password_success_revokes_all_existing_tokens(stack):
     assert ctx.user_id == 1
 
     await stack.auth.change_password(
-        user_id=1, old_password=OLD_PASSWORD, new_password=NEW_PASSWORD,
+        user_id=1,
+        old_password=OLD_PASSWORD,
+        new_password=NEW_PASSWORD,
     )
 
     assert _hasher.verify(NEW_PASSWORD, stack.repo.users[1].password_hash)
@@ -162,16 +166,16 @@ async def test_change_password_success_revokes_all_existing_tokens(stack):
     # that one-second window before re-login (a non-issue in real usage).
     time.sleep(1.1)
     # Re-login with the new password yields a working token.
-    result = await stack.auth.login(
-        LoginCommand(username="alice", password=NEW_PASSWORD)
-    )
+    result = await stack.auth.login(LoginCommand(username="alice", password=NEW_PASSWORD))
     assert (await stack.authz.authenticate(result.token)).user_id == 1
 
 
 async def test_change_password_wrong_old_password(stack):
     with pytest.raises(AuthenticationError, match="invalid credentials"):
         await stack.auth.change_password(
-            user_id=1, old_password="wrong-old-pw", new_password=NEW_PASSWORD,
+            user_id=1,
+            old_password="wrong-old-pw",
+            new_password=NEW_PASSWORD,
         )
     assert _hasher.verify(OLD_PASSWORD, stack.repo.users[1].password_hash)
 
@@ -179,7 +183,9 @@ async def test_change_password_wrong_old_password(stack):
 async def test_change_password_short_new_password(stack):
     with pytest.raises(ValidationError, match="at least 8"):
         await stack.auth.change_password(
-            user_id=1, old_password=OLD_PASSWORD, new_password="short",
+            user_id=1,
+            old_password=OLD_PASSWORD,
+            new_password="short",
         )
     assert _hasher.verify(OLD_PASSWORD, stack.repo.users[1].password_hash)
 
@@ -187,7 +193,9 @@ async def test_change_password_short_new_password(stack):
 async def test_change_password_revoked_token_hits_middleware_401(stack):
     token = stack.jwt.generate(UserId(1), "alice")
     await stack.auth.change_password(
-        user_id=1, old_password=OLD_PASSWORD, new_password=NEW_PASSWORD,
+        user_id=1,
+        old_password=OLD_PASSWORD,
+        new_password=NEW_PASSWORD,
     )
 
     # The auth decorator locates the request via isinstance(sanic Request),
@@ -254,7 +262,9 @@ async def test_logout_revokes_only_the_presented_token(stack):
     claims_a = stack.jwt.verify(token_a)
 
     await stack.auth.logout(
-        user_id=1, token_jti=claims_a["jti"], token_exp=claims_a["exp"],
+        user_id=1,
+        token_jti=claims_a["jti"],
+        token_exp=claims_a["exp"],
     )
 
     with pytest.raises(AuthenticationError, match="revoked"):

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+import secrets
+
 from contexts.auth.domain.password import Password
 from contexts.auth.domain.ports import PasswordHasher
 from contexts.auth.domain.repositories import UserRepository
@@ -35,7 +38,10 @@ class UserApplicationService(TransactionalService):
         self._event_publisher = event_publisher
 
     async def list_all(
-        self, *, keyword: str = "", pagination: Pagination,
+        self,
+        *,
+        keyword: str = "",
+        pagination: Pagination,
     ) -> dict:
         keyword = keyword.strip()
         users, total = await self._users.list_all(
@@ -47,10 +53,7 @@ class UserApplicationService(TransactionalService):
         if hasattr(self._users, "list_projects_for_users"):
             project_map = await self._users.list_projects_for_users(user_ids)
         else:  # compatibility for lightweight external repository adapters
-            project_map = {
-                user_id.value: await self._users.list_projects(user_id)
-                for user_id in user_ids
-            }
+            project_map = {user_id.value: await self._users.list_projects(user_id) for user_id in user_ids}
         result = []
         for index, user in enumerate(users, start=pagination.offset + 1):
             projects = project_map.get(user.id.value, []) if user.id else []
@@ -58,10 +61,16 @@ class UserApplicationService(TransactionalService):
             base["serial_number"] = index
             base["main_projects"] = [p for p in projects if p["is_primary"]]
             base["project_permission_overview"] = [
-                {"id": p["id"], "code": p["code"], "name": p["name"]}
-                for p in projects
-                if p["is_primary"]
+                {"id": p["id"], "code": p["code"], "name": p["name"]} for p in projects if p["is_primary"]
             ]
+            base["project_permission_summary"] = {
+                "manager": sum(
+                    p.get("role", "manager" if p.get("is_primary") else "viewer") == "manager" for p in projects
+                ),
+                "viewer": sum(
+                    p.get("role", "manager" if p.get("is_primary") else "viewer") == "viewer" for p in projects
+                ),
+            }
             result.append(base)
         return {
             "users": result,
@@ -85,7 +94,14 @@ class UserApplicationService(TransactionalService):
         email: str = "",
         phone: str = "",
         department: str = "",
+        is_admin: bool = False,
     ) -> dict:
+        username = username.strip() or email.strip()
+        generated_password = not password
+        if not username:
+            raise ValidationError("username or email is required")
+        if generated_password:
+            password = secrets.token_urlsafe(12)
         if await self._users.find_by_username(username):
             raise ConflictError("username already exists")
         if self._password_hasher is None:
@@ -100,8 +116,20 @@ class UserApplicationService(TransactionalService):
             department,
         )
         await self._users.save(user)
+        if user.id is None:
+            raise RuntimeError("user repository did not assign an id")
+        persisted_user_id = user.id
+        with contextlib.suppress(NotImplementedError):
+            await self._users.set_system_role(
+                persisted_user_id,
+                "admin" if is_admin else "viewer",
+            )
         await self._publish_events(user)
-        return await self.get(user.id.value)
+        result = await self.get(persisted_user_id.value)
+        if generated_password:
+            # Returned once so a real frontend can display/copy it securely.
+            result["temporary_password"] = password
+        return result
 
     @transactional
     async def update(self, user_id: int, **values) -> dict:
@@ -110,8 +138,15 @@ class UserApplicationService(TransactionalService):
             raise NotFoundError(f"user {user_id} not found")
         if self._password_hasher is None:
             raise RuntimeError("password hasher is not configured")
+        is_admin = values.pop("is_admin", None)
         user.update_profile(**values)
         await self._users.save(user)
+        if is_admin is not None:
+            with contextlib.suppress(NotImplementedError):
+                await self._users.set_system_role(
+                    UserId(user_id),
+                    "admin" if is_admin else "viewer",
+                )
         await self._publish_events(user)
         return await self.get(user_id)
 
@@ -129,6 +164,8 @@ class UserApplicationService(TransactionalService):
         user = await self._users.find_by_id(UserId(user_id))
         if user is None:
             raise NotFoundError(f"user {user_id} not found")
+        if self._password_hasher is None:
+            raise RuntimeError("password hasher is not configured")
         user.reset_password(self._password_hasher.hash(str(Password(password))))
         await self._users.save(user)
         await self._publish_events(user)
@@ -142,17 +179,10 @@ class UserApplicationService(TransactionalService):
         }
 
     @transactional
-    async def set_project_permissions(
-        self, user_id: int, permissions: list[dict]
-    ) -> dict:
+    async def set_project_permissions(self, user_id: int, permissions: list[dict]) -> dict:
         allowed = {"manager", "viewer", "none"}
-        if any(
-            "project_id" not in item or item.get("role") not in allowed
-            for item in permissions
-        ):
-            raise ValidationError(
-                "each permission requires project_id and role manager, viewer or none"
-            )
+        if any("project_id" not in item or item.get("role") not in allowed for item in permissions):
+            raise ValidationError("each permission requires project_id and role manager, viewer or none")
         await self._users.set_project_permissions(UserId(user_id), permissions)
         user = await self._users.find_by_id(UserId(user_id))
         if user:
@@ -175,8 +205,7 @@ class UserApplicationService(TransactionalService):
             "phone": user.phone,
             "department": user.department,
             "is_active": user.is_active,
-            "system_roles": [
-                {"id": r.role_id, "code": r.code, "name": r.name} for r in user.roles
-            ],
+            "system_roles": [{"id": r.role_id, "code": r.code, "name": r.name} for r in user.roles],
+            "is_admin": any(r.code == "admin" for r in user.roles),
             "projects": projects,
         }

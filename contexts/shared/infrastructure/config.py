@@ -109,9 +109,7 @@ def _discover_config_dir() -> str:
             return config_dir
         raise FileNotFoundError(f"APP_CONFIG_DIR does not exist: {config_dir}")
 
-    project_root = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    )
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     config_dir = os.path.join(project_root, "config")
     if os.path.isdir(config_dir):
         return config_dir

@@ -13,6 +13,7 @@ class Entity(Generic[IdType], ABC):  # noqa: UP046
 
     Type parameter IdType specifies the identity type, e.g. Entity[int], Entity[UserId].
     """
+
     id: IdType | None
 
     def __eq__(self, other: object) -> bool:

@@ -16,6 +16,12 @@ stop_rules:
     columns: ["A"]
 
 columns:
+  - db_field: display_level
+    match_header: ["显示级别"]
+    type: varchar(50)
+  - db_field: linked_sheet
+    match_header: ["链接分表"]
+    type: varchar(100)
   - db_field: item_name
     match_header: ["名称"]
     type: varchar(300)
@@ -70,12 +76,37 @@ columns:
   - db_field: adjusted_ex_tax
     match_header: ["按分包策划标段各税率调整后指标", "不含增值税指标"]
     type: decimal(15,2)
+  - db_field: adjusted_tax_rate
+    match_header: ["按分包策划标段各税率调整后指标", "增值税税率"]
+    type: decimal(5,4)
+  - db_field: adjusted_tax
+    match_header: ["按分包策划标段各税率调整后指标", "增值税税金"]
+    type: decimal(15,2)
   - db_field: adjusted_with_tax
     match_header: ["按分包策划标段各税率调整后指标", "含税指标"]
     type: decimal(15,2)
+  - db_field: adjustment
+    match_header: ["调整"]
+    type: varchar(100)
   - db_field: current_budget
     match_header: ["现执行预算"]
     type: decimal(15,2)
   - db_field: incurred_cost
     match_header: ["截止"]
     type: decimal(15,2)
+  - db_field: forecast_ex_tax
+    match_header: ["预计完工成本（动态情况）", "不含增值税指标"]
+    type: decimal(15,2)
+  - db_field: forecast_tax_rate
+    match_header: ["预计完工成本（动态情况）", "税率"]
+    type: decimal(5,4)
+  - db_field: forecast_tax
+    match_header: ["预计完工成本（动态情况）", "增值税税金"]
+    type: decimal(15,2)
+  - db_field: forecast_with_tax
+    match_header: ["预计完工成本（动态情况）", "含税指标"]
+    type: decimal(15,2)
+  - db_field: forecast_remark
+    match_header: ["备注"]
+    occurrence: 2
+    type: text

@@ -17,6 +17,7 @@ from contexts.template.domain.template import (
 
 # ── CellUnmerger ─────────────────────────────────────────────────────
 
+
 def test_unmerge_fills_merged_cells():
     unmerger = CellUnmerger()
     grid = [
@@ -41,6 +42,7 @@ def test_unmerge_empty_ranges_noop():
 
 # ── HeaderFlattener ──────────────────────────────────────────────────
 
+
 def test_flatten_single_row_header():
     flattener = HeaderFlattener()
     grid = [["Name", "Amount", "Date"]]
@@ -64,7 +66,28 @@ def test_flatten_empty_grid():
     assert flattener.flatten([["A"]], []) == []
 
 
+def test_extractor_can_map_duplicate_header_by_occurrence():
+    template = Template(
+        template_id=TemplateId("duplicate_headers"),
+        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+        fixed_columns=[
+            ColumnMapping("first_note", ["备注"]),
+            ColumnMapping("final_note", ["备注"], occurrence=2),
+        ],
+    )
+    rows = DataRowExtractor().extract(
+        [["备注", "备注"], ["前备注", "后备注"]],
+        ["备注", "备注"],
+        template,
+    )
+    assert rows[0].fields == {
+        "first_note": "前备注",
+        "final_note": "后备注",
+    }
+
+
 # ── StopDetector ─────────────────────────────────────────────────────
+
 
 def test_stop_on_cell_match():
     detector = StopDetector()
@@ -120,6 +143,7 @@ def test_stop_past_grid_end():
 
 # ── DataValidator ────────────────────────────────────────────────────
 
+
 def _make_template(**kwargs) -> Template:
     defaults = dict(
         template_id=TemplateId("test"),
@@ -174,6 +198,7 @@ def test_validate_all_valid():
 
 
 # ── DataRowExtractor ─────────────────────────────────────────────────
+
 
 def test_extract_with_fixed_columns():
     extractor = DataRowExtractor()

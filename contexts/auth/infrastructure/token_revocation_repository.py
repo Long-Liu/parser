@@ -39,7 +39,9 @@ class TortoiseTokenRevocationRepository(TokenRevocationRepository):
     async def revoke(self, *, jti: str, user_id: UserId, expires_at: datetime) -> None:
         try:
             await RevokedToken.create(
-                jti=jti, user_id=user_id.value, expires_at=expires_at,
+                jti=jti,
+                user_id=user_id.value,
+                expires_at=expires_at,
             )
         except IntegrityError:
             # Already blacklisted (e.g. double logout) — revoking is idempotent.
@@ -50,11 +52,12 @@ class TortoiseTokenRevocationRepository(TokenRevocationRepository):
         # Re-create so auto_now_add stamps revoked_at with a fresh cutoff.
         await RevokedToken.filter(jti=marker).delete()
         await RevokedToken.create(
-            jti=marker, user_id=user_id.value, expires_at=expires_at,
+            jti=marker,
+            user_id=user_id.value,
+            expires_at=expires_at,
         )
 
-    async def is_revoked(self, *, jti: str | None, user_id: UserId,
-                         issued_at: float | None) -> bool:
+    async def is_revoked(self, *, jti: str | None, user_id: UserId, issued_at: float | None) -> bool:
         # Lazy purge: rows past expires_at cover only naturally-expired tokens.
         await RevokedToken.filter(
             expires_at__lte=datetime.now(UTC),
@@ -66,7 +69,6 @@ class TortoiseTokenRevocationRepository(TokenRevocationRepository):
         for row in rows:
             if jti and row.jti == jti:
                 return True
-            if (row.jti == candidates[0] and issued_at is not None
-                    and _epoch(row.revoked_at) >= issued_at):
+            if row.jti == candidates[0] and issued_at is not None and _epoch(row.revoked_at) >= issued_at:
                 return True
         return False

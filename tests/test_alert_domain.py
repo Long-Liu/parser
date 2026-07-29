@@ -8,11 +8,17 @@ from contexts.shared.domain.exceptions import ValidationError
 
 def make_alert():
     return Alert(
-        alert_id=1, project_id=10, rule_code="LOW_MARGIN",
-        alert_type="gross_profit_rate", level=AlertLevel.WARNING,
-        title="毛利率过低", message="低于阈值",
-        metric_value=Decimal("8"), threshold_value=Decimal("10"),
-        fingerprint="10:LOW_MARGIN:2026-07", ym="2026-07",
+        alert_id=1,
+        project_id=10,
+        rule_code="LOW_MARGIN",
+        alert_type="gross_profit_rate",
+        level=AlertLevel.WARNING,
+        title="毛利率过低",
+        message="低于阈值",
+        metric_value=Decimal("8"),
+        threshold_value=Decimal("10"),
+        fingerprint="10:LOW_MARGIN:2026-07",
+        ym="2026-07",
     )
 
 

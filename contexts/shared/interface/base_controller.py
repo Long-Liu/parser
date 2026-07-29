@@ -63,8 +63,7 @@ class BaseController:
             ConflictError: 409,
         }
         http_status = next(
-            (status for error_type, status in status_map.items()
-             if isinstance(exc, error_type)),
+            (status for error_type, status in status_map.items() if isinstance(exc, error_type)),
             500,
         )
         return json({"error": str(exc)}, status=http_status)

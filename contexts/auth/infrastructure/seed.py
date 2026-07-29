@@ -18,11 +18,6 @@ from contexts.shared.infrastructure.config import Settings
 
 logger = logging.getLogger("parser")
 
-# Weak fallback allowed for local development only; other environments must
-# configure ``admin.default_password`` explicitly (see seed_defaults below).
-DEFAULT_ADMIN_PASSWORD = "admin123"
-
-
 PERMISSIONS = [
     ("project:create", "创建项目"),
     ("project:view", "查看项目"),
@@ -55,13 +50,7 @@ ROLES = {
 async def seed_defaults(password_hasher: Callable[[str], str], settings: Settings):
     admin_password = settings.admin.default_password
     if not admin_password:
-        if settings.app.env != "local":
-            raise ValueError("admin.default_password is required outside local environment")
-        logger.warning(
-            "admin.default_password not configured; seeding weak local fallback "
-            "password — set it in config/%s.yaml", settings.app.env,
-        )
-        admin_password = DEFAULT_ADMIN_PASSWORD
+        raise ValueError("admin.default_password is required")
     await _do_seed(admin_password, password_hasher)
 
 
