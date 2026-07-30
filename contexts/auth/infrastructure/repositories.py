@@ -98,9 +98,20 @@ class TortoiseUserRepository(UserRepository):
             query = query.filter(Q(real_name__icontains=keyword) | Q(email__icontains=keyword))
 
         total = await query.count()
-        users = []
-        for orm in await query.order_by("id").offset(offset).limit(limit):
-            users.append(_user_to_entity(orm, await _load_roles(orm.id)))
+        rows = await query.order_by("id").offset(offset).limit(limit)
+        user_ids = [row.id for row in rows]
+        links = await UserRole.filter(user_id__in=user_ids).values("user_id", "role_id") if user_ids else []
+        role_ids = {link["role_id"] for link in links}
+        roles = {
+            row["id"]: row
+            for row in await OrmRole.filter(id__in=role_ids).values("id", "code", "name")
+        }
+        roles_by_user: dict[int, list[dict]] = {user_id: [] for user_id in user_ids}
+        for link in links:
+            role = roles.get(link["role_id"])
+            if role is not None:
+                roles_by_user[link["user_id"]].append(role)
+        users = [_user_to_entity(row, roles_by_user[row.id]) for row in rows]
         return users, total
 
     async def list_projects(self, user_id: UserId) -> list[dict]:
@@ -161,15 +172,18 @@ class TortoiseUserRepository(UserRepository):
         if missing:
             raise ValidationError(f"unknown project ids: {sorted(missing)}")
         await ProjectUser.filter(user_id=user_id.value).delete()
-        for project_id, role in deduped.items():
-            if role == "none":
-                continue
-            await ProjectUser.create(
+        links = [
+            ProjectUser(
                 user_id=user_id.value,
                 project_id=project_id,
                 role=role,
                 is_primary=role == "manager",
             )
+            for project_id, role in deduped.items()
+            if role != "none"
+        ]
+        if links:
+            await ProjectUser.bulk_create(links)
 
     async def set_system_role(self, user_id: UserId, role_code: str) -> None:
         if role_code not in {"admin", "viewer"}:
@@ -226,9 +240,34 @@ class TortoiseRoleRepository(RoleRepository):
                 await existing.save(update_fields=list(values.keys()))
             await RolePermission.filter(role_id=rid).delete()
 
-        for perm in role.permissions:
-            perm_id = await _ensure_permission(perm.code, perm.name)
-            await _ensure_role_permission(role.id.value, perm_id)
+        permission_specs = {permission.code: permission.name for permission in role.permissions}
+        if not permission_specs:
+            return
+        existing_permissions = {
+            permission.code: permission
+            for permission in await OrmPermission.filter(code__in=list(permission_specs))
+        }
+        missing_permissions = [
+            OrmPermission(code=code, name=name)
+            for code, name in permission_specs.items()
+            if code not in existing_permissions
+        ]
+        if missing_permissions:
+            await OrmPermission.bulk_create(missing_permissions, ignore_conflicts=True)
+            existing_permissions = {
+                permission.code: permission
+                for permission in await OrmPermission.filter(code__in=list(permission_specs))
+            }
+        await RolePermission.bulk_create(
+            [
+                RolePermission(
+                    role_id=role.id.value,
+                    permission_id=existing_permissions[code].id,
+                )
+                for code in permission_specs
+            ],
+            ignore_conflicts=True,
+        )
 
     async def find_by_id(self, role_id: RoleId) -> Role | None:
         orm = await OrmRole.get_or_none(id=role_id.value)
@@ -244,19 +283,36 @@ class TortoiseRoleRepository(RoleRepository):
         )
 
     async def find_all(self) -> list[Role]:
-        roles = []
-        for orm in await OrmRole.all():
-            perms = await _load_permissions(orm.id)
-            roles.append(
+        orm_roles = await OrmRole.all()
+        role_ids = [role.id for role in orm_roles]
+        links = (
+            await RolePermission.filter(role_id__in=role_ids).values("role_id", "permission_id")
+            if role_ids
+            else []
+        )
+        permission_ids = {link["permission_id"] for link in links}
+        permissions = {
+            permission.id: permission
+            for permission in await OrmPermission.filter(id__in=permission_ids)
+        }
+        permissions_by_role: dict[int, list[OrmPermission]] = {role_id: [] for role_id in role_ids}
+        for link in links:
+            permission = permissions.get(link["permission_id"])
+            if permission is not None:
+                permissions_by_role[link["role_id"]].append(permission)
+        return [
                 Role(
                     role_id=RoleId(orm.id),
                     code=orm.code,
                     name=Name(orm.name),
                     description=orm.description or "",
-                    permissions=[PermissionRef(code=p.code, name=p.name) for p in perms],
+                    permissions=[
+                        PermissionRef(code=p.code, name=p.name)
+                        for p in permissions_by_role[orm.id]
+                    ],
                 )
-            )
-        return roles
+            for orm in orm_roles
+        ]
 
     async def delete(self, role_id: RoleId) -> None:
         await RolePermission.filter(role_id=role_id.value).delete()

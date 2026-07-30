@@ -43,7 +43,11 @@ def worksheet_to_grid(ws) -> tuple[list[list], list[MergedCellRange]]:
 
 class OpenPyxlWorkbookReader(WorkbookReader):
     async def read(self, filepath: str) -> list[WorkbookSheet]:
-        wb = await asyncio.to_thread(openpyxl.load_workbook, filepath, data_only=True)
+        return await asyncio.to_thread(self._read_sync, filepath)
+
+    @staticmethod
+    def _read_sync(filepath: str) -> list[WorkbookSheet]:
+        wb = openpyxl.load_workbook(filepath, data_only=True)
         with closing(wb):
             sheets = []
             for sheet_name in wb.sheetnames:

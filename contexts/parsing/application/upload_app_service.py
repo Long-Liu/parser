@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import date, datetime
@@ -268,11 +269,15 @@ class UploadApplicationService(TransactionalService):
         return payload, summary
 
     async def _run_parsing_pipeline(self, sheet, job, template):
-        grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
-        flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
-        rows = self._extractor.extract(grid, flat_headers, template)
+        def parse():
+            grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
+            flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
+            rows = self._extractor.extract(grid, flat_headers, template)
+            valid_rows, errors = self._validator.validate(rows, template)
+            return rows, valid_rows, errors
+
+        rows, valid_rows, errors = await asyncio.to_thread(parse)
         job.set_extracted(sheet.name, rows, retain_rows=False)
-        valid_rows, errors = self._validator.validate(rows, template)
         job.set_validated(sheet.name, valid_rows, errors, retain_rows=False)
         return valid_rows, errors
 

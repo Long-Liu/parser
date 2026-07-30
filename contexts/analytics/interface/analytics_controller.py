@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 
 from openpyxl import Workbook
@@ -31,11 +32,15 @@ from contexts.shared.interface.controller_helpers import pagination_from
 _EXPORT_PAGE = Pagination(1, 10_000, max_size=10_000)
 
 
-def _xlsx(workbook: Workbook, filename: str, fallback: str):
-    output = io.BytesIO()
-    workbook.save(output)
+async def _xlsx(workbook: Workbook, filename: str, fallback: str):
+    def serialize() -> bytes:
+        output = io.BytesIO()
+        workbook.save(output)
+        return output.getvalue()
+
+    content = await asyncio.to_thread(serialize)
     return raw(
-        output.getvalue(),
+        content,
         content_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         headers={"Content-Disposition": content_disposition(filename, fallback)},
     )
@@ -359,8 +364,8 @@ class AnalyticsController(BaseController):
     async def export_profits(self, request):
         ym = request.args.get("ym")
         result = await self.analytics_svc.project_profits(ym, _EXPORT_PAGE, await self._project_scope(request))
-        wb = build_profits_workbook(result["projects"])
-        return _xlsx(wb, f"项目毛利情况_{ym or '全部'}.xlsx", "project-profits.xlsx")
+        wb = await asyncio.to_thread(build_profits_workbook, result["projects"])
+        return await _xlsx(wb, f"项目毛利情况_{ym or '全部'}.xlsx", "project-profits.xlsx")
 
     @require_auth
     @require_permission("data:export")
@@ -372,8 +377,8 @@ class AnalyticsController(BaseController):
             result = await self.analytics_svc.cost_categories(ids, ym, _EXPORT_PAGE)
         except ValueError:
             raise ValidationError("invalid project_ids") from None
-        wb = build_cost_categories_workbook(result["projects"])
-        return _xlsx(wb, f"成本科目_{ym or '全部'}.xlsx", "cost-categories.xlsx")
+        wb = await asyncio.to_thread(build_cost_categories_workbook, result["projects"])
+        return await _xlsx(wb, f"成本科目_{ym or '全部'}.xlsx", "cost-categories.xlsx")
 
     @require_auth
     @require_permission("data:export")
@@ -389,8 +394,8 @@ class AnalyticsController(BaseController):
             )
         except ValueError:
             raise ValidationError("invalid project_ids") from None
-        wb = build_budget_lease_writeoff_workbook(result)
-        return _xlsx(
+        wb = await asyncio.to_thread(build_budget_lease_writeoff_workbook, result)
+        return await _xlsx(
             wb,
             f"预算租借核销表_{ym or '最新'}.xlsx",
             "budget-lease-writeoffs.xlsx",
@@ -410,7 +415,7 @@ class AnalyticsController(BaseController):
         costs.append(["科目", "指标", "实际", "偏差", "偏差率"])
         for item in result["cost_categories"]:
             costs.append([item["name"], item["indicator"], item["actual"], item["deviation"], item["deviation_rate"]])
-        return _xlsx(wb, "项目导出_" + result["project"]["name"] + ".xlsx", f"project-{project_id}.xlsx")
+        return await _xlsx(wb, "项目导出_" + result["project"]["name"] + ".xlsx", f"project-{project_id}.xlsx")
 
     @require_auth
     @require_permission("data:export")
@@ -419,8 +424,8 @@ class AnalyticsController(BaseController):
         months = [m.strip() for m in request.args.get("months", "").split(",") if m.strip()]
         result = await self.analytics_svc.month_comparison(project_id, months)
         yms = [m["ym"] for m in result["months"]]
-        wb = build_month_comparison_workbook(result)
-        return _xlsx(wb, "月度对比_" + "_".join(yms) + ".xlsx", f"month-comparison-{project_id}.xlsx")
+        wb = await asyncio.to_thread(build_month_comparison_workbook, result)
+        return await _xlsx(wb, "月度对比_" + "_".join(yms) + ".xlsx", f"month-comparison-{project_id}.xlsx")
 
     @require_auth
     @require_permission("data:export")
@@ -432,8 +437,8 @@ class AnalyticsController(BaseController):
             result = await self.analytics_svc.compare_projects(ids, ym)
         except ValueError:
             raise ValidationError("invalid project_ids") from None
-        wb = build_compare_workbook(result)
-        return _xlsx(wb, f"多项目对比_{ym or '最新'}.xlsx", "project-compare.xlsx")
+        wb = await asyncio.to_thread(build_compare_workbook, result)
+        return await _xlsx(wb, f"多项目对比_{ym or '最新'}.xlsx", "project-compare.xlsx")
 
     @require_auth
     @require_permission("data:view")

@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 from tortoise.expressions import Q
+from tortoise.functions import Count, Sum
 
 from contexts.alert.infrastructure.tables import AlertModel
 from contexts.analytics.domain.compare_report import build_compare_report
@@ -90,19 +91,18 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         query = Project.all()
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
-        total = await query.count()
-        normal = await query.filter(status="normal").count()
-        warning = await query.filter(status="warning").count()
-        contract_prices = list(await query.values_list("contract_price", flat=True))
-        prices = sum(
-            (value or Decimal("0") for value in contract_prices),
-            Decimal("0"),
-        )
+        aggregates = await query.annotate(
+            total=Count("id"),
+            normal=Count("id", _filter=Q(status="normal")),
+            warning=Count("id", _filter=Q(status="warning")),
+            contract_total=Sum("contract_price"),
+        ).values("total", "normal", "warning", "contract_total")
+        row = aggregates[0] if aggregates else {}
         return {
-            "total": total,
-            "normal": normal,
-            "warning": warning,
-            "contract_total": float(prices),
+            "total": int(row.get("total") or 0),
+            "normal": int(row.get("normal") or 0),
+            "warning": int(row.get("warning") or 0),
+            "contract_total": float(row.get("contract_total") or Decimal("0")),
         }
 
     async def monthly_data(self, project_id: int, pagination: Pagination) -> dict:
@@ -118,19 +118,26 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         )
         total = len(months)
         selected = months[pagination.offset : pagination.offset + pagination.size]
-        items = []
-        for ym in selected:
-            batch = (
-                await UploadBatch.filter(
-                    project_id=project_id,
-                    status="success",
-                    ym=ym,
-                )
-                .order_by("-id")
-                .first()
+        batches_by_month: dict[str, UploadBatch] = {}
+        if selected:
+            for batch in await UploadBatch.filter(
+                project_id=project_id,
+                status="success",
+                ym__in=selected,
+            ).order_by("ym", "-id"):
+                if batch.ym not in batches_by_month:
+                    batches_by_month[batch.ym] = batch
+        batches = [batches_by_month[month] for month in selected if month in batches_by_month]
+        data_by_batch = await self._monthly_data_maps([batch.id for batch in batches])
+        items = [
+            self._monthly_item_from_data(
+                batch,
+                data_by_batch["settlement"].get(batch.id, []),
+                data_by_batch["dynamic"].get(batch.id, []),
+                data_by_batch["lease"].get(batch.id, []),
             )
-            if batch:
-                items.append(await self._monthly_item(batch))
+            for batch in batches
+        ]
         return {"data": items, "pagination": {"page": pagination.page, "size": pagination.size, "total": total}}
 
     async def month_comparison(self, project_id: int, months: list[str]) -> dict:
@@ -196,10 +203,40 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     async def compare_projects(self, project_ids: list[int], ym: str | None) -> dict:
         if len(set(project_ids)) < 2:
             raise ValidationError("at least two projects are required")
-        costs = await self.cost_categories(project_ids, ym, Pagination(1, 100, max_size=100))
-        profits = await self._profits_for_ids(project_ids, ym)
+        projects = await Project.filter(id__in=project_ids).order_by("id")
+        costs, batch_map = await asyncio.gather(
+            self.cost_categories(project_ids, ym, Pagination(1, 100, max_size=100)),
+            self._latest_batch_map([project.id for project in projects], ym),
+        )
+        batch_ids = [batch.id for batch in batch_map.values()]
+        indicator_maps: dict[int, dict] = {}
+        if batch_ids:
+            settlement_rows = await DataSettlementOutput.filter(batch_id__in=batch_ids)
+            rows_by_batch: dict[int, list[DataSettlementOutput]] = {}
+            for row in settlement_rows:
+                rows_by_batch.setdefault(row.batch_id, []).append(row)
+            indicator_maps = {
+                batch_id: settlement_indicator_map(rows)
+                for batch_id, rows in rows_by_batch.items()
+            }
         metrics = [
-            await self._compare_item(project, ym) for project in await Project.filter(id__in=project_ids).order_by("id")
+            self._compare_item_from_data(
+                project,
+                batch_map.get(project.id),
+                indicator_maps.get(batch_map[project.id].id, {}) if project.id in batch_map else {},
+                ym,
+            )
+            for project in projects
+        ]
+        profits = [
+            {
+                "project_id": item["project_id"],
+                "project_name": item["project_name"],
+                "ym": item["ym"],
+                "profit": item["profit"],
+                "profit_rate": item["profit_rate"],
+            }
+            for item in metrics
         ]
         # cost_categories/profits kept for backward compatibility; "projects"
         # carries the 9-metric comparison table plus five-dimension scores.
@@ -211,6 +248,15 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if batch is not None:
             rows = await DataSettlementOutput.filter(batch_id=batch.id)
             indicators = settlement_indicator_map(rows)
+        return self._compare_item_from_data(project, batch, indicators, ym)
+
+    @staticmethod
+    def _compare_item_from_data(
+        project: Project,
+        batch: UploadBatch | None,
+        indicators: dict,
+        ym: str | None,
+    ) -> dict:
         contract = _number(project.contract_price)
         # 累计结算（截至当前实际·累计已结算）：取结算表产值行，缺行时回退表内
         # 合同总价行（与 _profit_item current 口径一致）；整批无数据时保持全零，
@@ -272,19 +318,24 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             if project_ids
             else await Project.all().order_by("id")
         )
+        batch_map = await self._latest_batch_map([project.id for project in projects], ym)
+        batch_ids = [batch.id for batch in batch_map.values()]
+        rows_by_batch: dict[int, list[DataDynamicIndicator]] = {batch_id: [] for batch_id in batch_ids}
+        if batch_ids:
+            rows = await DataDynamicIndicator.filter(
+                batch_id__in=batch_ids,
+            ).exclude(item_name=None).order_by("batch_id", "id")
+            for row in rows:
+                rows_by_batch[row.batch_id].append(row)
         series = []
         totals = []
         for project in projects:
-            batch = await self._batch(project.id, ym)
-            query = DataDynamicIndicator.filter(batch_id=batch.id) if batch else None
-            # 解析尾行可能产生 item_name 为空的垃圾行，报表直接剔除
-            if query is not None:
-                query = query.exclude(item_name=None)
-            total = await query.count() if query else 0
+            batch = batch_map.get(project.id)
+            rows = rows_by_batch.get(batch.id, []) if batch else []
+            total = len(rows)
             totals.append(total)
             # 层级路径解析是位置状态机（中文数字大类下编号会重启），必须在
             # 完整有序行集上运行后再分页切片，不能先 OFFSET/LIMIT。
-            rows = [] if query is None else await query.order_by("id")
             items = [
                 {
                     "hierarchy_code": row.hierarchy_code,
@@ -609,11 +660,16 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         }
 
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
-        summary = await self.project_summary(project_ids)
-        profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
         project_query = Project.all()
         if project_ids is not None:
             project_query = project_query.filter(id__in=project_ids)
+        summary, profits, projects, trends, cost_composition = await asyncio.gather(
+            self.project_summary(project_ids),
+            self.project_profits(None, Pagination(1, 10_000, max_size=10_000), project_ids),
+            project_query.order_by("id"),
+            self.dashboard_trends(project_ids),
+            self.cost_composition(project_ids),
+        )
         status = [
             {
                 "id": p.id,
@@ -621,16 +677,16 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 "status": p.status,
                 "progress": _number(p.progress),
             }
-            for p in await project_query.order_by("id")
+            for p in projects
         ]
         total_profit = sum(item["current"]["profit"] for item in profits["projects"])
         return {
             "summary": {**summary, "total_profit": round(total_profit, 2)},
             "project_status": status,
             "profit_distribution": profits["projects"],
-            "trends": await self.dashboard_trends(project_ids),
-            "cost_composition": await self.cost_composition(project_ids),
-            "health_radar": await self.health_radar(project_ids),
+            "trends": trends,
+            "cost_composition": cost_composition,
+            "health_radar": self._health_radar_from_data(projects, profits["projects"]),
         }
 
     async def health_radar(self, project_ids: list[int] | None = None) -> dict:
@@ -638,6 +694,11 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
         projects = await query
+        profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
+        return self._health_radar_from_data(projects, profits["projects"])
+
+    @staticmethod
+    def _health_radar_from_data(projects: list[Project], profits: list[dict]) -> dict:
         if not projects:
             return {
                 "dimensions": {
@@ -649,8 +710,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                     "profit": 0,
                 }
             }
-        profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
-        rates = [max(0, min(100, item["current"]["profit_rate"] * 5)) for item in profits["projects"]]
+        rates = [max(0, min(100, item["current"]["profit_rate"] * 5)) for item in profits]
 
         def _avg(values):
             return round(sum(values) / len(values), 2) if values else 0
@@ -676,12 +736,25 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if project_ids is not None:
             base = base.filter(project_id__in=project_ids)
         months = list(await base.order_by("-ym").distinct().values_list("ym", flat=True))[:12]
+        batch_rows = await base.filter(ym__in=months).order_by("ym", "project_id", "-id") if months else []
+        latest: dict[tuple[str, int], UploadBatch] = {}
+        for batch in batch_rows:
+            latest.setdefault((batch.ym, batch.project_id), batch)
+        batches = list(latest.values())
+        data_by_batch = await self._monthly_data_maps([batch.id for batch in batches])
+        batches_by_month: dict[str, list[UploadBatch]] = {}
+        for batch in batches:
+            batches_by_month.setdefault(batch.ym, []).append(batch)
         result = []
         for ym in reversed(months):
-            batches = await base.filter(ym=ym)
             revenue = cost = profit = 0.0
-            for batch in batches:
-                item = await self._monthly_item(batch)
+            for batch in batches_by_month.get(ym, []):
+                item = self._monthly_item_from_data(
+                    batch,
+                    data_by_batch["settlement"].get(batch.id, []),
+                    data_by_batch["dynamic"].get(batch.id, []),
+                    data_by_batch["lease"].get(batch.id, []),
+                )
                 revenue += item["revenue"]
                 cost += item["cost"]
                 profit += item["profit"]
@@ -693,13 +766,13 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         query = Project.all()
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
-        for project in await query:
-            batch = await self._batch(project.id, None)
-            if batch is None:
-                continue
-            for row in await DataDynamicIndicator.filter(batch_id=batch.id):
-                name = row.item_name or "未分类"
-                totals[name] = totals.get(name, 0.0) + _number(row.incurred_cost)
+        projects = await query
+        batch_map = await self._latest_batch_map([project.id for project in projects], None)
+        batch_ids = [batch.id for batch in batch_map.values()]
+        rows = await DataDynamicIndicator.filter(batch_id__in=batch_ids) if batch_ids else []
+        for row in rows:
+            name = row.item_name or "未分类"
+            totals[name] = totals.get(name, 0.0) + _number(row.incurred_cost)
         return [
             {"name": name, "amount": round(amount, 2)}
             for name, amount in sorted(totals.items(), key=lambda item: -item[1])
@@ -1066,8 +1139,21 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         }
 
     async def _monthly_item(self, batch: UploadBatch) -> dict:
-        rows = await DataSettlementOutput.filter(batch_id=batch.id)
-        indicators = settlement_indicator_map(rows)
+        settlement_rows, dynamic_rows, lease_rows = await asyncio.gather(
+            DataSettlementOutput.filter(batch_id=batch.id),
+            DataDynamicIndicator.filter(batch_id=batch.id),
+            DataBudgetLease.filter(batch_id=batch.id),
+        )
+        return self._monthly_item_from_data(batch, settlement_rows, dynamic_rows, lease_rows)
+
+    @staticmethod
+    def _monthly_item_from_data(
+        batch: UploadBatch,
+        settlement_rows: list[DataSettlementOutput],
+        dynamic_rows: list[DataDynamicIndicator],
+        lease_rows: list[DataBudgetLease],
+    ) -> dict:
+        indicators = settlement_indicator_map(settlement_rows)
         # 毛利数据自 表11 结算产值表读取（旧毛利 sheet 已随远端重构废弃）。
         revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
         profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
@@ -1076,7 +1162,6 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         f_rev = _settle(indicators, SETTLE_FORECAST_REVENUE)
         f_prf = _settle(indicators, SETTLE_FORECAST_PROFIT)
         f_cost = _settle(indicators, SETTLE_FORECAST_COST) if indicators else f_rev - f_prf
-        dynamic_rows = await DataDynamicIndicator.filter(batch_id=batch.id)
         target_rows = [row for row in dynamic_rows if str(row.item_name or "").startswith("项目成本合计")]
         if not target_rows:
             target_rows = [row for row in dynamic_rows if "一级" in str(row.display_level or "")]
@@ -1096,7 +1181,6 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         target_cost = round(sum(_number(row.indicator_with_tax) for row in target_rows), 2) if target_rows else None
         contract = _settle(indicators, SETTLE_CONTRACT_PRICE)
         target_profit = round(contract - target_cost, 2) if target_cost is not None else None
-        lease_rows = await DataBudgetLease.filter(batch_id=batch.id)
         lease_total = round(sum(_number(row.lease_total) for row in lease_rows), 2)
         written_off = round(sum(_number(row.writeoff_total) for row in lease_rows), 2)
         rental_profit = round(lease_total - written_off, 2) if lease_rows else None
@@ -1128,6 +1212,30 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "write_off_rate": (round(written_off / lease_total * 100, 2) if lease_total else None),
         }
 
+    @staticmethod
+    async def _monthly_data_maps(batch_ids: list[int]) -> dict[str, dict[int, list]]:
+        result: dict[str, dict[int, list]] = {
+            "settlement": {},
+            "dynamic": {},
+            "lease": {},
+        }
+        if not batch_ids:
+            return result
+        settlement_rows, dynamic_rows, lease_rows = await asyncio.gather(
+            DataSettlementOutput.filter(batch_id__in=batch_ids),
+            DataDynamicIndicator.filter(batch_id__in=batch_ids),
+            DataBudgetLease.filter(batch_id__in=batch_ids),
+        )
+        for key, rows in (
+            ("settlement", settlement_rows),
+            ("dynamic", dynamic_rows),
+            ("lease", lease_rows),
+        ):
+            grouped = result[key]
+            for row in rows:
+                grouped.setdefault(row.batch_id, []).append(row)
+        return result
+
     async def _profit_for(self, project_id: int, ym: str | None) -> dict:
         batch = await self._batch(project_id, ym)
         indicators = {}
@@ -1155,6 +1263,19 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if ym:
             query = query.filter(ym=ym)
         return await query.order_by("-ym", "-id").first()
+
+    @staticmethod
+    async def _latest_batch_map(project_ids: list[int], ym: str | None) -> dict[int, UploadBatch]:
+        if not project_ids:
+            return {}
+        query = UploadBatch.filter(project_id__in=project_ids, status="success")
+        if ym:
+            query = query.filter(ym=ym)
+        result: dict[int, UploadBatch] = {}
+        for batch in await query.order_by("project_id", "-ym", "-id"):
+            if batch.project_id not in result:
+                result[batch.project_id] = batch
+        return result
 
     @staticmethod
     async def _project(project_id: int):
