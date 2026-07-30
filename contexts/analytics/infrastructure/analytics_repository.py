@@ -93,10 +93,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         total = await query.count()
         normal = await query.filter(status="normal").count()
         warning = await query.filter(status="warning").count()
-        contract_prices = cast(
-            list[Decimal | None],
-            list(await query.values_list("contract_price", flat=True)),
-        )
+        contract_prices = list(await query.values_list("contract_price", flat=True))
         prices = sum(
             (value or Decimal("0") for value in contract_prices),
             Decimal("0"),
