@@ -160,11 +160,37 @@ async def test_new_workbook_key_amount_fields():
     indicator, _ = results["dynamic_indicator"]
     assert any(r.fields.get("indicator_ex_tax") for r in indicator)
 
+    labor, _ = results["labor_cost"]
+    assert any(r.fields.get("actual_total_cost") for r in labor)
+    assert any(
+        any("2027年" in key for key in (r.monthly_data or {}))
+        for r in labor
+    )
+
+    social, _ = results["social_insurance"]
+    assert any(r.fields.get("estimated_total_cost") for r in social)
+
+    site, _ = results["site_management"]
+    assert any(r.fields.get("unit_price_ex_tax") for r in site)
+    assert any(
+        any("2027年" in key for key in (r.monthly_data or {}))
+        for r in site
+    )
+
+    machinery, _ = results["machinery"]
+    assert any(r.fields.get("machine_name") for r in machinery)
+    assert any(r.fields.get("contract_total") for r in machinery)
+
     construction, _ = results["construction_dynamic"]
     assert any(r.fields.get("quota_code") for r in construction)
     assert any(r.fields.get("contract_total_price") for r in construction)
+    assert any(
+        any("累计结算工程量" in key for key in (r.monthly_data or {}))
+        for r in construction
+    )
 
     installation, _ = results["installation_dynamic"]
+    assert any(r.fields.get("installation_fee") for r in installation)
     assert any(r.fields.get("contract_installation") for r in installation)
 
     other, _ = results["other_items"]

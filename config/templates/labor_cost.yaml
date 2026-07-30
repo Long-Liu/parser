@@ -3,7 +3,7 @@ sheet_pattern: "表1 人工费-动态"
 description: "人工费动态表"
 
 headers:
-  rows: [2, 3, 4]
+  rows: [1, 2, 3]
   data_start_row: 5
 
 hierarchy:
@@ -54,6 +54,12 @@ dynamic_columns:
   - db_prefix: monthly
     match_header: ["累计已发生", "2025年"]
     type: decimal(15,2)
+  - db_prefix: monthly_actual_2026
+    match_header: ["累计已发生", "2026年"]
+    type: decimal(15,2)
   - db_prefix: monthly_2026
     match_header: ["后续发生", "2026年"]
+    type: decimal(15,2)
+  - db_prefix: monthly_2027
+    match_header: ["后续发生", "2027年"]
     type: decimal(15,2)

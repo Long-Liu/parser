@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 import logging
+from decimal import ROUND_HALF_UP, Decimal
+
+from tortoise import fields as tortoise_fields
 
 from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
 logger = logging.getLogger("parser.data_writer")
+
+
+def _model_values(model, values: dict) -> dict:
+    """Normalize values according to the destination model field types."""
+    normalized = {}
+    for key, value in values.items():
+        field = model._meta.fields_map.get(key)
+        if field is None:
+            continue
+        if value is not None and isinstance(field, tortoise_fields.DecimalField):
+            # aiomysql converts Python floats through their binary
+            # representation. Decimal(str(...)) keeps Excel's displayed
+            # decimal value; quantizing before the ORM conversion also makes
+            # half-cent/half-unit rounding deterministic.
+            quantum = Decimal(1).scaleb(-field.decimal_places)
+            value = Decimal(str(value)).quantize(quantum, rounding=ROUND_HALF_UP)
+        normalized[key] = value
+    return normalized
 
 
 class TortoiseParsedDataSink(ParsedDataSink):
@@ -18,14 +39,13 @@ class TortoiseParsedDataSink(ParsedDataSink):
             )
 
         data = []
-        model_fields = set(model._meta.fields_map)
         for row in rows:
             d = {"batch_id": batch_id, **row.fields}
             if row.hierarchy_code:
                 d["hierarchy_code"] = row.hierarchy_code
             if row.monthly_data:
                 d["monthly_data"] = row.monthly_data
-            data.append(model(**{k: v for k, v in d.items() if k in model_fields}))
+            data.append(model(**_model_values(model, d)))
         if not data:
             return
 

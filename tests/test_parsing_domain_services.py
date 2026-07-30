@@ -1,14 +1,23 @@
 """Tests for parsing domain services."""
 
+from decimal import Decimal
+from datetime import datetime
+
 from contexts.parsing.domain.cell_unmerger import CellUnmerger, MergedCellRange
 from contexts.parsing.domain.data_extractor import DataRowExtractor
 from contexts.parsing.domain.data_validator import DataValidator
 from contexts.parsing.domain.header_flattener import HeaderFlattener
 from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.parsing.domain.stop_detector import StopDetector
+from contexts.parsing.infrastructure.data_writer import _model_values
+from contexts.shared.infrastructure.database.tables import (
+    DataDynamicIndicator,
+    DataSettlementOutput,
+)
 from contexts.template.domain.template import (
     ColumnMapping,
     HeaderSpec,
+    HierarchyConfig,
     StopRule,
     StopRuleType,
     Template,
@@ -197,6 +206,17 @@ def test_validate_all_valid():
     assert len(errors) == 0
 
 
+def test_data_writer_normalizes_float_for_decimal_column():
+    values = _model_values(
+        DataSettlementOutput,
+        {"cumulative_value": 3.315, "indicator_name": "x"},
+    )
+    assert values["cumulative_value"] == Decimal("3.315000")
+    assert values["indicator_name"] == "x"
+    dynamic = _model_values(DataDynamicIndicator, {"indicator_with_tax": 58.625})
+    assert dynamic["indicator_with_tax"] == Decimal("58.63")
+
+
 # ── DataRowExtractor ─────────────────────────────────────────────────
 
 
@@ -215,6 +235,74 @@ def test_extract_with_fixed_columns():
     assert len(rows) == 2
     assert rows[0].fields["amount"] == 100
     assert rows[1].fields["amount"] == 200
+
+
+def test_extract_preserves_populated_unmapped_columns_in_monthly_data():
+    extractor = DataRowExtractor()
+    template = _make_template(
+        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+        hierarchy_config=None,
+    )
+    grid = [
+        ["Amount", "Unmodeled detail", "Another detail"],
+        [100, "kept", 3.5],
+    ]
+    rows = extractor.extract(
+        grid,
+        ["Amount", "Unmodeled detail", "Another detail"],
+        template,
+    )
+    assert rows[0].monthly_data == {
+        "extra_col_2_Unmodeled detail": "kept",
+        "extra_col_3_Another detail": 3.5,
+    }
+
+
+def test_extract_converts_unmapped_dates_to_json_safe_values():
+    extractor = DataRowExtractor()
+    template = _make_template(
+        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+    )
+    rows = extractor.extract(
+        [["Amount", "Unmodeled date"], [1, datetime(2026, 7, 30, 8, 15)]],
+        ["Amount", "Unmodeled date"],
+        template,
+    )
+    assert rows[0].monthly_data == {
+        "extra_col_2_Unmodeled date": "2026-07-30T08:15:00",
+    }
+
+
+def test_extract_does_not_duplicate_hierarchy_column_as_extra_data():
+    extractor = DataRowExtractor()
+    template = _make_template(
+        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+        hierarchy_config=HierarchyConfig(column_name="序号", separator="."),
+    )
+    grid = [
+        ["序号", "Amount"],
+        ["1.2", 100],
+    ]
+    rows = extractor.extract(grid, ["序号", "Amount"], template)
+    assert rows[0].hierarchy_code == "1.2"
+    assert rows[0].monthly_data is None
+
+
+def test_extract_keeps_row_with_only_unmapped_business_data():
+    extractor = DataRowExtractor()
+    template = _make_template(
+        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+    )
+    rows = extractor.extract(
+        [["Supplement", "Amount"], ["must survive"]],
+        ["Supplement", "Amount"],
+        template,
+    )
+    assert len(rows) == 1
+    assert rows[0].fields == {}
+    assert rows[0].monthly_data == {
+        "extra_col_1_Supplement": "must survive",
+    }
 
 
 def test_extract_stops_at_stop_rule():

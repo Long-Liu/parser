@@ -3,7 +3,7 @@ sheet_pattern: "表4*机械费用*"
 description: "机械费用动态表"
 
 headers:
-  rows: [1, 2]
+  rows: [0, 1]
   data_start_row: 3
 
 hierarchy:

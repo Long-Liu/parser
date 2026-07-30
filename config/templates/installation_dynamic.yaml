@@ -3,7 +3,7 @@ sheet_pattern: "表7*安装工程*"
 description: "安装工程动态表"
 
 headers:
-  rows: [2, 3, 4]
+  rows: [1, 2, 3]
   data_start_row: 5
 
 hierarchy:
@@ -47,7 +47,7 @@ columns:
     match_header: ["主承接价格"]
     type: decimal(15,2)
   - db_field: installation_fee
-    match_header: ["主承接价格", "安装费"]
+    match_header: ["主合同", "综合单价", "安装费"]
     type: decimal(15,2)
   - db_field: contract_device_material
     match_header: ["综合合价", "装置性材料费"]

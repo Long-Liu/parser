@@ -3,7 +3,7 @@ sheet_pattern: "表3*现场管理费*"
 description: "现场管理费动态表"
 
 headers:
-  rows: [3, 4]
+  rows: [2, 3]
   data_start_row: 5
 
 hierarchy:
@@ -62,4 +62,7 @@ dynamic_columns:
     type: decimal(15,2)
   - db_prefix: monthly_2026
     match_header: ["2026年"]
+    type: decimal(15,2)
+  - db_prefix: monthly_2027
+    match_header: ["2027年"]
     type: decimal(15,2)

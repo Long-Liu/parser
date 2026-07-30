@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal
+
 from contexts.parsing.domain.hierarchy_code import (
     parse_hierarchy_code,
     strip_whitespace,
@@ -56,7 +59,12 @@ class DataRowExtractor:
         separator: str,
     ) -> None:
         row = grid[ri]
-        row_data = self._extract_row(row, flat_headers, template)
+        row_data = self._extract_row(
+            row,
+            flat_headers,
+            template,
+            hierarchy_col=hierarchy_col,
+        )
         if row_data is None:
             return
         hierarchy_code = None
@@ -93,7 +101,13 @@ class DataRowExtractor:
                     return ci
         return None
 
-    def _extract_row(self, row: list, flat_headers: list[str], template: Template) -> ParsedRow | None:
+    def _extract_row(
+        self,
+        row: list,
+        flat_headers: list[str],
+        template: Template,
+        hierarchy_col: int | None = None,
+    ) -> ParsedRow | None:
         fields: dict = {}
         monthly_data: dict = {}
         header_occurrences: dict[str, int] = {}
@@ -108,12 +122,27 @@ class DataRowExtractor:
                 continue
             dyn = template.find_dynamic_column(header)
             if dyn:
-                monthly_data[f"{dyn.db_prefix}_{header}"] = value
+                monthly_data[f"{dyn.db_prefix}_{header}"] = self._json_value(value)
                 continue
-        if fields:
+            # Preserve every populated, non-hierarchy source column even when
+            # the template has no dedicated typed field for it.  The physical
+            # data tables all expose ``monthly_data`` as their lossless JSON
+            # extension area.  Prefixing with the 1-based source column keeps
+            # duplicate/blank-looking multi-row headers unambiguous.
+            if ci != hierarchy_col and header and value not in (None, ""):
+                monthly_data[f"extra_col_{ci + 1}_{header}"] = self._json_value(value)
+        if fields or monthly_data:
             return ParsedRow(
                 row_index=-1,
                 fields=fields,
                 monthly_data=monthly_data if monthly_data else None,
             )
         return None
+
+    @staticmethod
+    def _json_value(value):
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return str(value)
+        return value
