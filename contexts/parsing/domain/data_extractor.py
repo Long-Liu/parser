@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -9,7 +10,7 @@ from contexts.parsing.domain.hierarchy_code import (
 )
 from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.parsing.domain.stop_detector import StopDetector
-from contexts.template.domain.template import StopRuleAction, Template
+from contexts.template.domain.template import StopRule, StopRuleAction, Template
 
 
 class DataRowExtractor:
@@ -35,6 +36,7 @@ class DataRowExtractor:
                         template,
                         hierarchy_col,
                         separator,
+                        stop_rule=fired,
                     )
                 break
             self._append_row(
@@ -57,6 +59,7 @@ class DataRowExtractor:
         template: Template,
         hierarchy_col: int | None,
         separator: str,
+        stop_rule: StopRule | None = None,
     ) -> None:
         row = grid[ri]
         row_data = self._extract_row(
@@ -67,6 +70,8 @@ class DataRowExtractor:
         )
         if row_data is None:
             return
+        if stop_rule is not None:
+            self._normalize_stop_row(row, row_data, template, stop_rule)
         hierarchy_code = None
         if hierarchy_col is not None and hierarchy_col < len(row):
             hierarchy_code = parse_hierarchy_code(row[hierarchy_col], separator)
@@ -78,6 +83,33 @@ class DataRowExtractor:
                 monthly_data=row_data.monthly_data,
             )
         )
+
+    @staticmethod
+    def _normalize_stop_row(
+        source_row: list,
+        row_data: ParsedRow,
+        template: Template,
+        stop_rule: StopRule,
+    ) -> None:
+        """Keep a total row valid even when its label occupies a numeric cell."""
+        marker = next(
+            (
+                str(value)
+                for value in source_row
+                if value is not None and any(re.match(pattern, str(value)) for pattern in stop_rule.patterns)
+            ),
+            None,
+        )
+        if marker is None:
+            return
+        column_types = {column.db_field: column.db_type for column in template.fixed_columns}
+        for field, value in row_data.fields.items():
+            if value is None or not any(re.match(pattern, str(value)) for pattern in stop_rule.patterns):
+                continue
+            if column_types.get(field, "").startswith(("decimal", "date", "datetime")):
+                row_data.fields[field] = None
+        if stop_rule.label_field:
+            row_data.fields[stop_rule.label_field] = marker
 
     def _resolve_hierarchy_column(self, grid: list[list], template: Template) -> int | None:
         """Locate the hierarchy column by matching the configured column name
@@ -131,7 +163,8 @@ class DataRowExtractor:
             # duplicate/blank-looking multi-row headers unambiguous.
             if ci != hierarchy_col and header and value not in (None, ""):
                 monthly_data[f"extra_col_{ci + 1}_{header}"] = self._json_value(value)
-        if fields or monthly_data:
+        has_fixed_value = any(value not in (None, "") for value in fields.values())
+        if has_fixed_value or monthly_data:
             return ParsedRow(
                 row_index=-1,
                 fields=fields,

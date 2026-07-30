@@ -10,10 +10,7 @@ hierarchy:
   column_name: "序号"
   separator: "."
 
-stop_rules:
-  - type: cell_match
-    patterns: ["^注：", "^注 :", "^说明："]
-    columns: ["A"]
+stop_rules: []
 
 columns:
   - db_field: fee_name

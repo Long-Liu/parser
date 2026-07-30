@@ -10,13 +10,7 @@ hierarchy:
   column_name: "序号"
   separator: "."
 
-stop_rules:
-  - type: cell_match
-    patterns: ["^注：", "^注 :", "^说明："]
-    columns: ["A"]
-  - type: cell_match
-    patterns: ["^金额单位"]
-    columns: ["A"]
+stop_rules: []
 
 columns:
   - db_field: person_name

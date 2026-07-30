@@ -50,13 +50,20 @@ EXPECTED_NEW = {
     "settlement_output": "indicator_name",
 }
 
-# Exact data-row counts verified against the 0714 workbook; total rows
-# (表10 项目成本合计, 表10.1/10.2/10.3 合计) must never leak into data rows.
+# Exact data-row counts verified against the 0714 workbook, including each
+# sheet's final 合计/总计/小计 row.
 EXPECTED_NEW_ROW_COUNTS = {
-    "budget_adjustment_summary": 67,
-    "budget_adjustment_internal": 3,
-    "budget_increase": 3,
-    "budget_lease": 1,
+    "dynamic_indicator": 76,
+    "construction_dynamic": 17,
+    "installation_dynamic": 26,
+    "machinery": 38,
+    "bid_comparison": 6,
+    "other_items": 14,
+    "material_cost": 343,
+    "budget_adjustment_summary": 68,
+    "budget_adjustment_internal": 4,
+    "budget_increase": 2,
+    "budget_lease": 2,
     "settlement_output": 14,
 }
 
@@ -135,9 +142,9 @@ async def test_new_workbook_budget_and_settlement_sheets_exact_rows():
         valid, errors = results[template_id]
         assert not errors, f"{template_id}: validation errors: {errors[:3]}"
         assert len(valid) == expected, f"{template_id}: {len(valid)} rows, expected {expected}"
-    # the 项目成本合计 grand-total row must be cut by the stop rule
+    # The 项目成本合计 grand-total row must be retained as the final row.
     summary_rows, _ = results["budget_adjustment_summary"]
-    assert all(not str(r.fields.get("item_name") or "").startswith("项目成本合计") for r in summary_rows)
+    assert str(summary_rows[-1].fields["item_name"]).startswith("项目成本合计")
 
 
 @pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
@@ -147,10 +154,34 @@ async def test_new_workbook_stop_rules_terminate():
     # real data (a handful of 标段 rows).
     bid_rows, _ = results["bid_comparison"]
     assert len(bid_rows) < 100
-    # 表9 must stop before the trailing 总计 row.
+    # 表9 must retain the trailing 总计 row and stop there.
     material_rows, _ = results["material_cost"]
     assert 300 < len(material_rows) < 345
-    assert all(not str(r.fields.get("budget_category") or "").startswith("总计") for r in material_rows)
+    assert material_rows[-1].fields["budget_category"] == "总计"
+
+
+@pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")
+async def test_new_workbook_stop_rules_match_real_tail_rows():
+    results = await _run_pipeline(NEW_WORKBOOK)
+
+    dynamic, _ = results["dynamic_indicator"]
+    assert dynamic[-1].row_index == 81
+
+    construction, _ = results["construction_dynamic"]
+    assert construction[-1].row_index == 21
+    assert construction[-1].fields["project_name"] == "合计"
+    assert construction[-1].fields["bill_qty"] is None
+
+    installation, _ = results["installation_dynamic"]
+    assert installation[-1].row_index == 30
+
+    internal, _ = results["budget_adjustment_internal"]
+    assert internal[-1].row_index == 8
+    assert internal[-1].fields["project_name"].replace(" ", "") == "合计"
+
+    lease, _ = results["budget_lease"]
+    assert lease[-1].row_index == 8
+    assert lease[-1].fields["request_name"].replace(" ", "") == "合计"
 
 
 @pytest.mark.skipif(not NEW_WORKBOOK.exists(), reason="new workbook not present")

@@ -68,6 +68,7 @@ class YamlTemplateLoader:
                     columns=rule.get("columns", []),
                     empty_row_count=(rule.get("count") if rule_type == StopRuleType.CONSECUTIVE_EMPTY else None),
                     action=StopRuleAction(rule.get("action", StopRuleAction.EXCLUDE.value)),
+                    label_field=rule.get("label_field"),
                 )
             )
         fixed_columns = [

@@ -34,38 +34,37 @@ def _make_template(**kwargs) -> Template:
 
 def test_yaml_loader_reads_action_last():
     template = YamlTemplateLoader().load("material_cost")
-    total_rules = [r for r in template.stop_rules if "^总计" in r.patterns]
+    total_rules = [r for r in template.stop_rules if any("总" in pattern for pattern in r.patterns)]
     assert len(total_rules) == 1
     assert total_rules[0].action == StopRuleAction.LAST
-
-
-def test_yaml_loader_default_action_is_exclude():
-    template = YamlTemplateLoader().load("material_cost")
-    note_rules = [r for r in template.stop_rules if "^注：" in r.patterns]
-    assert len(note_rules) == 1
-    assert note_rules[0].action == StopRuleAction.EXCLUDE
+    assert total_rules[0].columns == []
+    assert total_rules[0].label_field == "budget_category"
 
 
 def test_all_action_last_templates_load():
     """新电源A模板的终结合计行规则必须标记 action:"last"。
 
-    远端模板重构后 rebar_ledger 等旧表已删除；construction_dynamic 另有一条
-    默认 exclude 的 "^合计"（I 列）规则，与 "合计（含税）" 终结行规则并存，
-    因此按精确 pattern 断言而非集合相等。
+    These templates retain their actual workbook subtotal/total row.
     """
     loader = YamlTemplateLoader()
     expected = {
-        "material_cost": "^总计",
-        "construction_dynamic": "^合计（含税）",
-        "installation_dynamic": "^合计",
-        "other_items": "^合计",
-        "machinery": "^小计",
-        "social_insurance": "^合计",
+        "material_cost": "budget_category",
+        "installation_dynamic": "project_name",
+        "other_items": "item_name",
+        "machinery": "machine_name",
+        "construction_dynamic": "project_name",
+        "budget_adjustment_summary": "item_name",
+        "budget_adjustment_internal": "project_name",
+        "budget_increase": "increase_count",
+        "budget_lease": "request_name",
     }
-    for template_id, pattern in expected.items():
+    for template_id, label_field in expected.items():
         template = loader.load(template_id)
-        actions = {r.action for r in template.stop_rules if pattern in r.patterns}
-        assert actions == {StopRuleAction.LAST}, template_id
+        total_rules = [rule for rule in template.stop_rules if rule.patterns]
+        assert len(total_rules) == 1, template_id
+        assert total_rules[0].action == StopRuleAction.LAST, template_id
+        assert total_rules[0].columns == [], template_id
+        assert total_rules[0].label_field == label_field, template_id
 
 
 # ── StopDetector：match_rule 与空 columns 扫描全行 ──────────────────
@@ -93,6 +92,16 @@ def test_cell_match_without_columns_scans_all_cells():
     detector = StopDetector()
     assert detector.should_stop(0, grid, [rule]) is False
     assert detector.should_stop(1, grid, [rule]) is True
+
+
+def test_exact_total_pattern_does_not_match_note_text():
+    rule = StopRule(
+        rule_type=StopRuleType.CELL_MATCH,
+        patterns=[r"^\s*合\s*计\s*$"],
+    )
+    detector = StopDetector()
+    assert detector.should_stop(0, [[None, "合 计"]], [rule]) is True
+    assert detector.should_stop(0, [[None, "备注：合计金额待确认"]], [rule]) is False
 
 
 # ── DataRowExtractor：action 语义 ────────────────────────────────────
@@ -132,6 +141,31 @@ def test_action_last_includes_matched_row_as_final_row():
     assert [r.fields.get("name") for r in rows] == ["混凝土", "钢筋", None]
     assert rows[-1].fields["amount"] == "总计"
     assert rows[-1].row_index == 4
+
+
+def test_action_last_moves_numeric_column_marker_to_configured_label_field():
+    template = _make_template(
+        fixed_columns=[
+            ColumnMapping(db_field="name", match_headers=["名称"], db_type="varchar(100)"),
+            ColumnMapping(db_field="amount", match_headers=["金额"], db_type="decimal(15,2)"),
+        ],
+        stop_rules=[
+            StopRule(
+                rule_type=StopRuleType.CELL_MATCH,
+                patterns=[r"^\s*合\s*计\s*$"],
+                action=StopRuleAction.LAST,
+                label_field="name",
+            ),
+        ]
+    )
+    rows = DataRowExtractor().extract(
+        [["名称", "金额"], ["钢筋", 200], [None, "合计"], ["尾注", 999]],
+        ["名称", "金额"],
+        template,
+    )
+    assert len(rows) == 2
+    assert rows[-1].fields == {"name": "合计", "amount": None}
+    assert rows[-1].row_index == 3
 
 
 def test_material_cost_real_yaml_total_row_ingested():

@@ -12,10 +12,9 @@ hierarchy:
 
 stop_rules:
   - type: cell_match
-    patterns: ["^合\\s*计"]
-    columns: ["B"]
-  - type: consecutive_empty_rows
-    count: 3
+    patterns: ["^\\s*合\\s*计\\s*$"]
+    action: "last"
+    label_field: increase_count
 
 columns:
   - db_field: increase_count

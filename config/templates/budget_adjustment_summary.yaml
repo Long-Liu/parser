@@ -12,10 +12,9 @@ hierarchy:
 
 stop_rules:
   - type: cell_match
-    patterns: ["^项目成本合计"]
-    columns: ["B"]
-  - type: consecutive_empty_rows
-    count: 3
+    patterns: ["^\\s*项目成本合计.*$"]
+    action: "last"
+    label_field: item_name
 
 columns:
   - db_field: item_name

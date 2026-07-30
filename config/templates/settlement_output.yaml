@@ -6,9 +6,7 @@ headers:
   rows: [1]
   data_start_row: 3
 
-stop_rules:
-  - type: consecutive_empty_rows
-    count: 3
+stop_rules: []
 
 columns:
   - db_field: indicator_name

@@ -305,6 +305,19 @@ def test_extract_keeps_row_with_only_unmapped_business_data():
     }
 
 
+def test_extract_skips_fully_blank_source_row_with_mapped_headers():
+    extractor = DataRowExtractor()
+    template = _make_template(
+        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+    )
+    rows = extractor.extract(
+        [["Amount", "Supplement"], [None, None]],
+        ["Amount", "Supplement"],
+        template,
+    )
+    assert rows == []
+
+
 def test_extract_stops_at_stop_rule():
     stop_detector = StopDetector()
     extractor = DataRowExtractor(stop_detector)

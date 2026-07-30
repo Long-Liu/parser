@@ -28,6 +28,7 @@ class StopRule(ValueObject):
     columns: list[str] = field(default_factory=list)
     empty_row_count: int | None = None
     action: StopRuleAction = StopRuleAction.EXCLUDE
+    label_field: str | None = None
 
 
 @dataclass(frozen=True)
