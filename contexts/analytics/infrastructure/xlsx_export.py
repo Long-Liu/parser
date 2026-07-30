@@ -7,10 +7,12 @@ RFC 5987 Content-Disposition (ASCII fallback + percent-encoded UTF-8 name).
 
 from __future__ import annotations
 
+from typing import Literal, TypedDict
 from urllib.parse import quote
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 
 _COLUMN_WIDTH = 18
 
@@ -44,7 +46,9 @@ _SCORE_DIMENSIONS = (
 )
 
 # 月度对比导出指标（mom 环比口径见 analytics_repository._mom_change）
-_MONTH_METRICS = (
+_MonthMetricKey = Literal["revenue", "cost", "profit", "profit_rate"]
+
+_MONTH_METRICS: tuple[tuple[_MonthMetricKey, str], ...] = (
     ("revenue", "收入"),
     ("cost", "成本"),
     ("profit", "毛利"),
@@ -52,12 +56,37 @@ _MONTH_METRICS = (
 )
 
 
+class _MomMetric(TypedDict):
+    change: float | int
+    change_pct: float | int | None
+
+
+class _MonthRecord(TypedDict):
+    ym: str
+    revenue: float | int
+    cost: float | int
+    profit: float | int
+    profit_rate: float | int
+    mom: dict[str, _MomMetric] | None
+
+
+class _MonthComparisonData(TypedDict):
+    months: list[_MonthRecord]
+
+
 def content_disposition(filename: str, fallback: str) -> str:
     """RFC 5987: ASCII fallback filename + percent-encoded UTF-8 filename*."""
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
-def _autosize(ws, width: int = _COLUMN_WIDTH) -> None:
+def _active_worksheet(workbook: Workbook) -> Worksheet:
+    worksheet = workbook.active
+    if not isinstance(worksheet, Worksheet):
+        raise RuntimeError("new workbook has no active worksheet")
+    return worksheet
+
+
+def _autosize(ws: Worksheet, width: int = _COLUMN_WIDTH) -> None:
     for col in range(1, ws.max_column + 1):
         ws.column_dimensions[get_column_letter(col)].width = width
 
@@ -65,7 +94,7 @@ def _autosize(ws, width: int = _COLUMN_WIDTH) -> None:
 def build_profits_workbook(items: list[dict]) -> Workbook:
     """项目毛利导出：四口径 × (revenue/cost/profit/profit_rate) 全列。"""
     wb = Workbook()
-    ws = wb.active
+    ws = _active_worksheet(wb)
     ws.title = "项目毛利"
     header = ["项目编号", "项目名称", "月份"]
     for _, label in _PROFIT_CALIBERS:
@@ -81,7 +110,7 @@ def build_profits_workbook(items: list[dict]) -> Workbook:
     return wb
 
 
-def _append_cost_rows(ws, projects: list[dict]) -> None:
+def _append_cost_rows(ws: Worksheet, projects: list[dict]) -> None:
     for proj in projects:
         for item in proj["items"]:
             ws.append(
@@ -119,7 +148,7 @@ _COST_HEADER = [
 def build_cost_categories_workbook(projects: list[dict]) -> Workbook:
     """成本科目导出：指标/实际/偏差/偏差率 + 六口径补充列。"""
     wb = Workbook()
-    ws = wb.active
+    ws = _active_worksheet(wb)
     ws.title = "成本科目"
     ws.append(_COST_HEADER)
     _append_cost_rows(ws, projects)
@@ -130,7 +159,7 @@ def build_cost_categories_workbook(projects: list[dict]) -> Workbook:
 def build_budget_lease_writeoff_workbook(data: dict) -> Workbook:
     """预算租借核销汇总：与发布 UI 的两组三分类表头一致。"""
     wb = Workbook()
-    ws = wb.active
+    ws = _active_worksheet(wb)
     ws.title = "预算租借核销"
     ws.append(
         [
@@ -149,17 +178,17 @@ def build_budget_lease_writeoff_workbook(data: dict) -> Workbook:
         ]
     )
 
-    def values(item: dict) -> list:
+    def values(record: dict) -> list:
         return [
-            item["budget_lease_total"],
-            item["cumulative_lease"]["machinery_equipment"],
-            item["cumulative_lease"]["turnover_materials"],
-            item["cumulative_lease"]["other"],
-            item["written_off_total"],
-            item["unwritten_off_total"],
-            item["remaining_lease"]["machinery_equipment"],
-            item["remaining_lease"]["turnover_materials"],
-            item["remaining_lease"]["other"],
+            record["budget_lease_total"],
+            record["cumulative_lease"]["machinery_equipment"],
+            record["cumulative_lease"]["turnover_materials"],
+            record["cumulative_lease"]["other"],
+            record["written_off_total"],
+            record["unwritten_off_total"],
+            record["remaining_lease"]["machinery_equipment"],
+            record["remaining_lease"]["turnover_materials"],
+            record["remaining_lease"]["other"],
         ]
 
     ws.append(["", "合计", ""] + values(data["summary"]))
@@ -169,11 +198,11 @@ def build_budget_lease_writeoff_workbook(data: dict) -> Workbook:
     return wb
 
 
-def build_month_comparison_workbook(data: dict) -> Workbook:
+def build_month_comparison_workbook(data: _MonthComparisonData) -> Workbook:
     """月度对比导出：指标 × 月份 + 最近两月环比（变化量/变化率）列。"""
     months = data["months"]
     wb = Workbook()
-    ws = wb.active
+    ws = _active_worksheet(wb)
     ws.title = "月度对比"
     ws.append(["指标"] + [m["ym"] for m in months] + ["环比变化", "环比变化率(%)"])
     last_mom = months[-1]["mom"] if months else None
@@ -192,7 +221,7 @@ def build_compare_workbook(data: dict) -> Workbook:
     """多项目对比导出：9 项指标 × 项目 + 五维评分/等级，附成本科目 sheet。"""
     projects = data["projects"]
     wb = Workbook()
-    ws = wb.active
+    ws = _active_worksheet(wb)
     ws.title = "指标对比"
     ws.append(["指标"] + [p["project_name"] for p in projects])
     for key, label in _COMPARE_METRICS:
