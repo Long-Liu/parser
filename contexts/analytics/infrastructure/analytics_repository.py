@@ -457,7 +457,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             batch_query = batch_query.filter(ym=ym)
         batches: dict[int, UploadBatch] = {}
         for batch in await batch_query.order_by("project_id", "-ym", "-id"):
-            batches.setdefault(batch.project_id, batch)
+            if batch.project_id not in batches:
+                batches[batch.project_id] = batch
 
         rows_by_batch: dict[int, list[DataBudgetLease]] = {}
         if batches:
@@ -539,7 +540,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             batch_query = batch_query.filter(ym=ym)
         batch_map = {}
         for batch in await batch_query.order_by("project_id", "-ym", "-id"):
-            batch_map.setdefault(batch.project_id, batch)
+            if batch.project_id not in batch_map:
+                batch_map[batch.project_id] = batch
         settlement_rows = await DataSettlementOutput.filter(batch_id__in=[b.id for b in batch_map.values()])
         profit_map = {}
         for row in settlement_rows:
