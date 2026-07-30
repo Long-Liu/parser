@@ -106,7 +106,6 @@ class UploadApplicationService(TransactionalService):
             "sheets": sheet_results,
         }
 
-    @transactional
     async def preview(self, file: UploadedFile, project_id: ProjectId, ym: YearMonth, user_id: UserId) -> dict:
         if self._preview_repo is None:
             raise RuntimeError("preview repository is not configured")
@@ -124,17 +123,11 @@ class UploadApplicationService(TransactionalService):
             user_id,
         )
         try:
-            await self._repo.save(job)
-            job.confirm_submitted()
+            await self._start_preview(job)
             payload, summary = await self._collect_preview_sheets(job, stored_file.path)
             job.mark_as_previewed()
             job.complete()
-            await self._event_publisher.publish(job.pull_events())
-            await self._repo.save(job)
-            if job.id is None:
-                raise RuntimeError("ParseJob repository did not assign an id")
-            persisted_job_id = job.id.value
-            await self._preview_repo.save(persisted_job_id, payload, summary)
+            persisted_job_id = await self._finish_preview(job, payload, summary)
             return {
                 "batch_id": persisted_job_id,
                 "batch_no": batch_no,
@@ -151,6 +144,24 @@ class UploadApplicationService(TransactionalService):
             raise
         finally:
             await self._delete_stored_file(stored_file)
+
+    @transactional
+    async def _start_preview(self, job: ParseJob) -> None:
+        """Persist the batch without holding a DB transaction during Excel parsing."""
+        await self._repo.save(job)
+        job.confirm_submitted()
+
+    @transactional
+    async def _finish_preview(self, job: ParseJob, payload: list[dict], summary: list[dict]) -> int:
+        """Atomically persist the completed preview and its batch summary."""
+        if self._preview_repo is None:
+            raise RuntimeError("preview repository is not configured")
+        await self._repo.save(job)
+        if job.id is None:
+            raise RuntimeError("ParseJob repository did not assign an id")
+        await self._preview_repo.save(job.id.value, payload, summary)
+        await self._event_publisher.publish(job.pull_events())
+        return job.id.value
 
     @transactional
     async def confirm(self, batch_id: int, user_id: UserId) -> dict:
@@ -260,9 +271,9 @@ class UploadApplicationService(TransactionalService):
         grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
         flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
         rows = self._extractor.extract(grid, flat_headers, template)
-        job.set_extracted(sheet.name, rows)
+        job.set_extracted(sheet.name, rows, retain_rows=False)
         valid_rows, errors = self._validator.validate(rows, template)
-        job.set_validated(sheet.name, valid_rows, errors)
+        job.set_validated(sheet.name, valid_rows, errors, retain_rows=False)
         return valid_rows, errors
 
     def _build_preview_data(self, valid_rows, errors) -> dict:

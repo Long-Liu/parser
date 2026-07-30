@@ -10,6 +10,7 @@ from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
 logger = logging.getLogger("parser.data_writer")
+BULK_CREATE_BATCH_SIZE = 500
 
 
 def _model_values(model, values: dict) -> dict:
@@ -49,4 +50,4 @@ class TortoiseParsedDataSink(ParsedDataSink):
         if not data:
             return
 
-        await model.bulk_create(data)
+        await model.bulk_create(data, batch_size=BULK_CREATE_BATCH_SIZE)

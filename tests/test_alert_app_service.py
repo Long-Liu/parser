@@ -4,6 +4,7 @@ import pytest
 
 from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.alert.domain.alert import AlertLevel, AlertRule
+from contexts.alert.infrastructure.repositories import _metric_decimal
 
 
 class FakeMetrics:
@@ -12,6 +13,10 @@ class FakeMetrics:
 
     async def snapshot(self, project_id, ym=None):
         return ym or "2026-07", {"gross_profit_rate": self.value}
+
+
+def test_metric_decimal_rounds_to_database_scale():
+    assert _metric_decimal(Decimal("28.54225")) == Decimal("28.5423")
 
 
 class FakeDispatcher:

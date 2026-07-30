@@ -13,6 +13,7 @@ from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
 from contexts.parsing.domain.year_month import YearMonth
 from contexts.project.domain.project import Project
 from contexts.project.domain.repositories import ProjectRepository
+from contexts.shared.application.transaction import TransactionManager
 from contexts.shared.domain.base_domain_event import DomainEvent
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import NotFoundError
@@ -99,6 +100,21 @@ class FakeWorkbookReader(WorkbookReader):
         ]
 
 
+class TrackingTransactionManager(TransactionManager):
+    def __init__(self) -> None:
+        self.active = False
+        self.entries = 0
+
+    @contextlib.asynccontextmanager
+    async def transaction(self):
+        self.entries += 1
+        self.active = True
+        try:
+            yield
+        finally:
+            self.active = False
+
+
 class FakePublisher(EventPublisher):
     def __init__(self) -> None:
         self.events: list[DomainEvent] = []
@@ -172,6 +188,7 @@ async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
     assert len(sink.rows) == 1
     assert any(type(event).__name__ == "SheetExtracted" for event in publisher.events)
     assert repo.jobs[-1].sheets[0].total_rows == 1
+    assert repo.jobs[-1].sheets[0].extracted_rows == []
 
 
 async def test_upload_rejects_unknown_project_before_storing_file():
@@ -246,3 +263,34 @@ async def test_upload_preview_does_not_write_until_confirmed(monkeypatch):
     assert confirmed["status"] == "success"
     assert len(sink.rows) == 1
     assert preview_repo.data is None
+
+
+async def test_preview_does_not_hold_transaction_while_reading_workbook():
+    transactions = TrackingTransactionManager()
+
+    class AssertingReader(FakeWorkbookReader):
+        async def read(self, filepath: str) -> list[WorkbookSheet]:
+            assert transactions.active is False
+            return await super().read(filepath)
+
+    service = UploadApplicationService(
+        repo=FakeRepo(),
+        template_repo=FakeTemplateCatalog(),
+        data_sink=FakeSink(),
+        event_publisher=FakePublisher(),
+        file_storage=FakeStorage(),
+        workbook_reader=AssertingReader(),
+        project_repo=FakeProjectRepo(),
+        preview_repo=FakePreviewRepo(),
+        transaction_manager=transactions,
+    )
+
+    result = await service.preview(
+        UploadedFile(name="cost.xlsx", body=b"xlsx"),
+        ProjectId(1),
+        YearMonth.parse("2026-07"),
+        UserId(1),
+    )
+
+    assert result["status"] == "preview"
+    assert transactions.entries == 2

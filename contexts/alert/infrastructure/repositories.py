@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.domain.alert import Alert, AlertLevel, AlertRule, AlertStatus
@@ -74,7 +74,66 @@ def _payload(row: AlertModel) -> dict:
     }
 
 
+def _metric_decimal(value: Decimal) -> Decimal:
+    """Match the alert table's DECIMAL(..., 4) scale before MySQL sees it."""
+    return Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
 class TortoiseAlertRepository(AlertRepository):
+    async def evaluation_states(
+        self,
+        project_id: int,
+        checks: list[tuple[str, str, bool, str]],
+    ) -> dict[str, tuple[Alert | None, int]]:
+        if not checks:
+            return {}
+
+        fingerprints = [fingerprint for _, _, _, fingerprint in checks]
+        open_rows = await AlertModel.filter(fingerprint__in=fingerprints).order_by("-id")
+        open_by_fingerprint = {}
+        for row in open_rows:
+            open_by_fingerprint.setdefault(row.fingerprint, _entity(row))
+
+        rule_codes = {rule_code for rule_code, _, _, _ in checks}
+        scopes = {scope for _, scope, _, _ in checks}
+        state_rows = await AlertRuleStateModel.filter(
+            project_id=project_id,
+            rule_code__in=rule_codes,
+            scope__in=scopes,
+        )
+        states = {(row.rule_code, row.scope): row for row in state_rows}
+        missing = [
+            AlertRuleStateModel(
+                project_id=project_id,
+                rule_code=rule_code,
+                scope=scope,
+                consecutive_count=0,
+            )
+            for rule_code, scope, _, _ in checks
+            if (rule_code, scope) not in states
+        ]
+        if missing:
+            await AlertRuleStateModel.bulk_create(missing, ignore_conflicts=True)
+            state_rows = await AlertRuleStateModel.filter(
+                project_id=project_id,
+                rule_code__in=rule_codes,
+                scope__in=scopes,
+            )
+            states = {(row.rule_code, row.scope): row for row in state_rows}
+
+        updates = []
+        result = {}
+        updated_at = datetime.now(UTC)
+        for rule_code, scope, matched, fingerprint in checks:
+            state = states[(rule_code, scope)]
+            state.consecutive_count = state.consecutive_count + 1 if matched else 0
+            state.updated_at = updated_at
+            updates.append(state)
+            result[fingerprint] = (open_by_fingerprint.get(fingerprint), state.consecutive_count)
+        if updates:
+            await AlertRuleStateModel.bulk_update(updates, fields=["consecutive_count", "updated_at"])
+        return result
+
     async def register_match(self, project_id: int, rule_code: str, scope: str, matched: bool) -> int:
         row, _ = await AlertRuleStateModel.get_or_create(
             project_id=project_id,
@@ -169,8 +228,8 @@ class TortoiseAlertRepository(AlertRepository):
             "level": alert.level.value,
             "title": alert.title,
             "message": alert.message,
-            "metric_value": alert.metric_value,
-            "threshold_value": alert.threshold_value,
+            "metric_value": _metric_decimal(alert.metric_value),
+            "threshold_value": _metric_decimal(alert.threshold_value),
             "ym": alert.ym,
             "status": alert.status.value,
             "fingerprint": alert.fingerprint,

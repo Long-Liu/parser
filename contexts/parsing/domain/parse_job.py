@@ -120,12 +120,18 @@ class SheetResult(Entity[str]):
     def mark_skipped(self) -> None:
         self._match_status = MatchStatus.SKIPPED
 
-    def set_extracted(self, rows: list[ParsedRow]) -> None:
-        self._extracted_rows = list(rows)
+    def set_extracted(self, rows: list[ParsedRow], *, retain_rows: bool = True) -> None:
+        self._extracted_rows = list(rows) if retain_rows else []
         self._total_rows = len(rows)
 
-    def set_validated(self, valid_rows: list[ParsedRow], errors: list[RowError]) -> None:
-        self._extracted_rows = list(valid_rows)
+    def set_validated(
+        self,
+        valid_rows: list[ParsedRow],
+        errors: list[RowError],
+        *,
+        retain_rows: bool = True,
+    ) -> None:
+        self._extracted_rows = list(valid_rows) if retain_rows else []
         self._errors = list(errors)
         if self._total_rows == 0:
             self._total_rows = len(valid_rows) + len(errors)
@@ -279,11 +285,11 @@ class ParseJob(AggregateRoot[JobId]):
             )
         return sr
 
-    def set_extracted(self, sheet_name: str, rows: list[ParsedRow]) -> None:
+    def set_extracted(self, sheet_name: str, rows: list[ParsedRow], *, retain_rows: bool = True) -> None:
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before recording extraction")
         sr = self._sheets[sheet_name]
-        sr.set_extracted(rows)
+        sr.set_extracted(rows, retain_rows=retain_rows)
         self.record(
             SheetExtracted(
                 aggregate_id=self.id.value,
@@ -292,11 +298,18 @@ class ParseJob(AggregateRoot[JobId]):
             )
         )
 
-    def set_validated(self, sheet_name: str, valid_rows: list[ParsedRow], errors: list[RowError]) -> None:
+    def set_validated(
+        self,
+        sheet_name: str,
+        valid_rows: list[ParsedRow],
+        errors: list[RowError],
+        *,
+        retain_rows: bool = True,
+    ) -> None:
         if self.id is None:
             raise RuntimeError("ParseJob must be persisted before recording validation")
         sr = self._sheets[sheet_name]
-        sr.set_validated(valid_rows, errors)
+        sr.set_validated(valid_rows, errors, retain_rows=retain_rows)
         self.record(
             SheetValidated(
                 aggregate_id=self.id.value,

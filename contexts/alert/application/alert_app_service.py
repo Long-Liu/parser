@@ -37,22 +37,52 @@ class AlertApplicationService(TransactionalService):
         if not values:
             raise NotFoundError(f"project {project_id} not found")
         triggered = resolved = 0
+        evaluations = []
         for rule in await self._repository.rules():
-            t, r = await self._evaluate_rule(rule, project_id, period, values)
+            value = values.get(rule.metric)
+            if value is None:
+                continue
+            scope = (period or "current") if rule.metric in {"cost_deviation_rate", "gross_profit_rate"} else "current"
+            fingerprint = f"{project_id}:{rule.code}:{scope}"
+            evaluations.append((rule, value, scope, fingerprint, rule.matches(value)))
+        checks = [(rule.code, scope, matched, fingerprint) for rule, _, scope, fingerprint, matched in evaluations]
+        if hasattr(self._repository, "evaluation_states"):
+            states = await self._repository.evaluation_states(project_id, checks)
+        else:
+            # Backward compatibility for duck-typed adapters.
+            states = {}
+            for rule_code, scope, matched, fingerprint in checks:
+                existing = await self._repository.find_open(fingerprint)
+                consecutive = await self._repository.register_match(project_id, rule_code, scope, matched)
+                states[fingerprint] = (existing, consecutive)
+        for rule, value, _, fingerprint, matched in evaluations:
+            existing, consecutive = states[fingerprint]
+            t, r = await self._evaluate_rule(
+                rule,
+                existing,
+                consecutive,
+                matched,
+                project_id,
+                period,
+                value,
+                fingerprint,
+            )
             triggered += t
             resolved += r
         self._schedule_dispatch()
         return {"project_id": project_id, "ym": period, "triggered": triggered, "resolved": resolved}
 
-    async def _evaluate_rule(self, rule, project_id, period, values):
-        value = values.get(rule.metric)
-        if value is None:
-            return 0, 0
-        scope = (period or "current") if rule.metric in {"cost_deviation_rate", "gross_profit_rate"} else "current"
-        fingerprint = f"{project_id}:{rule.code}:{scope}"
-        existing = await self._repository.find_open(fingerprint)
-        matched = rule.matches(value)
-        consecutive = await self._repository.register_match(project_id, rule.code, scope, matched)
+    async def _evaluate_rule(
+        self,
+        rule,
+        existing,
+        consecutive,
+        matched,
+        project_id,
+        period,
+        value,
+        fingerprint,
+    ):
         if matched and consecutive >= rule.consecutive_triggers:
             return await self._trigger_alert(rule, existing, project_id, period, value, fingerprint), 0
         if existing and existing.open and rule.auto_resolve:

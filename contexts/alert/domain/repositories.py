@@ -18,6 +18,23 @@ class AlertRepository(ABC):
     async def register_match(self, project_id: int, rule_code: str, scope: str, matched: bool) -> int: ...
     @abstractmethod
     async def find_open(self, fingerprint: str) -> Alert | None: ...
+
+    async def evaluation_states(
+        self,
+        project_id: int,
+        checks: list[tuple[str, str, bool, str]],
+    ) -> dict[str, tuple[Alert | None, int]]:
+        """Load/update rule state for one evaluation.
+
+        The default keeps lightweight test adapters compatible. Production
+        repositories should override this with batched queries.
+        """
+        result = {}
+        for rule_code, scope, matched, fingerprint in checks:
+            existing = await self.find_open(fingerprint)
+            consecutive = await self.register_match(project_id, rule_code, scope, matched)
+            result[fingerprint] = (existing, consecutive)
+        return result
     @abstractmethod
     async def get(self, alert_id: int) -> Alert | None: ...
     @abstractmethod

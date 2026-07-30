@@ -37,6 +37,7 @@ def tortoise_config(config: Settings) -> dict:
                     "database": config.db.database,
                     "charset": "utf8mb4",
                     "maxsize": config.db.pool_size,
+                    "init_command": "SET time_zone = '+08:00'",
                 },
             }
         },
@@ -47,6 +48,11 @@ def tortoise_config(config: Settings) -> dict:
                 "migrations": MIGRATIONS_MODULE,
             }
         },
+        # Business timestamps are stored and returned as Beijing local time.
+        # MySQL DATETIME has no timezone metadata, so keep ORM values naive and
+        # align every DB session to the same +08:00 convention.
+        "use_tz": False,
+        "timezone": "Asia/Shanghai",
     }
 
 
