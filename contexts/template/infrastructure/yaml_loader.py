@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import yaml
 
@@ -20,9 +21,12 @@ from contexts.template.infrastructure.validators import TEMPLATE_ID_RE
 
 class YamlTemplateLoader:
     def __init__(self, config_dir: str | None = None) -> None:
-        if config_dir is None:
-            config_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "templates")
-        self._config_dir = os.path.abspath(config_dir)
+        config_path = (
+            Path(config_dir)
+            if config_dir is not None
+            else Path(__file__).resolve().parents[3] / "config" / "templates"
+        )
+        self._config_dir = str(config_path.resolve())
 
     def load(self, template_id: str) -> Template:
         if not TEMPLATE_ID_RE.match(template_id):

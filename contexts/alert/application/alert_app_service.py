@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from contexts.alert.domain.alert import Alert, AlertStatus
+from contexts.alert.domain.alert import Alert, AlertRule, AlertStatus
 from contexts.alert.domain.repositories import (
     AlertMetricProvider,
     AlertPushDispatcher,
@@ -37,7 +37,7 @@ class AlertApplicationService(TransactionalService):
         if not values:
             raise NotFoundError(f"project {project_id} not found")
         triggered = resolved = 0
-        evaluations = []
+        evaluations: list[tuple[AlertRule, Decimal, str, str, bool]] = []
         for rule in await self._repository.rules():
             value = values.get(rule.metric)
             if value is None:
@@ -46,6 +46,7 @@ class AlertApplicationService(TransactionalService):
             fingerprint = f"{project_id}:{rule.code}:{scope}"
             evaluations.append((rule, value, scope, fingerprint, rule.matches(value)))
         checks = [(rule.code, scope, matched, fingerprint) for rule, _, scope, fingerprint, matched in evaluations]
+        states: dict[str, tuple[Alert | None, int]]
         if hasattr(self._repository, "evaluation_states"):
             states = await self._repository.evaluation_states(project_id, checks)
         else:
@@ -74,26 +75,34 @@ class AlertApplicationService(TransactionalService):
 
     async def _evaluate_rule(
         self,
-        rule,
-        existing,
-        consecutive,
-        matched,
-        project_id,
-        period,
-        value,
-        fingerprint,
-    ):
+        rule: AlertRule,
+        existing: Alert | None,
+        consecutive: int,
+        matched: bool,
+        project_id: int,
+        period: str | None,
+        value: Decimal,
+        fingerprint: str,
+    ) -> tuple[int, int]:
         if matched and consecutive >= rule.consecutive_triggers:
             return await self._trigger_alert(rule, existing, project_id, period, value, fingerprint), 0
-        if existing and existing.open and rule.auto_resolve:
+        if existing is not None and existing.open and rule.auto_resolve:
             return 0, await self._auto_resolve_alert(existing)
         return 0, 0
 
-    async def _trigger_alert(self, rule, existing, project_id, period, value, fingerprint):
-        if existing and existing.status == AlertStatus.IGNORED:
+    async def _trigger_alert(
+        self,
+        rule: AlertRule,
+        existing: Alert | None,
+        project_id: int,
+        period: str | None,
+        value: Decimal,
+        fingerprint: str,
+    ) -> int:
+        if existing is not None and existing.status == AlertStatus.IGNORED:
             return 0
         message = self._message(rule.name, value, rule.threshold)
-        if existing:
+        if existing is not None:
             event_type = existing.retrigger(value, rule.level, message)
             alert = existing
         else:
@@ -116,7 +125,7 @@ class AlertApplicationService(TransactionalService):
         await self._repository.add_outbox(alert, event_type)
         return 1
 
-    async def _auto_resolve_alert(self, existing):
+    async def _auto_resolve_alert(self, existing: Alert) -> int:
         existing.resolve()
         await self._repository.save(existing)
         await self._repository.record_event(existing, "auto_resolved", note="指标已恢复正常")

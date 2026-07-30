@@ -372,7 +372,7 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
             # evaluating a fabricated default.
             rate = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
             if rate is not None:
-                metrics["gross_profit_rate"] = Decimal(rate) * 100
+                metrics["gross_profit_rate"] = Decimal(str(rate)) * 100
             rows = await DataDynamicIndicator.filter(batch_id=batch.id)
             indicator = sum((Decimal(row.indicator_with_tax or 0) for row in rows), Decimal("0"))
             actual = sum((Decimal(row.incurred_cost or 0) for row in rows), Decimal("0"))
