@@ -70,7 +70,7 @@ columns:
     type: decimal(15,2)
   - db_field: planned_writeoff_date
     match_header: ["计划核"]
-    type: varchar(50)
+    type: date
   - db_field: actual_writeoff_date
     match_header: ["实际核"]
     type: varchar(50)

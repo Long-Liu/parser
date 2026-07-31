@@ -64,7 +64,8 @@ class DataMachinery(Model):
     model_spec = fields.CharField(max_length=100, null=True)
     quantity = fields.IntField(null=True)
     planned_start = fields.CharField(max_length=50, null=True)
-    planned_end = fields.CharField(max_length=50, null=True)
+    # 计划退场时间在源表中为纯日期列，按 date 存储（迁移 0011）。
+    planned_end = fields.DateField(null=True)
     source = fields.CharField(max_length=50, null=True)
     usage_desc = fields.TextField(null=True)
     billing_method = fields.CharField(max_length=50, null=True)
@@ -388,7 +389,8 @@ class DataBudgetLease(Model):
     remaining_bid = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     remaining_active = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
     remaining_passive = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
-    planned_writeoff_date = fields.CharField(max_length=50, null=True)
+    # 计划核销时间在源表中为纯日期列，按 date 存储（迁移 0011）。
+    planned_writeoff_date = fields.DateField(null=True)
     actual_writeoff_date = fields.CharField(max_length=50, null=True)
     monthly_data = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

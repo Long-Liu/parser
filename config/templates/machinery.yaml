@@ -31,7 +31,7 @@ columns:
     type: varchar(50)
   - db_field: planned_end
     match_header: ["计划退场时间"]
-    type: varchar(50)
+    type: date
   - db_field: source
     match_header: ["机械来源"]
     type: varchar(50)
