@@ -133,7 +133,7 @@ CATALOG: dict[str, dict[str, EndpointDoc]] = {
         "current_user": doc("获取当前用户", "返回当前访问令牌对应的用户信息。"),
         "change_password": doc(
             "修改本人密码",
-            "校验旧密码后修改当前用户密码。",
+            "校验旧密码后修改当前用户密码；需要用户管理权限（仅管理员）。",
             body=BODIES["change_password"],
         ),
         "logout": doc("退出登录", "撤销当前访问令牌。", response=OK),

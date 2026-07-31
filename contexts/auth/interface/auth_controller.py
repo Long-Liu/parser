@@ -6,7 +6,7 @@ from sanic_ext import openapi
 from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.dto import LoginCommand, RegisterCommand
 from contexts.auth.application.user_app_service import UserApplicationService
-from contexts.auth.interface.auth_middleware import require_auth
+from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.auth.interface.request_context import current_auth
 from contexts.auth.interface.request_services import RequestServices
 from contexts.shared.domain.exceptions import AuthenticationError
@@ -74,8 +74,9 @@ class AuthController(BaseController):
         return self.json(await self.user_svc.get(current_auth(request).user_id))
 
     @require_auth
+    @require_permission("user:manage")
     @openapi.tag("Auth")
-    @openapi.summary("Change own password")
+    @openapi.summary("Change own password (admin only)")
     async def change_password(self, request):
         data = request.json or {}
         await self.auth_svc.change_password(

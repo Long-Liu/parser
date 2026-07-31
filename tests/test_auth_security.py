@@ -146,6 +146,83 @@ def test_jwt_carries_jti_and_iat(stack):
 # ── change-password ───────────────────────────────────────────────────
 
 
+async def _change_password_app(stack):
+    """Real Sanic app wiring the decorated change-password route."""
+    controller = AuthController(stack.auth, user_svc=None)
+    app = Sanic(f"auth_change_pw_{id(stack)}")
+    app.asgi = True
+    # noinspection PyTypeChecker
+    app.ctx.services = RequestServices(authorization=stack.authz, project_access=None)
+    app.add_route(controller.change_password, "/auth/change-password", methods=["POST"])
+    app.finalize()
+    app.signalize(allow_fail_builtin=False)
+    return app
+
+
+async def _asgi_post(app, path: str, body: dict, token: str | None = None):
+    """Minimal ASGI POST client (mirrors _asgi_get above)."""
+    status: dict = {}
+    resp_body = bytearray()
+    payload = jsonlib.dumps(body).encode()
+    headers = [(b"content-type", b"application/json")]
+    if token is not None:
+        headers.append((b"authorization", f"Bearer {token}".encode()))
+
+    async def receive():
+        return {"type": "http.request", "body": payload, "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+        elif message["type"] == "http.response.body":
+            resp_body.extend(message.get("body", b""))
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 80),
+    }
+    await app(scope, receive, send)
+    return status.get("code"), bytes(resp_body)
+
+
+async def test_change_password_endpoint_rejects_non_admin_403(stack):
+    app = await _change_password_app(stack)
+    token = stack.jwt.generate(UserId(1), "alice")  # no user:manage
+    code, body = await _asgi_post(
+        app,
+        "/auth/change-password",
+        {"old_password": OLD_PASSWORD, "new_password": NEW_PASSWORD},
+        token,
+    )
+    assert code == 403
+    assert "user:manage" in jsonlib.loads(body)["error"]
+    # Password untouched.
+    assert _hasher.verify(OLD_PASSWORD, stack.repo.users[1].password_hash)
+
+
+async def test_change_password_endpoint_allows_user_manage_admin(stack):
+    app = await _change_password_app(stack)
+    token = stack.jwt.generate(UserId(2), "admin")  # has user:manage
+    code, _body = await _asgi_post(
+        app,
+        "/auth/change-password",
+        {"old_password": OLD_PASSWORD, "new_password": NEW_PASSWORD},
+        token,
+    )
+    assert code == 200
+    assert _hasher.verify(NEW_PASSWORD, stack.repo.users[2].password_hash)
+
+
 async def test_change_password_success_revokes_all_existing_tokens(stack):
     token_a = stack.jwt.generate(UserId(1), "alice")
     token_b = stack.jwt.generate(UserId(1), "alice")  # second session
