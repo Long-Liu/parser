@@ -8,7 +8,7 @@ import re
 import yaml
 from pydantic import BaseModel, Field
 
-_ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 
 
 def _expand_env_vars(value):
@@ -86,8 +86,9 @@ class Settings(BaseModel):
     @classmethod
     def from_yaml(cls, path: str) -> Settings:
         with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        return cls(**_expand_env_vars(data or {}))
+            data = yaml.safe_load(f) or {}
+        expanded = _expand_env_vars(data)
+        return cls(**(expanded if isinstance(expanded, dict) else {}))
 
 
 # ── loader ──────────────────────────────────────────────────────────────────

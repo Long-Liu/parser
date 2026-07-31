@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
@@ -46,7 +46,7 @@ async def _load_roles(user_id: int) -> list[dict]:
     role_ids = await UserRole.filter(user_id=user_id).values_list("role_id", flat=True)
     if not role_ids:
         return []
-    return list(await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name"))
+    return list(cast(Any, await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name")))
 
 
 class TortoiseUserRepository(UserRepository):
@@ -110,7 +110,7 @@ class TortoiseUserRepository(UserRepository):
         for link in links:
             role = roles.get(link["role_id"])
             if role is not None:
-                roles_by_user[link["user_id"]].append(role)
+                roles_by_user[int(link["user_id"])].append(cast(dict[str, Any], cast(Any, role)))
         users = [_user_to_entity(row, roles_by_user[row.id]) for row in rows]
         return users, total
 
@@ -127,7 +127,7 @@ class TortoiseUserRepository(UserRepository):
             )
         }
         return [
-            {**projects[link["project_id"]], "is_primary": bool(link["is_primary"]), "role": link["role"]}
+            {**cast(dict[str, Any], projects[link["project_id"]]), "is_primary": bool(link["is_primary"]), "role": link["role"]}
             for link in links
             if link["project_id"] in projects
         ]
@@ -145,7 +145,7 @@ class TortoiseUserRepository(UserRepository):
             if project:
                 result[int(link["user_id"])].append(
                     {
-                        **project,
+                        **cast(dict[str, Any], project),
                         "is_primary": bool(link["is_primary"]),
                         "role": link["role"],
                     }
@@ -299,7 +299,7 @@ class TortoiseRoleRepository(RoleRepository):
         for link in links:
             permission = permissions.get(link["permission_id"])
             if permission is not None:
-                permissions_by_role[link["role_id"]].append(permission)
+                permissions_by_role[int(link["role_id"])].append(permission)
         return [
                 Role(
                     role_id=RoleId(orm.id),

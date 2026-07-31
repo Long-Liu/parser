@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from tortoise import fields as tortoise_fields
 
@@ -41,7 +42,7 @@ class TortoiseParsedDataSink(ParsedDataSink):
 
         data = []
         for row in rows:
-            d = {"batch_id": batch_id, **row.fields}
+            d: dict[str, Any] = {"batch_id": batch_id, **row.fields}
             if row.hierarchy_code:
                 d["hierarchy_code"] = row.hierarchy_code
             if row.monthly_data:

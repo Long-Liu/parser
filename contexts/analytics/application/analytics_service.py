@@ -27,7 +27,7 @@ class AnalyticsApplicationService:
     async def month_comparison(self, project_id: int, months: list[str]) -> dict:
         return await self._repository.month_comparison(project_id, months)
 
-    async def compare_projects(self, project_ids: list[int], ym: str | None) -> dict:
+    async def compare_projects(self, project_ids: list[int] | None, ym: str | None) -> dict:
         return await self._repository.compare_projects(project_ids, ym)
 
     async def delete_monthly_data(self, project_id: int, ym: str) -> None:
@@ -35,7 +35,7 @@ class AnalyticsApplicationService:
 
     # ── cost / profit reports ───────────────────────────────────────
 
-    async def cost_categories(self, project_ids: list[int], ym: str | None, pagination: Pagination) -> dict:
+    async def cost_categories(self, project_ids: list[int] | None, ym: str | None, pagination: Pagination) -> dict:
         return await self._repository.cost_categories(project_ids, ym, pagination)
 
     async def cost_details(self, project_id: int, ym: str | None, pagination: Pagination) -> dict:
@@ -119,7 +119,7 @@ class AnalyticsApplicationService:
     async def ai_analysis(self, project_id: int, ym: str | None) -> dict:
         return await self._repository.ai_analysis(project_id, ym)
 
-    async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict:
+    async def compare_ai_analysis(self, project_ids: list[int] | None, ym: str | None) -> dict:
         return await self._repository.compare_ai_analysis(project_ids, ym)
 
     async def global_search(

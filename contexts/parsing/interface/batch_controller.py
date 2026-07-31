@@ -8,6 +8,7 @@ from contexts.auth.interface.auth_middleware import (
     require_batch_access,
     require_permission,
 )
+from contexts.auth.interface.request_context import current_auth
 from contexts.parsing.application.batch_query_service import (
     BatchQueryApplicationService,
 )
@@ -38,9 +39,10 @@ class BatchesController(BaseController):
         pagination = pagination_from(request)
         project_id = None
         if project_id_raw:
-            permissions = set(request.ctx.permissions or set())
+            auth = current_auth(request)
+            permissions = set(auth.permissions)
             if not ProjectAccessPolicy.has_elevated_permission(permissions):
-                await self.access_policy.require(UserId(request.ctx.user_id), int(project_id_raw))
+                await self.access_policy.require(UserId(auth.user_id), int(project_id_raw))
             project_id = ProjectId(parse_int(project_id_raw, 0))
         result = await self.batch_query_svc.list_batches(project_id, pagination)
         if result is None:

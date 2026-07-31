@@ -11,6 +11,7 @@ from contexts.auth.interface.auth_middleware import (
     require_permission,
     require_project_access,
 )
+from contexts.auth.interface.request_context import current_auth
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId, UserId
@@ -77,10 +78,11 @@ class ProjectsController(BaseController):
     @openapi.tag("Project")
     @openapi.summary("List projects")
     async def list_projects(self, request):
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         scoped_user_id = None
         if not ProjectAccessPolicy.has_elevated_permission(permissions):
-            scoped_user_id = UserId(request.ctx.user_id)
+            scoped_user_id = UserId(auth.user_id)
         result = await self.svc.list_all(
             keyword=request.args.get("keyword", ""),
             status=request.args.get("status", ""),
@@ -95,8 +97,7 @@ class ProjectsController(BaseController):
     @openapi.summary("Create project")
     async def create_project(self, request):
         data = _ui_project_payload(request.json or {})
-        raw_user_id = getattr(request.ctx, "user_id", None)
-        created_by = UserId(raw_user_id) if raw_user_id else None
+        created_by = UserId(current_auth(request).user_id)
         details = _project_details(data)
         if data.get("manager_name"):
             details["manager_name"] = str(data["manager_name"])

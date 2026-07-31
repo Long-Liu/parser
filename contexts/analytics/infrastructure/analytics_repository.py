@@ -57,7 +57,7 @@ def _settle(indicators: dict, *names: str) -> float:
     for name in names:
         value = indicators.get(name)
         if value is not None:
-            return float(value)
+            return float(_number(value))
     return 0.0
 
 
@@ -66,8 +66,12 @@ def _settle_rate(indicators: dict, name: str, profit: float, revenue: float) -> 
     percents, so convert. Fall back to profit/revenue when the row is absent."""
     value = indicators.get(name)
     if value is not None:
-        return round(float(value) * 100, 2)
+        return round(_number(value) * 100, 2)
     return _rate(profit, revenue)
+
+
+def _sum_lease_rows(rows: list, field: str) -> float:
+    return round(sum(_number(getattr(row, field)) for row in rows), 2)
 
 
 class TortoiseAnalyticsRepository(AnalyticsRepository):
@@ -200,7 +204,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             }
         return mom
 
-    async def compare_projects(self, project_ids: list[int], ym: str | None) -> dict:
+    async def compare_projects(self, project_ids: list[int] | None, ym: str | None) -> dict:
+        project_ids = list(project_ids or [])
         if len(set(project_ids)) < 2:
             raise ValidationError("at least two projects are required")
         projects = await Project.filter(id__in=project_ids).order_by("id")
@@ -272,7 +277,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         stored_rate = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
         profit_rate: float | None
         if stored_rate is not None:
-            profit_rate = round(float(stored_rate) * 100, 2)
+            profit_rate = round(_number(stored_rate) * 100, 2)
         else:
             profit_rate = round(profit / revenue * 100, 2) if revenue else None
         settlement_rate = round(settlement / contract * 100, 2) if contract else None
@@ -312,7 +317,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 raise NotFoundError(f"monthly data {ym} not found")
             await self._data_cleanup.delete_for_batches(batch_ids)
 
-    async def cost_categories(self, project_ids: list[int], ym: str | None, pagination: Pagination) -> dict:
+    async def cost_categories(self, project_ids: list[int] | None, ym: str | None, pagination: Pagination) -> dict:
         projects = (
             await Project.filter(id__in=project_ids).order_by("id")
             if project_ids
@@ -518,14 +523,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             project_batch = batches.get(project.id)
             rows = rows_by_batch.get(project_batch.id, []) if project_batch else []
 
-            def summed(field: str, lease_rows=rows) -> float:
-                return round(
-                    sum(_number(getattr(row, field)) for row in lease_rows),
-                    2,
-                )
-
-            lease_total = summed("lease_total")
-            writeoff_total = summed("writeoff_total")
+            lease_total = _sum_lease_rows(rows, "lease_total")
+            writeoff_total = _sum_lease_rows(rows, "writeoff_total")
             item = {
                 "project_id": project.id,
                 "project_code": project.code,
@@ -533,16 +532,16 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 "ym": project_batch.ym if project_batch else ym,
                 "budget_lease_total": lease_total,
                 "cumulative_lease": {
-                    "machinery_equipment": summed("lease_bid"),
-                    "turnover_materials": summed("lease_active"),
-                    "other": summed("lease_passive"),
+                    "machinery_equipment": _sum_lease_rows(rows, "lease_bid"),
+                    "turnover_materials": _sum_lease_rows(rows, "lease_active"),
+                    "other": _sum_lease_rows(rows, "lease_passive"),
                 },
                 "written_off_total": writeoff_total,
                 "unwritten_off_total": round(lease_total - writeoff_total, 2),
                 "remaining_lease": {
-                    "machinery_equipment": summed("remaining_bid"),
-                    "turnover_materials": summed("remaining_active"),
-                    "other": summed("remaining_passive"),
+                    "machinery_equipment": _sum_lease_rows(rows, "remaining_bid"),
+                    "turnover_materials": _sum_lease_rows(rows, "remaining_active"),
+                    "other": _sum_lease_rows(rows, "remaining_passive"),
                 },
             }
             items.append(item)
@@ -627,10 +626,10 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         i_cost = indicator_map.get(batch.id) if batch else None
         if i_cost is not None:
             i_rev = _settle(indicators, SETTLE_CONTRACT_PRICE) or _number(project.contract_price)
-            i_prf = round(i_rev - i_cost, 2)
+            i_prf = round(i_rev - _number(i_cost), 2)
             indicator_block = {
                 "revenue": i_rev,
-                "cost": round(i_cost, 2),
+                "cost": round(_number(i_cost), 2),
                 "profit": i_prf,
                 "profit_rate": _rate(i_prf, i_rev),
             }
@@ -739,7 +738,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batch_rows = await base.filter(ym__in=months).order_by("ym", "project_id", "-id") if months else []
         latest: dict[tuple[str, int], UploadBatch] = {}
         for batch in batch_rows:
-            latest.setdefault((batch.ym, batch.project_id), batch)
+            key = (batch.ym, batch.project_id)
+            if key not in latest:
+                latest[key] = batch
         batches = list(latest.values())
         data_by_batch = await self._monthly_data_maps([batch.id for batch in batches])
         batches_by_month: dict[str, list[UploadBatch]] = {}
@@ -904,10 +905,12 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         profits = await self._profit_for(project_id, ym)
         batch = await self._batch(project_id, ym)
         monthly = await self._monthly_item(batch) if batch else None
-        rate = profits["profit_rate"]
+        # Repository helpers return numeric rates, but keep the API resilient to
+        # nullable/legacy rows before formatting or comparing them.
+        rate = _number(profits.get("profit_rate"))
         health = "warning" if project.status == "warning" or rate < 10 else "healthy"
-        forecast_rate = monthly["expected_complete_profit_rate"] if monthly else None
-        writeoff_rate = monthly["write_off_rate"] if monthly else None
+        forecast_rate = _number(monthly.get("expected_complete_profit_rate")) if monthly else None
+        writeoff_rate = _number(monthly.get("write_off_rate")) if monthly else None
         summary = f"当前毛利率为 {rate:.2f}%，项目状态为 {project.status}。"
         if forecast_rate is not None:
             summary += f"预计完工毛利率 {forecast_rate:.2f}%。"
@@ -922,7 +925,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 {
                     "type": "profit",
                     "title": "毛利率表现",
-                    "message": (f"当前毛利 {profits['profit']:.2f}，毛利率 {rate:.2f}%"),
+                    "message": f"当前毛利 {profits['profit']:.2f}，毛利率 {rate:.2f}%",
                 },
                 {
                     "type": "progress",
@@ -960,7 +963,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 return {"project_id": project_id, "ym": profits["ym"], **result}
         return fallback
 
-    async def compare_ai_analysis(self, project_ids: list[int], ym: str | None) -> dict:
+    async def compare_ai_analysis(self, project_ids: list[int] | None, ym: str | None) -> dict:
         """Multi-project AI report: five chapters aligned with the comparison UI.
 
         Uses the external provider when configured; otherwise falls back to the

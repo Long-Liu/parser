@@ -1,6 +1,7 @@
 """Sanic application factory and deployment entry point."""
 
 import logging
+from typing import Any, cast
 
 from sanic import Sanic
 from sanic.exceptions import SanicException
@@ -44,13 +45,15 @@ def create_app(settings: Settings | None = None) -> Sanic:
     # read-only, so use Swagger for the main /docs entry point.
     app.config.OAS_UI_DEFAULT = "swagger"
     Extend(app)
-    app.ext.openapi.add_security_scheme(
-        "bearerAuth",
-        "http",
-        scheme="bearer",
-        bearer_format="JWT",
-        description="在 Authorization 请求头中填写 Bearer JWT 访问令牌",
-    )
+    openapi: Any = getattr(app.ext, "openapi", None)
+    if openapi is not None:
+        openapi.add_security_scheme(
+            "bearerAuth",
+            "http",
+            scheme="bearer",
+            bearer_format="JWT",
+            description="在 Authorization 请求头中填写 Bearer JWT 访问令牌",
+        )
 
     setup_logging(debug=settings.debug)
     register_logging(app)
@@ -61,7 +64,7 @@ def create_app(settings: Settings | None = None) -> Sanic:
         settings,
         components.alert_dispatcher,
         template_config_provider=YamlTemplateLoader().template_ids,
-        seeder=lambda: seed_defaults(components.password_hasher.hash, settings),
+        seeder=lambda: seed_defaults(components.password_hasher.hash, cast(Settings, settings)),
     )
     app.blueprint(health_bp)
 

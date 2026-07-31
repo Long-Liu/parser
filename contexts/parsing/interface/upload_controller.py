@@ -11,6 +11,7 @@ from contexts.auth.interface.auth_middleware import (
     require_permission,
     require_project_access,
 )
+from contexts.auth.interface.request_context import current_auth
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.domain.upload_constraints import (
@@ -66,15 +67,11 @@ class UploadsController(BaseController):
         ym_str = request.form.get("ym", datetime.now().strftime("%Y-%m"))
         ym = YearMonth.parse(ym_str)
 
-        user_id_raw = getattr(request.ctx, "user_id", None)
-        if user_id_raw is None:
-            return self.json({"error": "not authenticated"}, status=401)
-
         result = await self.svc.process(
             UploadedFile(name=file.name, body=file.body, content_type=getattr(file, "type", "")),
             project_id,
             ym,
-            UserId(user_id_raw),
+            UserId(current_auth(request).user_id),
         )
         if result["status"] == "failed":
             return self.json(dict(result, error="upload processing failed"), status=500)
@@ -98,7 +95,7 @@ class UploadsController(BaseController):
             UploadedFile(file.name, file.body, getattr(file, "type", "")),
             project_id,
             ym,
-            UserId(request.ctx.user_id),
+            UserId(current_auth(request).user_id),
         )
         return self.json(result)
 
@@ -106,11 +103,11 @@ class UploadsController(BaseController):
     @require_permission("data:upload")
     @require_batch_access(roles={"manager"})
     async def confirm(self, request, batch_id: int):
-        return self.json(await self.svc.confirm(batch_id, UserId(request.ctx.user_id)))
+        return self.json(await self.svc.confirm(batch_id, UserId(current_auth(request).user_id)))
 
     @require_auth
     @require_permission("data:upload")
     @require_batch_access(roles={"manager"})
     async def cancel(self, request, batch_id: int):
-        await self.svc.cancel_preview(batch_id, UserId(request.ctx.user_id))
+        await self.svc.cancel_preview(batch_id, UserId(current_auth(request).user_id))
         return self.json_ok()

@@ -7,6 +7,7 @@ from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.dto import LoginCommand, RegisterCommand
 from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.interface.auth_middleware import require_auth
+from contexts.auth.interface.request_context import current_auth
 from contexts.auth.interface.request_services import RequestServices
 from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.interface.base_controller import BaseController
@@ -70,7 +71,7 @@ class AuthController(BaseController):
 
     @require_auth
     async def current_user(self, request):
-        return self.json(await self.user_svc.get(request.ctx.user_id))
+        return self.json(await self.user_svc.get(current_auth(request).user_id))
 
     @require_auth
     @openapi.tag("Auth")
@@ -78,7 +79,7 @@ class AuthController(BaseController):
     async def change_password(self, request):
         data = request.json or {}
         await self.auth_svc.change_password(
-            user_id=request.ctx.user_id,
+            user_id=current_auth(request).user_id,
             old_password=data.get("old_password", ""),
             new_password=data.get("new_password", ""),
         )
@@ -88,9 +89,9 @@ class AuthController(BaseController):
     @openapi.tag("Auth")
     @openapi.summary("Logout (revoke current token)")
     async def logout(self, request):
-        claims = getattr(request.ctx, "token_claims", {}) or {}
+        claims = current_auth(request).claims
         await self.auth_svc.logout(
-            user_id=request.ctx.user_id,
+            user_id=current_auth(request).user_id,
             token_jti=claims.get("jti"),
             token_exp=claims.get("exp"),
         )

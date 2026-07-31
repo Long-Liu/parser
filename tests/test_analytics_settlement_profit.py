@@ -69,6 +69,8 @@ SETTLEMENT_ROWS = [
     _row("预计毛利率", "0.106968"),
 ]
 
+_FILTER_ATTR = "filter"
+
 
 def _batch():
     return SimpleNamespace(
@@ -199,17 +201,17 @@ async def test_project_profits_without_settlement_rows_falls_back(monkeypatch):
 async def test_monthly_item_reads_settlement_indicators(monkeypatch):
     monkeypatch.setattr(
         analytics.DataSettlementOutput,
-        "filter",
+        _FILTER_ATTR,
         lambda **kw: _FakeQuery(SETTLEMENT_ROWS),
     )
     monkeypatch.setattr(
         analytics.DataDynamicIndicator,
-        "filter",
+        _FILTER_ATTR,
         lambda **kw: _FakeQuery([]),
     )
     monkeypatch.setattr(
         analytics.DataBudgetLease,
-        "filter",
+        _FILTER_ATTR,
         lambda **kw: _FakeQuery([]),
     )
 

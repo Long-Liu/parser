@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from tortoise.expressions import Q
 
 from contexts.auth.infrastructure.tables import Notification
@@ -145,7 +147,7 @@ class TortoiseUserDirectory(UserDirectory):
         if not user_ids:
             return {}
         rows = await OrmUser.filter(id__in=list(user_ids)).values("id", "real_name")
-        return {row["id"]: row["real_name"] for row in rows}
+        return {int(row["id"]): row["real_name"] for row in rows}
 
     async def user_id_by_real_name(self, real_name: str) -> int | None:
         rows = (
@@ -180,18 +182,20 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
             .order_by("project_id", "-ym", "-id")
             .values("id", "project_id", "ym")
         )
-        latest: dict[int, dict] = {}
+        latest: dict[int, dict[str, Any]] = {}
         for batch in batches:
-            latest.setdefault(batch["project_id"], batch)
+            project_id = int(batch["project_id"])
+            latest.setdefault(project_id, cast(dict[str, Any], batch))
         if not latest:
             return {}
         rows = await DataSettlementOutput.filter(
             batch_id__in=[b["id"] for b in latest.values()],
         ).values("batch_id", "indicator_name", "cumulative_value")
-        by_batch: dict[int, dict] = {}
+        by_batch: dict[int, dict[str, Any]] = {}
         for row in rows:
             if row["indicator_name"]:
-                by_batch.setdefault(row["batch_id"], {})[row["indicator_name"]] = row["cumulative_value"]
+                batch_id = int(row["batch_id"])
+                by_batch.setdefault(batch_id, {})[str(row["indicator_name"])] = row["cumulative_value"]
         return {
             project_id: {
                 "latest_ym": batch["ym"],
@@ -208,7 +212,7 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
             for name in names:
                 value = indicators.get(name)
                 if value is not None:
-                    return float(value)
+                    return float(cast(Any, value))
             return None
 
         revenue = number(SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)

@@ -10,6 +10,7 @@ from contexts.auth.application.authorization_app_service import (
 )
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
+from contexts.auth.interface.request_context import current_auth
 from contexts.shared.domain.exceptions import AuthenticationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.interface.base_controller import BaseController
@@ -46,18 +47,20 @@ class AlertController(BaseController):
         self.bp.add_websocket_route(self.stream, "/ws/alerts")
 
     async def _scope(self, request) -> list[int] | None:
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if ProjectAccessPolicy.has_elevated_permission(permissions):
             return None
-        return await self.access.accessible_project_ids(UserId(request.ctx.user_id))
+        return await self.access.accessible_project_ids(UserId(auth.user_id))
 
     async def _authorize_alert(self, request, alert_id: int, manager: bool = False) -> None:
         project_id = await self.alert_svc.project_id(alert_id)
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if ProjectAccessPolicy.has_elevated_permission(permissions):
             return
         await self.access.require(
-            UserId(request.ctx.user_id),
+            UserId(auth.user_id),
             project_id,
             {"manager"} if manager else None,
         )
@@ -106,14 +109,14 @@ class AlertController(BaseController):
     async def acknowledge(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id)
         body = request.json or {}
-        return self.json(await self.alert_svc.acknowledge(alert_id, request.ctx.user_id, body.get("note", "")))
+        return self.json(await self.alert_svc.acknowledge(alert_id, current_auth(request).user_id, body.get("note", "")))
 
     @require_auth
     @require_permission("data:delete")
     async def resolve(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id, manager=True)
         return self.json(
-            await self.alert_svc.resolve(alert_id, request.ctx.user_id, (request.json or {}).get("note", ""))
+            await self.alert_svc.resolve(alert_id, current_auth(request).user_id, (request.json or {}).get("note", ""))
         )
 
     @require_auth
@@ -121,15 +124,16 @@ class AlertController(BaseController):
     async def ignore(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id, manager=True)
         return self.json(
-            await self.alert_svc.ignore(alert_id, request.ctx.user_id, (request.json or {}).get("note", ""))
+            await self.alert_svc.ignore(alert_id, current_auth(request).user_id, (request.json or {}).get("note", ""))
         )
 
     @require_auth
     @require_permission("data:upload")
     async def evaluate(self, request, project_id: int):
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if not ProjectAccessPolicy.has_elevated_permission(permissions):
-            await self.access.require(UserId(request.ctx.user_id), project_id, {"manager"})
+            await self.access.require(UserId(auth.user_id), project_id, {"manager"})
         return self.json(await self.alert_svc.evaluate(project_id, (request.json or {}).get("ym")))
 
     async def stream(self, request, ws):

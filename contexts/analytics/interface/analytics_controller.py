@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from typing import Any, cast
 
 from openpyxl import Workbook
 from sanic.response import raw
@@ -22,6 +23,7 @@ from contexts.auth.interface.auth_middleware import (
     require_permission,
     require_project_access,
 )
+from contexts.auth.interface.request_context import current_auth
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.pagination import Pagination
@@ -41,7 +43,7 @@ async def _xlsx(workbook: Workbook, filename: str, fallback: str):
     content = await asyncio.to_thread(serialize)
     return raw(
         content,
-        content_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": content_disposition(filename, fallback)},
     )
 
@@ -61,10 +63,11 @@ class AnalyticsController(BaseController):
         self.alert_svc = alert_svc
 
     async def _project_scope(self, request, requested: list[int] | None = None) -> list[int] | None:
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if ProjectAccessPolicy.has_elevated_permission(permissions):
             return requested
-        accessible = set(await self.access_policy.accessible_project_ids(UserId(request.ctx.user_id)))
+        accessible = set(await self.access_policy.accessible_project_ids(UserId(auth.user_id)))
         if requested is None:
             return sorted(accessible)
         denied = set(requested) - accessible
@@ -315,7 +318,7 @@ class AnalyticsController(BaseController):
         p = pagination_from(request)
         return self.json(
             await self.analytics_svc.notifications(
-                request.ctx.user_id,
+                current_auth(request).user_id,
                 p,
                 request.args.get("unread_only", "false").lower() == "true",
                 await self._project_scope(request),
@@ -329,7 +332,7 @@ class AnalyticsController(BaseController):
 
     @require_auth
     async def mark_read(self, request, notification_id: int):
-        await self.analytics_svc.mark_notification_read(request.ctx.user_id, notification_id)
+        await self.analytics_svc.mark_notification_read(current_auth(request).user_id, notification_id)
         return self.json_ok()
 
     # ── misc ────────────────────────────────────────────────────────────
@@ -343,7 +346,7 @@ class AnalyticsController(BaseController):
     @require_auth
     async def global_search(self, request):
         p = pagination_from(request)
-        permissions = set(request.ctx.permissions or set())
+        permissions = set(current_auth(request).permissions)
         return self.json(
             await self.analytics_svc.global_search(
                 request.args.get("keyword", ""),
@@ -424,7 +427,7 @@ class AnalyticsController(BaseController):
         months = [m.strip() for m in request.args.get("months", "").split(",") if m.strip()]
         result = await self.analytics_svc.month_comparison(project_id, months)
         yms = [m["ym"] for m in result["months"]]
-        wb = await asyncio.to_thread(build_month_comparison_workbook, result)
+        wb = await asyncio.to_thread(build_month_comparison_workbook, cast(Any, result))
         return await _xlsx(wb, "月度对比_" + "_".join(yms) + ".xlsx", f"month-comparison-{project_id}.xlsx")
 
     @require_auth
@@ -454,15 +457,15 @@ class AnalyticsController(BaseController):
 
     @require_auth
     async def mark_all_read(self, request):
-        marked = await self.analytics_svc.mark_all_notifications_read(request.ctx.user_id)
+        marked = await self.analytics_svc.mark_all_notifications_read(current_auth(request).user_id)
         return self.json({"ok": True, "marked": marked})
 
     @require_auth
     async def delete_notification(self, request, notification_id: int):
-        await self.analytics_svc.delete_notification(request.ctx.user_id, notification_id)
+        await self.analytics_svc.delete_notification(current_auth(request).user_id, notification_id)
         return self.json_ok()
 
     @require_auth
     async def clear_notifications(self, request):
-        deleted = await self.analytics_svc.clear_notifications(request.ctx.user_id)
+        deleted = await self.analytics_svc.clear_notifications(current_auth(request).user_id)
         return self.json({"ok": True, "deleted": deleted})

@@ -13,6 +13,7 @@ from uuid import uuid4
 from sanic import Sanic
 
 from contexts.analytics.interface.analytics_controller import AnalyticsController
+from contexts.auth.interface.request_context import RequestAuth
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.config import Settings
 from contexts.shared.interface.health_controller import bp as health_bp
@@ -131,7 +132,9 @@ def _request(**args):
     """Fake request: admin permissions short-circuit the project-scope lookup."""
     return SimpleNamespace(
         args=args,
-        ctx=SimpleNamespace(user_id=7, permissions={"admin:roles"}),
+        ctx=SimpleNamespace(
+            auth=RequestAuth(user_id=7, username="admin", permissions=frozenset({"admin:roles"}))
+        ),
     )
 
 

@@ -40,7 +40,7 @@ class UsersController(BaseController):
         result = await self.svc.create(
             username=data.get("username", ""),
             password=data.get("password", ""),
-            real_name=data.get("real_name", data.get("name", "")),
+            real_name=str(data.get("real_name", data.get("name", "")) or ""),
             email=data.get("email", ""),
             phone=data.get("phone", ""),
             department=data.get("department", ""),

@@ -9,6 +9,7 @@ from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
 from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.interface.request_context import RequestAuth, current_auth
 from contexts.auth.interface.request_services import RequestServices
 from contexts.shared.domain.exceptions import (
     AuthenticationError,
@@ -45,11 +46,12 @@ def require_auth(f):
             ctx = await auth.authenticate(token)
         except AuthenticationError as e:
             return json({"error": str(e)}, status=401)
-        request.ctx.user_id = ctx.user_id
-        request.ctx.username = ctx.username
-        request.ctx.permissions = ctx.permissions
-        # Verified JWT claims (jti/iat/exp) for logout / change-password.
-        request.ctx.token_claims = ctx.claims
+        request.ctx.auth = RequestAuth(
+            user_id=ctx.user_id,
+            username=ctx.username,
+            permissions=frozenset(ctx.permissions),
+            claims=ctx.claims,
+        )
         return await f(*args, **kwargs)
 
     return decorated
@@ -60,8 +62,9 @@ def require_permission(perm_code: str):
         @wraps(f)
         async def decorated(*args, **kwargs):
             request = _extract_request(args)
-            permissions = getattr(request.ctx, "permissions", None)
-            if permissions is None:
+            try:
+                permissions = current_auth(request).permissions
+            except AuthenticationError:
                 return json({"error": "not authenticated"}, status=401)
             if perm_code not in permissions:
                 return json({"error": f"missing permission: {perm_code}"}, status=403)
@@ -79,7 +82,7 @@ def require_project_access(*, roles: set[str] | None = None):
         @wraps(f)
         async def decorated(*args, **kwargs):
             request = _extract_request(args)
-            permissions = set(getattr(request.ctx, "permissions", set()) or set())
+            permissions = set(current_auth(request).permissions)
             if ProjectAccessPolicy.has_elevated_permission(permissions):
                 return await f(*args, **kwargs)
             raw = kwargs.get("project_id")
@@ -89,8 +92,8 @@ def require_project_access(*, roles: set[str] | None = None):
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require(
-                    UserId(int(request.ctx.user_id)),
-                    int(raw),
+                    UserId(current_auth(request).user_id),
+                    int(str(raw)),
                     roles,
                 )
             except (TypeError, ValueError):
@@ -109,7 +112,7 @@ def require_batch_access(*, roles: set[str] | None = None):
         @wraps(f)
         async def decorated(*args, **kwargs):
             request = _extract_request(args)
-            permissions = set(getattr(request.ctx, "permissions", set()) or set())
+            permissions = set(current_auth(request).permissions)
             if ProjectAccessPolicy.has_elevated_permission(permissions):
                 return await f(*args, **kwargs)
             raw = kwargs.get("batch_id")
@@ -121,8 +124,8 @@ def require_batch_access(*, roles: set[str] | None = None):
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require_batch(
-                    UserId(int(request.ctx.user_id)),
-                    int(raw),
+                    UserId(current_auth(request).user_id),
+                    int(str(raw)),
                     roles,
                 )
             except (TypeError, ValueError):

@@ -44,6 +44,7 @@ from contexts.analytics.infrastructure.xlsx_export import (
     content_disposition,
 )
 from contexts.analytics.interface.analytics_controller import AnalyticsController
+from contexts.auth.interface.request_context import RequestAuth
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
@@ -147,7 +148,13 @@ def _request(args=None, body=None, user_id=1, permissions=("user:manage",)):
     return SimpleNamespace(
         args=args or {},
         json=body,
-        ctx=SimpleNamespace(user_id=user_id, permissions=set(permissions)),
+        ctx=SimpleNamespace(
+            auth=RequestAuth(
+                user_id=user_id,
+                username="tester",
+                permissions=frozenset(permissions),
+            )
+        ),
     )
 
 

@@ -5,6 +5,7 @@ import logging
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Any, cast
 
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
@@ -178,9 +179,9 @@ class UploadApplicationService(TransactionalService):
             rows = [
                 ParsedRow(
                     row_index=row["row_index"],
-                    fields=self._restore_types(row["fields"]),
+                    fields=cast(dict[str, Any], self._restore_types(row["fields"])),
                     hierarchy_code=row.get("hierarchy_code"),
-                    monthly_data=self._restore_types(row.get("monthly_data")),
+                    monthly_data=cast(dict[str, Any] | None, self._restore_types(row.get("monthly_data"))),
                 )
                 for row in sheet["rows"]
             ]

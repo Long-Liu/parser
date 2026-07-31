@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from contexts.data.application.data_app_service import DataApplicationService
+from contexts.auth.interface.request_context import RequestAuth
 from contexts.data.domain.data_query import DataRow
 from contexts.data.domain.data_row_update import build_updates
 from contexts.data.domain.repositories import DataQueryRepository
@@ -221,9 +222,11 @@ def _controller():
 
 def _authed_request(controller, body, permissions=("data:upload",)):
     req = _request(body=body)
-    req.ctx.user_id = 1
-    req.ctx.username = "tester"
-    req.ctx.permissions = set(permissions)
+    req.ctx.auth = RequestAuth(
+        user_id=1,
+        username="tester",
+        permissions=frozenset(permissions),
+    )
     return req
 
 

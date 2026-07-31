@@ -4,6 +4,7 @@ from sanic_ext import openapi
 
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
+from contexts.auth.interface.request_context import current_auth
 from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import FilterCriterion
 from contexts.shared.domain.exceptions import ValidationError
@@ -50,12 +51,13 @@ class DataController(BaseController):
     @openapi.summary("Query parsed data")
     async def query(self, request, template_id: str):
         batch_id = _parse_int_or_none(request.args.get("batch_id"))
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if not ProjectAccessPolicy.has_elevated_permission(permissions):
             if batch_id is None:
                 raise ValidationError("batch_id is required for project-scoped data access")
             await self.access_policy.require_batch(
-                UserId(request.ctx.user_id),
+                UserId(auth.user_id),
                 batch_id,
             )
         # Larger default/max page size than other list endpoints — preserved
@@ -70,10 +72,11 @@ class DataController(BaseController):
     @openapi.tag("Data")
     @openapi.summary("Get single data row")
     async def get_row(self, request, template_id: str, row_id: int):
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access_policy.require_data_row(
-                UserId(request.ctx.user_id),
+                UserId(auth.user_id),
                 template_id,
                 row_id,
             )
@@ -84,10 +87,11 @@ class DataController(BaseController):
     @openapi.tag("Data")
     @openapi.summary("Delete data row")
     async def delete(self, request, template_id: str, row_id: int):
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access_policy.require_data_row(
-                UserId(request.ctx.user_id),
+                UserId(auth.user_id),
                 template_id,
                 row_id,
                 {"manager"},
@@ -100,10 +104,11 @@ class DataController(BaseController):
     @openapi.tag("Data")
     @openapi.summary("Update data row fields")
     async def update(self, request, template_id: str, row_id: int):
-        permissions = set(request.ctx.permissions or set())
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         if "admin:roles" not in permissions and "user:manage" not in permissions:
             await self.access_policy.require_data_row(
-                UserId(request.ctx.user_id),
+                UserId(auth.user_id),
                 template_id,
                 row_id,
                 {"manager"},

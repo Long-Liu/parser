@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from tortoise import fields
 
 from contexts.data.domain.data_query import DataRow, FilterCriterion
@@ -37,7 +39,7 @@ class TortoiseDataQueryRepository(DataQueryRepository):
 
         total = await qs.count()
         rows = await qs.limit(pagination.size).offset(pagination.offset).values()
-        return [DataRow(fields=dict(row)) for row in rows], total
+        return [DataRow(fields=cast(dict[str, Any], row)) for row in rows], total
 
     async def get_by_id(self, template_id: str, row_id: int) -> DataRow | None:
         model = TEMPLATE_DATA_MODELS.get(template_id)

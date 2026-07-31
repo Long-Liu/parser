@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import secrets
+from typing import Any, cast
 
 from contexts.auth.domain.password import Password
 from contexts.auth.domain.ports import PasswordHasher
@@ -49,14 +50,18 @@ class UserApplicationService(TransactionalService):
             offset=pagination.offset,
             limit=pagination.size,
         )
-        user_ids = [user.id for user in users if user.id]
+        user_ids = [cast(UserId, user.id) for user in users if user.id]
         if hasattr(self._users, "list_projects_for_users"):
             project_map = await self._users.list_projects_for_users(user_ids)
         else:  # compatibility for lightweight external repository adapters
             project_map = {user_id.value: await self._users.list_projects(user_id) for user_id in user_ids}
         result = []
         for index, user in enumerate(users, start=pagination.offset + 1):
-            projects = project_map.get(user.id.value, []) if user.id else []
+            projects = (
+                cast(list[dict[str, Any]], cast(object, project_map.get(user.id.value, [])))
+                if user.id
+                else []
+            )
             base = self._serialize(user, projects)
             base["serial_number"] = index
             base["main_projects"] = [p for p in projects if p["is_primary"]]
