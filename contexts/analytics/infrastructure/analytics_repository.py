@@ -726,7 +726,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         """Paged project status rows for /dashboard/project-status.
 
         The full dashboard() projects every row then slices in Python; this
-        pushes the LIMIT/OFFSET into SQL.
+        pushes the LIMIT/OFFSET into SQL. Each row carries the project's
+        current gross-profit rate (same _profit_item caliber as dashboard), so
+        the dashboard "项目实时状态" list needs no second API call.
         """
         query = Project.all()
         if project_ids is not None:
@@ -734,12 +736,16 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         total = await query.count()
         page = pagination or Pagination(1, 20, max_size=100)
         projects = await query.order_by("id").offset(page.offset).limit(page.size)
+        batch_map, profit_map, indicator_map = await self._load_batches(projects, None)
         status = [
             {
                 "id": p.id,
                 "name": p.name,
                 "status": p.status,
                 "progress": _number(p.progress),
+                "profit_rate": self._profit_item(p, batch_map, profit_map, indicator_map, None)["current"][
+                    "profit_rate"
+                ],
             }
             for p in projects
         ]

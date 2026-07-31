@@ -94,6 +94,44 @@ async def make_indicator(batch_id: int, **kwargs) -> DataDynamicIndicator:
 
 
 @pytest.mark.asyncio
+async def test_dashboard_status_includes_current_profit_rate(db):
+    """大屏"项目实时状态"行需要当前毛利率，接口须直接返回（免前端二次拼接）。"""
+    project = await make_project()
+    batch = await make_batch(project.id, "2026-03")
+    await make_settlement(
+        batch.id,
+        **{
+            SETTLE_CURRENT_PROFIT_RATE: "0.148",
+            SETTLE_CURRENT_PROFIT: "148",
+            SETTLE_CUMULATIVE_OUTPUT: "1000",
+        },
+    )
+
+    result = await TortoiseAnalyticsRepository().dashboard_status(
+        pagination=Pagination(1, 20, max_size=100)
+    )
+
+    row = result["projects"][0]
+    assert row["id"] == project.id
+    assert row["status"] == "normal"
+    assert row["progress"] == 80.0
+    assert row["profit_rate"] == 14.8  # 0.148 比率 -> 百分数
+    assert result["pagination"]["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dashboard_status_no_batch_keeps_zero_profit_rate(db):
+    """无结算数据时 profit_rate 回落为 0.0（与 _profit_item 口径一致）。"""
+    await make_project()
+
+    result = await TortoiseAnalyticsRepository().dashboard_status(
+        pagination=Pagination(1, 20, max_size=100)
+    )
+
+    assert result["projects"][0]["profit_rate"] == 0.0
+
+
+@pytest.mark.asyncio
 async def test_budget_lease_writeoffs_uses_latest_batch_and_aggregates_ui_fields(db):
     project = await make_project(name="资阳项目")
     old_batch = await make_batch(project.id, "2026-02")
