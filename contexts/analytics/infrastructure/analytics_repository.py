@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
@@ -46,6 +47,8 @@ from contexts.shared.infrastructure.database.tables import (
     DataSettlementOutput,
     settlement_indicator_map,
 )
+
+logger = logging.getLogger("parser.analytics")
 
 
 def _number(value) -> float:
@@ -1024,18 +1027,23 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 }
             )
         if self._ai_provider:
-            result = await self._ai_provider.analyze(
-                {
-                    "project": {
-                        "id": project.id,
-                        "name": project.name,
-                        "status": project.status,
-                        "progress": float(project.progress),
-                    },
-                    "period": profits["ym"],
-                    "metrics": {**profits, "monthly": monthly},
-                }
-            )
+            try:
+                result = await self._ai_provider.analyze(
+                    {
+                        "project": {
+                            "id": project.id,
+                            "name": project.name,
+                            "status": project.status,
+                            "progress": float(project.progress),
+                        },
+                        "period": profits["ym"],
+                        "metrics": {**profits, "monthly": monthly},
+                    }
+                )
+            except Exception:
+                # 外部 AI 服务不可用时回退到本地确定性分析，而不是 500。
+                logger.exception("AI analysis provider failed for project %s; using fallback", project_id)
+                result = None
             if result:
                 return {"project_id": project_id, "ym": profits["ym"], **result}
         return fallback
@@ -1050,13 +1058,18 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         metrics = comparison["projects"]
         generated_at = datetime.now().isoformat(timespec="seconds")
         if self._ai_provider:
-            result = await self._ai_provider.analyze(
-                {
-                    "type": "project_comparison",
-                    "period": ym,
-                    "projects": metrics,
-                }
-            )
+            try:
+                result = await self._ai_provider.analyze(
+                    {
+                        "type": "project_comparison",
+                        "period": ym,
+                        "projects": metrics,
+                    }
+                )
+            except Exception:
+                # 外部 AI 服务不可用时回退到本地确定性五章报告，而不是 500。
+                logger.exception("AI analysis provider failed for comparison; using fallback")
+                result = None
             if result:
                 return {"project_ids": project_ids, "ym": ym, "generated_at": generated_at, **result}
         return {

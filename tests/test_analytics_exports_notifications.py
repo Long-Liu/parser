@@ -692,6 +692,29 @@ async def test_compare_ai_analysis_falls_back_when_provider_returns_none(db):
     ]
 
 
+class _BoomProvider:
+    """模拟已配置但不可用的外部 AI 服务（HTTP 5xx/超时/断网）。"""
+
+    async def analyze(self, payload):
+        raise ConnectionError("provider unreachable")
+
+
+@pytest.mark.asyncio
+async def test_compare_ai_analysis_falls_back_when_provider_raises(db):
+    """外部 AI 服务抛异常时回退到本地确定性报告，而不是 500。"""
+    alpha, beta = await _seed_compare_projects()
+    # noinspection PyTypeChecker
+    repo = TortoiseAnalyticsRepository(_BoomProvider())
+    result = await repo.compare_ai_analysis([alpha.id, beta.id], "2026-03")
+    assert [c["key"] for c in result["chapters"]] == [
+        "overview",
+        "progress",
+        "cost",
+        "profit",
+        "rating",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_compare_ai_analysis_endpoint_validates_ids(db):
     controller = _controller()

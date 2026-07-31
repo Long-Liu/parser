@@ -56,6 +56,7 @@ class UploadConfig(BaseModel):
 class AiAnalysisConfig(BaseModel):
     url: str = ""
     api_key: str = ""
+    model: str = "deepseek-chat"
 
 
 class AdminConfig(BaseModel):
