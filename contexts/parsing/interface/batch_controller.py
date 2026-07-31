@@ -54,7 +54,7 @@ class BatchesController(BaseController):
     @require_batch_access()
     @openapi.tag("Batches")
     @openapi.summary("Get batch detail with sheet results")
-    async def get_batch(self, request, batch_id: int):
+    async def get_batch(self, _request, batch_id: int):
         result = await self.batch_query_svc.get_batch(JobId(batch_id))
         if result is None:
             return self.json({"error": "not found"}, status=404)

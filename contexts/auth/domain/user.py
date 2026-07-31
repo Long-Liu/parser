@@ -142,7 +142,10 @@ class User(AggregateRoot[UserId]):
             self._department = department.strip()
             changed.append("department")
         if is_active is not None:
-            self.enable() if is_active else self.disable()
+            if is_active:
+                self.enable()
+            else:
+                self.disable()
             changed.append("is_active")
         if changed:
             self.record(

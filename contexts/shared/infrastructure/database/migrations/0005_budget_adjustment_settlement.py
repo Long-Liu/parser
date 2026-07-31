@@ -1,8 +1,14 @@
+# ruff: noqa: I001
 import functools
 from json import dumps, loads
 
+# noinspection PyPackageRequirements
 from tortoise import fields, migrations
+
+# noinspection PyPackageRequirements
 from tortoise.indexes import Index
+
+# noinspection PyPackageRequirements
 from tortoise.migrations import operations as ops
 
 

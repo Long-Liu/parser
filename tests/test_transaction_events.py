@@ -18,7 +18,7 @@ async def test_events_are_dispatched_after_transaction_body():
     bus = DomainEventBus()
     order = []
 
-    async def handler(event):
+    async def handler(_event):
         order.append("event")
 
     bus.subscribe(Saved, handler)

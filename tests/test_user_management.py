@@ -1,4 +1,6 @@
 import pytest
+
+# noinspection PyPackageRequirements
 from tortoise import Tortoise
 
 from contexts.auth.application.user_app_service import UserApplicationService
@@ -16,6 +18,8 @@ from contexts.auth.infrastructure.tables import (
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.domain.pagination import Pagination
+
+# noinspection PyProtectedMember
 from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 
 
@@ -48,7 +52,8 @@ class FakeUserRepository:
             )
         ], 21
 
-    async def list_projects(self, user_id):
+    @staticmethod
+    async def list_projects(user_id):
         assert user_id.value == 7
         return [{"id": 3, "code": "P001", "name": "一号项目", "is_primary": True}]
 
@@ -58,7 +63,8 @@ class CreateUserRepository:
         self.user = None
         self.role = None
 
-    async def find_by_username(self, username):
+    @staticmethod
+    async def find_by_username(_username):
         return None
 
     async def save(self, user):
@@ -68,21 +74,24 @@ class CreateUserRepository:
     async def find_by_id(self, user_id):
         return self.user if self.user and self.user.id == user_id else None
 
-    async def list_projects(self, user_id):
+    @staticmethod
+    async def list_projects(_user_id):
         return []
 
-    async def set_system_role(self, user_id, role_code):
+    async def set_system_role(self, _user_id, role_code):
         self.role = role_code
 
 
 class FakePasswordHasher:
-    def hash(self, value):
+    @staticmethod
+    def hash(value):
         return f"hash:{value}"
 
 
 @pytest.mark.asyncio
 async def test_personnel_list_contains_table_columns():
     repo = FakeUserRepository()
+    # noinspection PyTypeChecker
     result = await UserApplicationService(repo).list_all(
         keyword="  alice@example  ",
         pagination=Pagination(2, 20, max_size=100),
@@ -115,10 +124,8 @@ async def test_personnel_list_contains_table_columns():
 @pytest.mark.asyncio
 async def test_create_user_accepts_published_ui_form_shape():
     repo = CreateUserRepository()
-    result = await UserApplicationService(
-        repo,
-        password_hasher=FakePasswordHasher(),
-    ).create(
+    # noinspection PyTypeChecker
+    result = await UserApplicationService(repo, password_hasher=FakePasswordHasher()).create(
         username="",
         password="",
         real_name="Alice",

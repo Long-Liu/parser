@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+# noinspection PyPackageRequirements
 from tortoise.exceptions import IntegrityError
+
+# noinspection PyPackageRequirements
 from tortoise.expressions import Q
 
 from contexts.auth.domain.name import Name
@@ -114,7 +117,7 @@ class TortoiseUserRepository(UserRepository):
         users = [_user_to_entity(row, roles_by_user[row.id]) for row in rows]
         return users, total
 
-    async def list_projects(self, user_id: UserId) -> list[dict]:
+    async def list_projects(self, user_id: UserId) -> list[dict[str, Any]]:
         links = await ProjectUser.filter(user_id=user_id.value).values("project_id", "is_primary", "role")
         if not links:
             return []
@@ -127,14 +130,18 @@ class TortoiseUserRepository(UserRepository):
             )
         }
         return [
-            {**cast(dict[str, Any], projects[link["project_id"]]), "is_primary": bool(link["is_primary"]), "role": link["role"]}
+            {
+                **cast(dict[str, Any], projects[link["project_id"]]),
+                "is_primary": bool(link["is_primary"]),
+                "role": link["role"],
+            }
             for link in links
             if link["project_id"] in projects
         ]
 
-    async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict]]:
+    async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict[str, Any]]]:
         ids = [item.value for item in user_ids]
-        result: dict[int, list[dict]] = {user_id: [] for user_id in ids}
+        result: dict[int, list[dict[str, Any]]] = {user_id: [] for user_id in ids}
         if not ids:
             return result
         links = await ProjectUser.filter(user_id__in=ids).values("user_id", "project_id", "is_primary", "role")
@@ -157,7 +164,7 @@ class TortoiseUserRepository(UserRepository):
         await UserRole.filter(user_id=user_id.value).delete()
         await OrmUser.filter(id=user_id.value).delete()
 
-    async def set_project_permissions(self, user_id: UserId, permissions: list[dict]) -> None:
+    async def set_project_permissions(self, user_id: UserId, permissions: list[dict[str, Any]]) -> None:
         # Deduplicate by project_id — last entry wins. Validate types early.
         deduped: dict[int, str] = {}
         try:
@@ -220,6 +227,9 @@ class TortoiseUserRepository(UserRepository):
 
 class TortoiseRoleRepository(RoleRepository):
     async def save(self, role: Role) -> None:
+        role_id = role.id
+        if role_id is None:
+            raise ValueError("role id is required to save")
         values: dict[str, Any] = {
             "code": role.code,
             "name": role.name,
@@ -261,7 +271,7 @@ class TortoiseRoleRepository(RoleRepository):
         await RolePermission.bulk_create(
             [
                 RolePermission(
-                    role_id=role.id.value,
+                    role_id=role_id.value,
                     permission_id=existing_permissions[code].id,
                 )
                 for code in permission_specs

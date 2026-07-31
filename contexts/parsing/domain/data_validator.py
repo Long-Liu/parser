@@ -18,7 +18,8 @@ class DataValidator:
                 valid.append(row)
         return valid, errors
 
-    def _validate_row(self, row: ParsedRow, template: Template) -> list[RowError]:
+    @staticmethod
+    def _validate_row(row: ParsedRow, template: Template) -> list[RowError]:
         errs: list[RowError] = []
         for col in template.fixed_columns:
             if col.db_field in row.fields:

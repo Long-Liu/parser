@@ -20,7 +20,8 @@ def sheet_name_for(template: Template) -> str:
     """Sheet name: the sheet_pattern with glob wildcards stripped."""
     name = _INVALID_SHEET_CHARS.sub("", template.sheet_pattern or "").strip()
     if not name:
-        name = str(template.id)
+        assert template.id is not None
+        name = template.id.value
     return name[:_MAX_SHEET_TITLE]
 
 
@@ -31,6 +32,7 @@ def build_template_workbook(template: Template) -> bytes:
     for dynamic columns, and blank data rows from ``data_start_row``."""
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = sheet_name_for(template)
 
     header_rows = max(len(template.header_spec.header_rows), 1)

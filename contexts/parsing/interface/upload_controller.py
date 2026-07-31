@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from typing import Any
 
 from sanic_ext import openapi
 
@@ -81,7 +82,7 @@ class UploadsController(BaseController):
     @require_permission("data:upload")
     @require_project_access(roles={"manager"})
     async def preview(self, request):
-        file = request.files.get("file")
+        file: Any = request.files.get("file")
         if isinstance(file, list):
             file = file[0] if file else None
         if not file:

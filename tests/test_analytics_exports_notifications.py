@@ -26,6 +26,8 @@ from urllib.parse import quote
 
 import pytest
 from openpyxl import load_workbook
+
+# noinspection PyPackageRequirements
 from tortoise import Tortoise
 
 from contexts.analytics.application.analytics_service import (
@@ -44,8 +46,8 @@ from contexts.analytics.infrastructure.xlsx_export import (
     content_disposition,
 )
 from contexts.analytics.interface.analytics_controller import AnalyticsController
-from contexts.auth.interface.request_context import RequestAuth
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
+from contexts.auth.interface.request_context import RequestAuth
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.exceptions import (
@@ -54,6 +56,8 @@ from contexts.shared.domain.exceptions import (
     ValidationError,
 )
 from contexts.shared.domain.pagination import Pagination
+
+# noinspection PyProtectedMember
 from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import (
     SETTLE_CONTRACT_PRICE,
@@ -66,6 +70,13 @@ from contexts.shared.infrastructure.database.tables import (
     DataDynamicIndicator,
     DataSettlementOutput,
 )
+
+
+def _undecorate(handler):
+    """Strip Sanic/openapi decorators to reach the raw handler."""
+    while hasattr(handler, "__wrapped__"):
+        handler = handler.__wrapped__
+    return handler
 
 
 @pytest.fixture
@@ -85,7 +96,7 @@ _seq = count(1)
 async def make_project(**kwargs) -> Project:
     n = next(_seq)
     defaults = {
-        "code": f"P{n:04d}",
+        "code": f"P{int(n):04d}",
         "name": f"项目{n}",
         "contract_price": Decimal("1000"),
         "progress": Decimal("80"),
@@ -97,7 +108,7 @@ async def make_project(**kwargs) -> Project:
 
 async def make_batch(project_id: int, ym: str) -> UploadBatch:
     return await UploadBatch.create(
-        batch_no=f"T{next(_seq):06d}",
+        batch_no=f"T{int(next(_seq)):06d}",
         project_id=project_id,
         ym=ym,
         file_name="cost.xlsx",
@@ -139,6 +150,7 @@ async def make_profit_with_calibers(batch_id: int) -> None:
 def _controller(repo=None, access_policy=None) -> AnalyticsController:
     repo = repo or TortoiseAnalyticsRepository()
     svc = AnalyticsApplicationService(repo)
+    # noinspection PyTypeChecker
     controller = AnalyticsController(svc, access_policy, alert_svc=None)
     controller.setup()
     return controller
@@ -193,6 +205,7 @@ def test_budget_lease_writeoff_workbook_matches_ui_columns():
         }
     )
     ws = wb.active
+    assert ws is not None
     assert ws.title == "预算租借核销"
     assert ws.cell(1, 5).value == "累计租借-机械设备租赁"
     assert ws.cell(2, 2).value == "合计"
@@ -218,6 +231,7 @@ async def test_profits_workbook_has_four_calibers(db):
     result = await repo.project_profits("2026-03", Pagination(1, 10000, max_size=10000))
     wb = build_profits_workbook(result["projects"])
     ws = wb.active
+    assert ws is not None
 
     header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
     assert header == [
@@ -267,6 +281,7 @@ async def test_cost_categories_workbook_has_six_calibers(db):
     repo = TortoiseAnalyticsRepository()
     result = await repo.cost_categories([project.id], "2026-03", Pagination(1, 10000, max_size=10000))
     ws = build_cost_categories_workbook(result["projects"]).active
+    assert ws is not None
 
     header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
     assert header == [
@@ -303,7 +318,9 @@ async def test_month_comparison_workbook_metrics_and_mom(db):
 
     repo = TortoiseAnalyticsRepository()
     result = await repo.month_comparison(project.id, ["2026-02", "2026-03"])
+    # noinspection PyTypeChecker
     ws = build_month_comparison_workbook(result).active
+    assert ws is not None
 
     header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
     assert header == ["指标", "2026-02", "2026-03", "环比变化", "环比变化率(%)"]
@@ -373,7 +390,7 @@ async def test_export_profits_endpoint_chinese_filename_and_no_100_cap(db):
         await make_profit_with_calibers(batch.id)
 
     controller = _controller()
-    raw = AnalyticsController.export_profits.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.export_profits)
     response = await raw(controller, _request(args={"ym": "2026-03"}))
 
     assert response.status == 200
@@ -382,6 +399,7 @@ async def test_export_profits_endpoint_chinese_filename_and_no_100_cap(db):
     assert f"filename*=UTF-8''{quote('项目毛利情况_2026-03.xlsx')}" in disposition
 
     ws = load_workbook(io.BytesIO(response.body)).active
+    assert ws is not None
     assert ws.max_row == 1 + 105  # 超出原硬编码 100 条限制
     assert ws.max_column == 19
 
@@ -398,13 +416,14 @@ async def test_export_costs_endpoint_chinese_filename(db):
     )
 
     controller = _controller()
-    raw = AnalyticsController.export_costs.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.export_costs)
     response = await raw(controller, _request(args={"ym": "2026-03", "project_ids": str(project.id)}))
 
     disposition = response.headers["Content-Disposition"]
     assert 'filename="cost-categories.xlsx"' in disposition
     assert f"filename*=UTF-8''{quote('成本科目_2026-03.xlsx')}" in disposition
     ws = load_workbook(io.BytesIO(response.body)).active
+    assert ws is not None
     assert ws.max_row == 2 and ws.max_column == 11
 
 
@@ -423,12 +442,13 @@ async def test_export_month_comparison_endpoint(db):
         )
 
     controller = _controller()
-    raw = AnalyticsController.export_month_comparison.__wrapped__.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.export_month_comparison)
     response = await raw(controller, _request(args={"months": "2026-02,2026-03"}), project.id)
 
     disposition = response.headers["Content-Disposition"]
     assert f"filename*=UTF-8''{quote('月度对比_2026-02_2026-03.xlsx')}" in disposition
     ws = load_workbook(io.BytesIO(response.body)).active
+    assert ws is not None
     assert [ws.cell(row=1, column=c).value for c in range(1, 6)] == [
         "指标",
         "2026-02",
@@ -446,7 +466,7 @@ async def test_export_compare_endpoint(db):
     await make_batch(beta.id, "2026-03")
 
     controller = _controller()
-    raw = AnalyticsController.export_compare.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.export_compare)
     response = await raw(controller, _request(args={"project_ids": f"{alpha.id},{beta.id}", "ym": "2026-03"}))
 
     disposition = response.headers["Content-Disposition"]
@@ -463,7 +483,7 @@ async def test_project_profits_report_endpoint_still_works(db):
     await make_profit_with_calibers(batch.id)
 
     controller = _controller()
-    raw = AnalyticsController.project_profits.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.project_profits)
     response = await raw(controller, _request(args={"ym": "2026-03"}))
 
     payload = jsonlib.loads(response.body)
@@ -550,15 +570,15 @@ async def test_notification_endpoints_via_controller(db):
     broadcast = await make_notification(None)
 
     controller = _controller()
-    mark_all = AnalyticsController.mark_all_read.__wrapped__
+    mark_all = _undecorate(AnalyticsController.mark_all_read)
     response = await mark_all(controller, _request(user_id=1))
     assert jsonlib.loads(response.body) == {"ok": True, "marked": 2}
 
-    delete_one = AnalyticsController.delete_notification.__wrapped__
+    delete_one = _undecorate(AnalyticsController.delete_notification)
     response = await delete_one(controller, _request(user_id=1), mine.id)
     assert jsonlib.loads(response.body) == {"ok": True}
 
-    clear = AnalyticsController.clear_notifications.__wrapped__
+    clear = _undecorate(AnalyticsController.clear_notifications)
     response = await clear(controller, _request(user_id=1))
     assert jsonlib.loads(response.body) == {"ok": True, "deleted": 0}
     assert await Notification.get_or_none(id=broadcast.id) is not None
@@ -568,7 +588,7 @@ async def test_notification_endpoints_via_controller(db):
 async def test_delete_notification_endpoint_rejects_others_notification(db):
     other = await make_notification(2)
     controller = _controller()
-    delete_one = AnalyticsController.delete_notification.__wrapped__
+    delete_one = _undecorate(AnalyticsController.delete_notification)
     with pytest.raises(NotFoundError):
         await delete_one(controller, _request(user_id=1), other.id)
 
@@ -646,6 +666,7 @@ async def test_compare_ai_analysis_uses_provider_when_available(db):
     alpha, beta = await _seed_compare_projects()
     provider = _FakeProvider({"chapters": [{"key": "x", "title": "t", "content": "c"}]})
 
+    # noinspection PyTypeChecker
     repo = TortoiseAnalyticsRepository(provider)
     result = await repo.compare_ai_analysis([alpha.id, beta.id], "2026-03")
 
@@ -659,6 +680,7 @@ async def test_compare_ai_analysis_uses_provider_when_available(db):
 @pytest.mark.asyncio
 async def test_compare_ai_analysis_falls_back_when_provider_returns_none(db):
     alpha, beta = await _seed_compare_projects()
+    # noinspection PyTypeChecker
     repo = TortoiseAnalyticsRepository(_FakeProvider(None))
     result = await repo.compare_ai_analysis([alpha.id, beta.id], "2026-03")
     assert [c["key"] for c in result["chapters"]] == [
@@ -673,13 +695,14 @@ async def test_compare_ai_analysis_falls_back_when_provider_returns_none(db):
 @pytest.mark.asyncio
 async def test_compare_ai_analysis_endpoint_validates_ids(db):
     controller = _controller()
-    raw = AnalyticsController.compare_ai_analysis.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.compare_ai_analysis)
     with pytest.raises(ValidationError, match="invalid project_ids"):
         await raw(controller, _request(body={"project_ids": ["abc"]}))
 
 
 class _DenyAccessPolicy:
-    async def accessible_project_ids(self, user_id):
+    @staticmethod
+    async def accessible_project_ids(_user_id):
         return {1}  # 仅项目 1 可见
 
 
@@ -687,7 +710,7 @@ class _DenyAccessPolicy:
 async def test_compare_ai_analysis_endpoint_enforces_project_scope(db):
     await _seed_compare_projects()
     controller = _controller(access_policy=_DenyAccessPolicy())
-    raw = AnalyticsController.compare_ai_analysis.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.compare_ai_analysis)
     with pytest.raises(AuthorizationError):
         await raw(
             controller,
@@ -702,7 +725,7 @@ async def test_compare_ai_analysis_endpoint_enforces_project_scope(db):
 async def test_compare_ai_analysis_endpoint_returns_report(db):
     alpha, beta = await _seed_compare_projects()
     controller = _controller()
-    raw = AnalyticsController.compare_ai_analysis.__wrapped__.__wrapped__
+    raw = _undecorate(AnalyticsController.compare_ai_analysis)
     response = await raw(controller, _request(body={"project_ids": [alpha.id, beta.id], "ym": "2026-03"}))
     payload = jsonlib.loads(response.body)
     assert payload["generated_at"]

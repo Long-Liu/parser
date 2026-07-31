@@ -27,6 +27,14 @@ from contexts.template.infrastructure.xlsx_template_builder import (
 from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 from contexts.template.interface.template_controller import TemplatesController
 
+
+def _undecorate(handler):
+    """Strip Sanic/openapi decorators to reach the raw handler."""
+    while hasattr(handler, "__wrapped__"):
+        handler = handler.__wrapped__
+    return handler
+
+
 # ── 骨架生成 ──────────────────────────────────────────────────────────
 
 
@@ -44,6 +52,7 @@ def test_build_workbook_from_real_material_cost():
     assert content[:2] == b"PK"  # xlsx zip magic
 
     ws = load_workbook(io.BytesIO(content)).active
+    assert ws is not None
     assert ws.title == "表9建安材料成本表"
 
     # 两行表头：首列为层级序号列（落在最后一行表头）
@@ -78,6 +87,7 @@ def test_build_workbook_marks_dynamic_columns_with_example_month():
         ],
     )
     ws = load_workbook(io.BytesIO(build_template_workbook(template))).active
+    assert ws is not None
     headers = [ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)]
     assert headers == ["序号", "名称", "monthly_2026-01"]
 
@@ -90,7 +100,8 @@ def test_build_workbook_marks_dynamic_columns_with_example_month():
 
 
 class _FakeAuthService:
-    async def authenticate(self, token: str):
+    @staticmethod
+    async def authenticate(token: str):
         if token != "good-token":
             from contexts.shared.domain.exceptions import AuthenticationError
 
@@ -119,7 +130,7 @@ def _controller() -> TemplatesController:
 
 
 async def test_download_endpoint_returns_xlsx_attachment():
-    raw_handler = TemplatesController.download_template.__wrapped__
+    raw_handler = _undecorate(TemplatesController.download_template)
     response = await raw_handler(_controller(), _fake_request(), "material_cost")
     assert response.status == 200
     assert "spreadsheetml.sheet" in response.content_type
@@ -129,12 +140,13 @@ async def test_download_endpoint_returns_xlsx_attachment():
     assert f"filename*=UTF-8''{quote('建安材料成本表.xlsx')}" in disposition
 
     ws = load_workbook(io.BytesIO(response.body)).active
+    assert ws is not None
     assert ws.title == "表9建安材料成本表"
     assert ws.cell(row=2, column=2).value == "成本科目"
 
 
 async def test_download_endpoint_unknown_template_404():
-    raw_handler = TemplatesController.download_template.__wrapped__
+    raw_handler = _undecorate(TemplatesController.download_template)
     with pytest.raises(NotFoundError):
         await raw_handler(_controller(), _fake_request(), "no_such_tpl")
 
@@ -151,7 +163,7 @@ async def test_require_auth_decorator_returns_401_without_token():
 
     @app.get("/protected")
     @require_auth
-    async def protected(request):
+    async def protected(_request):
         return json({"ok": True})
 
     app.finalize()

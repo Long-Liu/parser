@@ -8,7 +8,10 @@ from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 async def migrate_db(config):
     """Apply committed Tortoise migrations; never create tables from models."""
     ensure_initialized()
+    # noinspection PyPackageRequirements
     from tortoise.context import get_current_context, set_global_context
+
+    # noinspection PyPackageRequirements
     from tortoise.migrations.api import migrate
 
     from contexts.shared.infrastructure.database.engine import tortoise_config

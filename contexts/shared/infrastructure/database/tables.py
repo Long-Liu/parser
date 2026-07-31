@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+# noinspection PyPackageRequirements
 from tortoise import fields
+
+# noinspection PyPackageRequirements
 from tortoise.models import Model
 
 

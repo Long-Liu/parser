@@ -24,10 +24,10 @@ class _FakeQuery:
     def __init__(self, result):
         self._result = result
 
-    def filter(self, **kwargs):
+    def filter(self, **_kwargs):
         return self
 
-    def order_by(self, *args):
+    def order_by(self, *_args):
         return self
 
     async def first(self):

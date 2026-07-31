@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+# noinspection PyPackageRequirements
 from tortoise.expressions import Q
 
 from contexts.auth.infrastructure.tables import Notification

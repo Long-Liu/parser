@@ -118,7 +118,10 @@ class RoleApplicationService(TransactionalService):
         if await self._users.find_by_id(UserId(user_id)) is None:
             raise NotFoundError(f"user {user_id} not found")
         roles = await self._repo.find_all()
-        valid_ids = {role.id.value for role in roles if role.id}
+        valid_ids: set[int] = set()
+        for role in roles:
+            if role.id is not None:
+                valid_ids.add(role.id.value)
         if not set(role_ids).issubset(valid_ids):
             raise NotFoundError("one or more roles do not exist")
         for role in roles:

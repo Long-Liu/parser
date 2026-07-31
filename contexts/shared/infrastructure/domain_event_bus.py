@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from typing import TypeVar, cast
+from typing import TypeVar
 
 from contexts.shared.application.transaction import defer_after_commit
 from contexts.shared.domain.base_domain_event import DomainEvent
@@ -23,7 +23,7 @@ class DomainEventBus(EventPublisher):
         event_type: type[EventT],
         handler: Callable[[EventT], Awaitable[None]],
     ) -> None:
-        self._handlers[event_type].append(cast(EventHandler, handler))
+        self._handlers[event_type].append(handler)
 
     def subscribers(self, event_type: type[DomainEvent]) -> tuple[EventHandler, ...]:
         """Read-only view of the handlers registered for an event type."""
@@ -39,6 +39,7 @@ class DomainEventBus(EventPublisher):
         for event in events:
             handlers = self._handlers.get(type(event), [])
             for handler in handlers:
+                # noinspection PyBroadException
                 try:
                     await handler(event)
                 except Exception:

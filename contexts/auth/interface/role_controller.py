@@ -51,7 +51,7 @@ class RolesController(BaseController):
     @require_permission("admin:roles")
     @openapi.tag("Roles")
     @openapi.summary("Get role detail")
-    async def get_role(self, request, role_id: int):
+    async def get_role(self, _request, role_id: int):
         return self.json(await self.svc.get(role_id))
 
     @require_auth
@@ -72,7 +72,7 @@ class RolesController(BaseController):
     @require_permission("admin:roles")
     @openapi.tag("Roles")
     @openapi.summary("Delete a role")
-    async def delete_role(self, request, role_id: int):
+    async def delete_role(self, _request, role_id: int):
         await self.svc.delete(role_id)
         return self.json_ok()
 
@@ -80,7 +80,7 @@ class RolesController(BaseController):
     @require_permission("admin:roles")
     @openapi.tag("Roles")
     @openapi.summary("Assign a role to a user")
-    async def assign_role(self, request, user_id: int, role_id: int):
+    async def assign_role(self, _request, user_id: int, role_id: int):
         await self.svc.assign_to_user(user_id, role_id)
         return self.json_ok()
 
@@ -88,7 +88,7 @@ class RolesController(BaseController):
     @require_permission("admin:roles")
     @openapi.tag("Roles")
     @openapi.summary("Remove a role from a user")
-    async def remove_role(self, request, user_id: int, role_id: int):
+    async def remove_role(self, _request, user_id: int, role_id: int):
         await self.svc.remove_from_user(user_id, role_id)
         return self.json_ok()
 

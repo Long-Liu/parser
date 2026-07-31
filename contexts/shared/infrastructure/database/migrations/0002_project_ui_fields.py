@@ -1,5 +1,10 @@
+# noinspection PyPackageRequirements
 from tortoise import fields, migrations
+
+# noinspection PyPackageRequirements
 from tortoise.indexes import Index
+
+# noinspection PyPackageRequirements
 from tortoise.migrations import operations as ops
 
 

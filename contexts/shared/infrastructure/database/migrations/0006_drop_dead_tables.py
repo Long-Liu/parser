@@ -1,4 +1,8 @@
+# ruff: noqa: I001
+# noinspection PyPackageRequirements
 from tortoise import migrations
+
+# noinspection PyPackageRequirements
 from tortoise.migrations import operations as ops
 
 

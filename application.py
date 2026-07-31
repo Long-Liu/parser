@@ -30,22 +30,22 @@ def create_app(settings: Settings | None = None) -> Sanic:
     settings = settings or load_settings()
     components = build_container(settings)
 
-    app = Sanic("excel_parser")
-    app.ctx.settings = settings
-    app.ctx.config = settings  # compatibility for existing extensions
-    app.ctx.services = RequestServices(
+    sanic_app = Sanic("excel_parser")
+    sanic_app.ctx.settings = settings
+    sanic_app.ctx.config = settings  # compatibility for existing extensions
+    sanic_app.ctx.services = RequestServices(
         authorization=components.authorization_service,
         project_access=components.project_access_policy,
     )
-    app.config.FALLBACK_ERROR_FORMAT = "json"
-    app.config.API_TITLE = "Excel Parser API"
-    app.config.API_VERSION = "1.0.0"
-    app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
+    sanic_app.config.FALLBACK_ERROR_FORMAT = "json"
+    sanic_app.config.API_TITLE = "Excel Parser API"
+    sanic_app.config.API_VERSION = "1.0.0"
+    sanic_app.config.API_DESCRIPTION = "建筑成本数据解析与查询服务"
     # Swagger supports interactive parameter entry and requests; ReDoc is
     # read-only, so use Swagger for the main /docs entry point.
-    app.config.OAS_UI_DEFAULT = "swagger"
-    Extend(app)
-    openapi: Any = getattr(app.ext, "openapi", None)
+    sanic_app.config.OAS_UI_DEFAULT = "swagger"
+    Extend(sanic_app)
+    openapi: Any = getattr(sanic_app.ext, "openapi", None)
     if openapi is not None:
         openapi.add_security_scheme(
             "bearerAuth",
@@ -56,24 +56,24 @@ def create_app(settings: Settings | None = None) -> Sanic:
         )
 
     setup_logging(debug=settings.debug)
-    register_logging(app)
-    register_cors(app, settings)
-    register_controllers(app, build_controllers(components))
+    register_logging(sanic_app)
+    register_cors(sanic_app, settings)
+    register_controllers(sanic_app, build_controllers(components))
     register_db(
-        app,
+        sanic_app,
         settings,
         components.alert_dispatcher,
         template_config_provider=YamlTemplateLoader().template_ids,
         seeder=lambda: seed_defaults(components.password_hasher.hash, cast(Settings, settings)),
     )
-    app.blueprint(health_bp)
+    sanic_app.blueprint(health_bp)
 
-    @app.exception(DomainError)
-    async def on_domain_error(request, exception: DomainError):
+    @sanic_app.exception(DomainError)
+    async def on_domain_error(_request, exception: DomainError):
         return error_to_response(exception)
 
-    @app.exception(SanicException)
-    async def on_sanic_error(request, exception: SanicException):
+    @sanic_app.exception(SanicException)
+    async def on_sanic_error(_request, exception: SanicException):
         # Preserve framework HTTP errors such as 404. Without this handler the
         # broad Exception handler below turns an ordinary missing route into a
         # logged 500 response.
@@ -82,12 +82,12 @@ def create_app(settings: Settings | None = None) -> Sanic:
             status=getattr(exception, "status_code", 500),
         )
 
-    @app.exception(Exception)
-    async def on_unhandled_error(request, exception: Exception):
+    @sanic_app.exception(Exception)
+    async def on_unhandled_error(request, _exception: Exception):
         _logger.exception("unhandled exception on %s %s", request.method, request.path)
         return json({"error": "internal server error"}, status=500)
 
-    return app
+    return sanic_app
 
 
 # WSGI/ASGI and the existing ``python main.py`` entry points import this name.

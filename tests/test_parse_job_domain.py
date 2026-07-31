@@ -110,6 +110,7 @@ def test_complete_transitions_to_done_and_records_event():
     events = job.pull_events()
     completed = [e for e in events if type(e).__name__ == "ParseJobCompleted"]
     assert len(completed) == 1
+    # noinspection PyUnresolvedReferences
     assert completed[0].total_rows == 1
 
 
@@ -118,6 +119,7 @@ def test_fail_transitions_to_failed():
     job.fail("disk full")
     assert job.status == JobStatus.FAILED
     events = job.pull_events()
+    # noinspection PyUnresolvedReferences
     assert events[0].reason == "disk full"
 
 

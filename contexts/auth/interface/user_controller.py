@@ -50,7 +50,7 @@ class UsersController(BaseController):
 
     @require_auth
     @require_permission("user:manage")
-    async def get_user(self, request, user_id: int):
+    async def get_user(self, _request, user_id: int):
         return self.json(await self.svc.get(user_id))
 
     @require_auth
@@ -66,7 +66,7 @@ class UsersController(BaseController):
 
     @require_auth
     @require_permission("user:manage")
-    async def delete_user(self, request, user_id: int):
+    async def delete_user(self, _request, user_id: int):
         await self.svc.delete(user_id)
         return self.json_ok()
 
@@ -78,7 +78,7 @@ class UsersController(BaseController):
 
     @require_auth
     @require_permission("user:manage")
-    async def get_perms(self, request, user_id: int):
+    async def get_perms(self, _request, user_id: int):
         return self.json(await self.svc.project_permissions(user_id))
 
     @require_auth

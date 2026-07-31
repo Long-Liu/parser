@@ -1,7 +1,7 @@
 """Tests for parsing domain services."""
 
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
 
 from contexts.parsing.domain.cell_unmerger import CellUnmerger, MergedCellRange
 from contexts.parsing.domain.data_extractor import DataRowExtractor
@@ -9,6 +9,8 @@ from contexts.parsing.domain.data_validator import DataValidator
 from contexts.parsing.domain.header_flattener import HeaderFlattener
 from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.parsing.domain.stop_detector import StopDetector
+
+# noinspection PyProtectedMember
 from contexts.parsing.infrastructure.data_writer import _model_values
 from contexts.shared.infrastructure.database.tables import (
     DataDynamicIndicator,

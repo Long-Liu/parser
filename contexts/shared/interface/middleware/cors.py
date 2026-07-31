@@ -37,6 +37,7 @@ def register(app, settings: Settings):
                     "Access-Control-Max-Age": "3600",
                 },
             )
+        return None
 
     @app.middleware("response")
     async def cors_headers(request: Request, response):

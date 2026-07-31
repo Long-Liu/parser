@@ -53,7 +53,8 @@ class YamlTemplateLoader:
     def load_all(self) -> list[Template]:
         return [self.load(tid) for tid in self.template_ids()]
 
-    def _build(self, data: dict) -> Template:
+    @staticmethod
+    def _build(data: dict) -> Template:
         header_rows = data.get("headers", {}).get("rows", [])
         data_start_row = data.get("headers", {}).get("data_start_row", 0)
         hierarchy = None

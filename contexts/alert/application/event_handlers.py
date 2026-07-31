@@ -10,6 +10,7 @@ each evaluation runs in its own transaction via AlertApplicationService's
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.parsing.domain.events import ParseJobCompleted, ParseJobConfirmed
@@ -58,7 +59,7 @@ class AlertEventHandlers:
             logger.debug("alert evaluation skipped: project %s not found", project_id)
 
 
-def _aggregate_int(aggregate_id: object) -> int:
+def _aggregate_int(aggregate_id: Any) -> int:
     if aggregate_id is None:
         raise ValueError("project event without aggregate_id")
     return int(str(aggregate_id))

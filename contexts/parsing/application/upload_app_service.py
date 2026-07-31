@@ -79,8 +79,11 @@ class UploadApplicationService(TransactionalService):
             uploaded_by=user_id,
         )
 
+        # noinspection PyBroadException
         try:
             stored_file = await self._file_storage.save(f"{batch_no}.xlsx", file.body)
+            if stored_file is None:
+                raise RuntimeError("file storage returned no file")
             job.file_info = FileInfo(filename=file.name, size=stored_file.size)
             sheet_results = await self._process_workbook(stored_file.path, job)
             # Alert evaluation is event-driven: the alert context subscribes to
@@ -90,6 +93,7 @@ class UploadApplicationService(TransactionalService):
         except Exception:
             logger.exception("upload failed for %s", batch_no)
             job.fail("processing error")
+            # noinspection PyBroadException
             try:
                 await self._save_failed_job(job)
                 await self._event_publisher.publish(job.pull_events())
@@ -116,6 +120,8 @@ class UploadApplicationService(TransactionalService):
             raise NotFoundError(f"project {project_id.value} not found")
         batch_no = self._make_batch_no()
         stored_file = await self._file_storage.save(f"{batch_no}.xlsx", file.body)
+        if stored_file is None:
+            raise RuntimeError("file storage returned no file")
         job = ParseJob.submit(
             None,
             project_id,
@@ -124,6 +130,7 @@ class UploadApplicationService(TransactionalService):
             batch_no,
             user_id,
         )
+        # noinspection PyBroadException
         try:
             await self._start_preview(job)
             payload, summary = await self._collect_preview_sheets(job, stored_file.path)
@@ -139,6 +146,7 @@ class UploadApplicationService(TransactionalService):
         except Exception:
             logger.exception("preview failed for %s", batch_no)
             job.fail("preview error")
+            # noinspection PyBroadException
             try:
                 await self._repo.save(job)
             except Exception:
@@ -207,6 +215,7 @@ class UploadApplicationService(TransactionalService):
         await self._preview_repo.delete(batch_id)
 
     async def _delete_stored_file(self, stored_file: StoredFile) -> None:
+        # noinspection PyBroadException
         try:
             await self._file_storage.delete(stored_file)
         except Exception:
@@ -273,9 +282,9 @@ class UploadApplicationService(TransactionalService):
         def parse():
             grid = self._unmerger.unmerge(sheet.grid, sheet.merged_ranges)
             flat_headers = self._flattener.flatten(grid, template.header_spec.header_rows)
-            rows = self._extractor.extract(grid, flat_headers, template)
-            valid_rows, errors = self._validator.validate(rows, template)
-            return rows, valid_rows, errors
+            extracted = self._extractor.extract(grid, flat_headers, template)
+            validated, validation_errors = self._validator.validate(extracted, template)
+            return extracted, validated, validation_errors
 
         rows, valid_rows, errors = await asyncio.to_thread(parse)
         job.set_extracted(sheet.name, rows, retain_rows=False)
@@ -302,7 +311,7 @@ class UploadApplicationService(TransactionalService):
     @classmethod
     def _json_safe(cls, value):
         if isinstance(value, Decimal):
-            return str(value)
+            return f"{value}"
         if isinstance(value, (date, datetime)):
             return value.isoformat()
         if isinstance(value, dict):
@@ -337,5 +346,6 @@ class UploadApplicationService(TransactionalService):
                 pass
         return value
 
-    def _make_batch_no(self) -> str:
+    @staticmethod
+    def _make_batch_no() -> str:
         return f"B{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"

@@ -1,10 +1,13 @@
+# ruff: noqa: I001
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from contextvars import ContextVar
 from functools import wraps
+
+# noinspection PyPackageRequirements
+from contextvars import ContextVar
 
 
 class TransactionManager(ABC):
@@ -47,7 +50,7 @@ def transactional(function: Callable):
     async def wrapped(*args, **kwargs):
         if not args or not isinstance(args[0], TransactionalService):
             raise RuntimeError("@transactional requires a TransactionalService method")
-        manager = args[0]._transaction_manager
+        manager = args[0].transaction_manager
         if _after_commit.get() is not None:
             return await function(*args, **kwargs)
         callbacks: list[Callable[[], Awaitable[None]]] = []

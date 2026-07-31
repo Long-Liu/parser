@@ -8,8 +8,6 @@ delegate here instead of duplicating the table list.
 
 from __future__ import annotations
 
-from typing import cast
-
 from contexts.parsing.infrastructure.tables import (
     UploadBatch,
     UploadLog,
@@ -21,7 +19,8 @@ from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 class ParsedDataCleanup:
     """Removes parsed data rows for upload batches."""
 
-    async def delete_for_batches(self, batch_ids: list[int]) -> None:
+    @staticmethod
+    async def delete_for_batches(batch_ids: list[int]) -> None:
         if not batch_ids:
             return
         for model in TEMPLATE_DATA_MODELS.values():
@@ -31,13 +30,10 @@ class ParsedDataCleanup:
         await UploadBatch.filter(id__in=batch_ids).delete()
 
     async def delete_for_project(self, project_id: int) -> None:
-        batch_ids = cast(
-            list[int],
-            list(
-                await UploadBatch.filter(project_id=project_id).values_list(
-                    "id",
-                    flat=True,
-                )
-            ),
+        batch_ids = list(
+            await UploadBatch.filter(project_id=project_id).values_list(
+                "id",
+                flat=True,
+            )
         )
         await self.delete_for_batches(batch_ids)

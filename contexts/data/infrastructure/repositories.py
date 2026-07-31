@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+# noinspection PyPackageRequirements
 from tortoise import fields
 
 from contexts.data.domain.data_query import DataRow, FilterCriterion
@@ -9,6 +10,11 @@ from contexts.data.domain.repositories import DataQueryRepository
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
+
+
+def _model_fields_map(model):
+    # noinspection PyProtectedMember
+    return model._meta.fields_map
 
 
 class TortoiseDataQueryRepository(DataQueryRepository):
@@ -26,13 +32,15 @@ class TortoiseDataQueryRepository(DataQueryRepository):
         qs = model.all()
         if batch_id is not None:
             qs = qs.filter(batch_id=batch_id)
-        model_fields = set(model._meta.fields_map)
+        # noinspection PyProtectedMember
+        model_fields = set(_model_fields_map(model))
         for f in filters:
             if f.field not in model_fields:
                 raise ValidationError(f"unknown filter field: {f.field}")
             if f.operator == "eq":
                 qs = qs.filter(**{f.field: f.value})
             elif f.operator == "like":
+                # noinspection PyTypeChecker
                 qs = qs.filter(**{f"{f.field}__contains": str(f.value)})
             else:
                 raise ValidationError(f"unsupported filter operator: {f.operator}")
@@ -60,7 +68,7 @@ class TortoiseDataQueryRepository(DataQueryRepository):
             raise NotFoundError(f"template {template_id} not found")
         return {
             name: "decimal" if isinstance(f, fields.DecimalField) else "other"
-            for name, f in model._meta.fields_map.items()
+            for name, f in _model_fields_map(model).items()
         }
 
     async def update_by_id(self, template_id: str, row_id: int, updates: dict) -> None:

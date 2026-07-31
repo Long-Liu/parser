@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+# noinspection PyPackageRequirements
 from tortoise.exceptions import IntegrityError
 
 from contexts.auth.domain.repositories import TokenRevocationRepository

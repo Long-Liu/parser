@@ -15,7 +15,8 @@ class MergedCellRange:
 class CellUnmerger:
     """Fill merged-cell regions so every cell carries the merged value."""
 
-    def unmerge(self, grid: list[list], merged_ranges: list[MergedCellRange]) -> list[list]:
+    @staticmethod
+    def unmerge(grid: list[list], merged_ranges: list[MergedCellRange]) -> list[list]:
         # ponytail: deepcopy avoids mutating caller's grid; acceptable for typical worksheet sizes
         result = deepcopy(grid)
         for merged_range in merged_ranges:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 from sanic_ext.extensions.openapi.builders import OperationStore, SpecificationBuilder
 
@@ -56,13 +57,14 @@ def test_registered_http_routes_have_complete_openapi_metadata():
         if operation is None:
             missing.append((route.path, "operation"))
             continue
-        if operation._exclude:
+        op: Any = operation
+        if op._exclude:
             continue
-        if not getattr(operation, "summary", None):
+        if not getattr(op, "summary", None):
             missing.append((route.path, "summary"))
-        if not getattr(operation, "description", None):
+        if not getattr(op, "description", None):
             missing.append((route.path, "description"))
-        if not operation.responses:
+        if not op.responses:
             missing.append((route.path, "responses"))
     assert missing == []
 

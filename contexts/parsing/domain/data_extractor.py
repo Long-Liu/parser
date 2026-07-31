@@ -92,12 +92,10 @@ class DataRowExtractor:
         stop_rule: StopRule,
     ) -> None:
         """Keep a total row valid even when its label occupies a numeric cell."""
+        non_null = [v for v in source_row if v is not None]
+        texts = [str(v) for v in non_null]
         marker = next(
-            (
-                str(value)
-                for value in source_row
-                if value is not None and any(re.match(pattern, str(value)) for pattern in stop_rule.patterns)
-            ),
+            (text for text in texts if any(re.match(pattern, text) for pattern in stop_rule.patterns)),
             None,
         )
         if marker is None:
@@ -111,7 +109,8 @@ class DataRowExtractor:
         if stop_rule.label_field:
             row_data.fields[stop_rule.label_field] = marker
 
-    def _resolve_hierarchy_column(self, grid: list[list], template: Template) -> int | None:
+    @staticmethod
+    def _resolve_hierarchy_column(grid: list[list], template: Template) -> int | None:
         """Locate the hierarchy column by matching the configured column name
         against raw header cells (whitespace-insensitive).
 
@@ -177,5 +176,5 @@ class DataRowExtractor:
         if isinstance(value, (date, datetime)):
             return value.isoformat()
         if isinstance(value, Decimal):
-            return str(value)
+            return f"{value}"
         return value

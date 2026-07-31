@@ -11,6 +11,8 @@ import re
 import tempfile
 
 import pytest
+
+# noinspection PyPackageRequirements
 from tortoise import fields
 
 from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
@@ -50,7 +52,11 @@ def test_template_ids_lists_directory(config_dir):
 
 def test_load_builds_template(config_dir):
     template = YamlTemplateLoader(config_dir=config_dir).load("test_tpl")
-    assert str(template.id) == "test_tpl"
+    tid = template.id
+    value = None
+    if tid is not None:
+        value = tid.value
+    assert value == "test_tpl"
     assert template.header_spec.data_start_row == 5
     assert len(template.fixed_columns) == 1
 
@@ -58,7 +64,11 @@ def test_load_builds_template(config_dir):
 def test_load_all_loads_every_config(config_dir):
     templates = YamlTemplateLoader(config_dir=config_dir).load_all()
     assert len(templates) == 1
-    assert str(templates[0].id) == "test_tpl"
+    tid = templates[0].id
+    value = None
+    if tid is not None:
+        value = tid.value
+    assert value == "test_tpl"
 
 
 def test_load_rejects_invalid_template_id(config_dir):
@@ -93,7 +103,10 @@ def test_all_template_configs_match_data_tables():
     assert loader.template_ids()
 
     for template in templates:
-        template_id = str(template.id)
+        tid = template.id
+        if tid is None:
+            continue
+        template_id = tid.value
         assert template_id in TEMPLATE_DATA_MODELS
         assert template.sheet_pattern
         assert template.header_spec.data_start_row

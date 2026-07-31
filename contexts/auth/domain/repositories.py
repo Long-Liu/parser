@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 
 from contexts.auth.domain.role import Role
 from contexts.auth.domain.user import User
@@ -28,10 +29,10 @@ class UserRepository(ABC):
     ) -> tuple[list[User], int]: ...
 
     @abstractmethod
-    async def list_projects(self, user_id: UserId) -> list[dict]: ...
+    async def list_projects(self, user_id: UserId) -> list[dict[str, Any]]: ...
 
-    async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict]]:
-        result: dict[int, list[dict]] = {}
+    async def list_projects_for_users(self, user_ids: list[UserId]) -> dict[int, list[dict[str, Any]]]:
+        result: dict[int, list[dict[str, Any]]] = {}
         for user_id in user_ids:
             result[user_id.value] = await self.list_projects(user_id)
         return result
@@ -39,7 +40,7 @@ class UserRepository(ABC):
     async def delete(self, user_id: UserId) -> None:
         raise NotImplementedError
 
-    async def set_project_permissions(self, user_id: UserId, permissions: list[dict]) -> None:
+    async def set_project_permissions(self, user_id: UserId, permissions: list[dict[str, Any]]) -> None:
         raise NotImplementedError
 
     async def set_system_role(self, user_id: UserId, role_code: str) -> None:

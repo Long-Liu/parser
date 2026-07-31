@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+# noinspection PyPackageRequirements
 from tortoise import Tortoise, connections
 
 from contexts.shared.infrastructure.config import Settings

@@ -4,6 +4,7 @@ import logging
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+# noinspection PyPackageRequirements
 from tortoise import fields as tortoise_fields
 
 from contexts.parsing.domain.data_sink import ParsedDataSink
@@ -18,6 +19,7 @@ def _model_values(model, values: dict) -> dict:
     """Normalize values according to the destination model field types."""
     normalized = {}
     for key, value in values.items():
+        # noinspection PyProtectedMember
         field = model._meta.fields_map.get(key)
         if field is None:
             continue

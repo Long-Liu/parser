@@ -1,8 +1,11 @@
+# noinspection PyPackageRequirements
 from tortoise import migrations
+
+# noinspection PyPackageRequirements
 from tortoise.migrations import operations as ops
 
 
-async def _shift_datetime_columns(apps, schema_editor, hours: int) -> None:
+async def _shift_datetime_columns(_apps, schema_editor, hours: int) -> None:
     rows = await schema_editor.client.execute_query_dict(
         """
         SELECT TABLE_NAME, COLUMN_NAME

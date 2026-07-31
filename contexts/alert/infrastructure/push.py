@@ -35,6 +35,7 @@ class AlertWebSocketHub:
                 allowed = self._projects.get(websocket, set())
                 if project_id not in allowed and ALL_PROJECTS not in allowed:
                     continue
+                # noinspection PyBroadException
                 try:
                     await websocket.send(json.dumps(message, ensure_ascii=False))
                 except Exception:
@@ -52,6 +53,7 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
         if self._lock.locked():
             return
         async with self._lock:
+            # noinspection PyPackageRequirements
             from tortoise.expressions import Q
 
             now = datetime.now(UTC)

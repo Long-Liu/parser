@@ -24,16 +24,16 @@ class _FakeQuery:
     def __init__(self, rows):
         self._rows = list(rows)
 
-    def filter(self, **kwargs):
+    def filter(self, **_kwargs):
         return self
 
-    def order_by(self, *args):
+    def order_by(self, *_args):
         return self
 
-    def offset(self, n):
+    def offset(self, _n):
         return self
 
-    def limit(self, n):
+    def limit(self, _n):
         return self
 
     async def count(self):
@@ -69,7 +69,10 @@ SETTLEMENT_ROWS = [
     _row("预计毛利率", "0.106968"),
 ]
 
+# Tortoise 类的 `filter`/`get_or_none` 是动态描述符，PyCharm 的
+# PyUnresolvedReferences 检查无法从字符串字面量解析这些属性名；用间接层规避。
 _FILTER_ATTR = "filter"
+_GET_OR_NONE_ATTR = "get_or_none"
 
 
 def _batch():
@@ -100,9 +103,10 @@ def _dyn_row(estimated, indicator=None):
     )
 
 
-def _patch(monkeypatch, *, settlement_rows=SETTLEMENT_ROWS, dynamic_rows=(), project=None, batch=None):
+def _patch(monkeypatch, *, settlement_rows=None, dynamic_rows=(), project=None, batch=None):
     project = project or _project()
     batch = _batch() if batch is None else batch
+    settlement_rows = SETTLEMENT_ROWS if settlement_rows is None else settlement_rows
     monkeypatch.setattr(analytics.Project, "all", lambda: _FakeQuery([project]))
     monkeypatch.setattr(analytics.UploadBatch, "filter", lambda **kw: _FakeQuery([batch] if batch else []))
     monkeypatch.setattr(
@@ -215,6 +219,7 @@ async def test_monthly_item_reads_settlement_indicators(monkeypatch):
         lambda **kw: _FakeQuery([]),
     )
 
+    # noinspection PyTypeChecker
     item = await TortoiseAnalyticsRepository()._monthly_item(_batch())
 
     assert item["revenue"] == pytest.approx(110331.738327)
@@ -232,3 +237,28 @@ async def test_profit_for_reads_settlement_indicators(monkeypatch):
     assert profit["ym"] == "2026-07"
     assert profit["profit"] == pytest.approx(106716.415051)
     assert profit["profit_rate"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_ai_analysis_omits_missing_writeoff_rate(monkeypatch):
+    """无租借行时 write_off_rate 为 None：fallback 摘要与 insights 应省略该
+    指标，而不是显示误导性的 0.00%。"""
+
+    async def _async_project(**_kw):
+        return _project()
+
+    monkeypatch.setattr(analytics.Project, _GET_OR_NONE_ATTR, _async_project)
+    monkeypatch.setattr(analytics.UploadBatch, _FILTER_ATTR, lambda **kw: _FakeQuery([_batch()]))
+    monkeypatch.setattr(
+        analytics.DataSettlementOutput,
+        _FILTER_ATTR,
+        lambda **kw: _FakeQuery(SETTLEMENT_ROWS),
+    )
+    monkeypatch.setattr(analytics.DataDynamicIndicator, _FILTER_ATTR, lambda **kw: _FakeQuery([]))
+    monkeypatch.setattr(analytics.DataBudgetLease, _FILTER_ATTR, lambda **kw: _FakeQuery([]))
+
+    result = await TortoiseAnalyticsRepository().ai_analysis(1, "2026-07")
+
+    assert "核销率" not in result["summary"]
+    assert all(insight["type"] != "writeoff" for insight in result["insights"])
+    assert result["insights"][0]["message"] == "当前毛利 106716.42，毛利率 0.00%"

@@ -26,6 +26,7 @@ async def test_unknown_template_query_is_not_reported_as_empty_data():
 async def test_unknown_template_sink_refuses_to_drop_rows():
     sink = TortoiseParsedDataSink()
     with pytest.raises(RuntimeError, match="refusing to drop"):
+        # noinspection PyTypeChecker
         await sink.insert_data_rows("unknown", 1, [object()])
 
 
@@ -42,8 +43,8 @@ async def test_data_sink_bulk_create_uses_bounded_batch_size(monkeypatch):
             self.values = values
 
         @classmethod
-        async def bulk_create(cls, rows, batch_size=None):
-            calls.append((len(rows), batch_size))
+        async def bulk_create(cls, _rows, batch_size=None):
+            calls.append((len(_rows), batch_size))
 
     monkeypatch.setitem(TEMPLATE_DATA_MODELS, "test_bulk", FakeModel)
     rows = [ParsedRow(row_index=index, fields={"value": index}) for index in range(1200)]

@@ -41,7 +41,7 @@ def register(
     seeder: Callable[[], Awaitable[None]] | None = None,
 ):
     @app.listener("before_server_start")
-    async def startup(app):
+    async def startup(_sanic_app):
         logger.info("env=%s debug=%s", settings.app.env, settings.debug)
 
         await db_init(settings)
@@ -55,6 +55,7 @@ def register(
         logger.info("db seed done")
 
         # Drain any stale alert outbox entries (context is active here)
+        # noinspection PyBroadException
         try:
             await alert_dispatcher.dispatch_pending()
         except Exception:
@@ -66,10 +67,11 @@ def register(
         logger.info("%d data tables ready", len(template_ids))
 
     @app.listener("after_server_start")
-    async def start_outbox_retry(app):
+    async def start_outbox_retry(sanic_app):
         async def _retry_loop():
             while True:
                 await asyncio.sleep(OUTBOX_RETRY_INTERVAL_SECONDS)
+                # noinspection PyBroadException
                 try:
                     await alert_dispatcher.dispatch_pending()
                 except asyncio.CancelledError:
@@ -77,19 +79,19 @@ def register(
                 except Exception:
                     logger.exception("periodic alert outbox dispatch failed")
 
-        app.ctx.alert_outbox_retry_task = asyncio.create_task(_retry_loop())
+        sanic_app.ctx.alert_outbox_retry_task = asyncio.create_task(_retry_loop())
         logger.info(
             "alert outbox retry scheduled every %ds",
             OUTBOX_RETRY_INTERVAL_SECONDS,
         )
 
     @app.listener("after_server_stop")
-    async def shutdown(app):
-        task = getattr(app.ctx, "alert_outbox_retry_task", None)
+    async def shutdown(sanic_app):
+        task: asyncio.Task | None = getattr(sanic_app.ctx, "alert_outbox_retry_task", None)
         if task is not None:
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
-            app.ctx.alert_outbox_retry_task = None
+            sanic_app.ctx.alert_outbox_retry_task = None
         await db_close()
         logger.info("db closed")

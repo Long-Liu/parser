@@ -112,7 +112,7 @@ class ProjectsController(BaseController):
     @require_auth
     @require_permission("project:view")
     @require_project_access()
-    async def get_project(self, request, project_id: int):
+    async def get_project(self, _request, project_id: int):
         return self.json(await self.svc.get_by_id(ProjectId(project_id)))
 
     @require_auth
@@ -130,7 +130,7 @@ class ProjectsController(BaseController):
     @require_auth
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
-    async def delete_project(self, request, project_id: int):
+    async def delete_project(self, _request, project_id: int):
         await self.svc.delete(project_id)
         return self.json_ok()
 
@@ -152,6 +152,6 @@ class ProjectsController(BaseController):
     @require_permission("user:manage")
     @openapi.tag("Project")
     @openapi.summary("Remove a user from a project")
-    async def remove_user(self, request, project_id: int, user_id: int):
+    async def remove_user(self, _request, project_id: int, user_id: int):
         await self.svc.remove_user(project_id, user_id)
         return self.json_ok()

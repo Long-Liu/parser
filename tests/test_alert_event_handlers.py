@@ -26,6 +26,7 @@ class FakeAlertService:
 
 
 def _wired_bus(alerts: FakeAlertService) -> DomainEventBus:
+    # noinspection PyTypeChecker
     handlers = AlertEventHandlers(alerts)
     bus = DomainEventBus()
     bus.subscribe(ParseJobCompleted, handlers.on_parse_job_completed)

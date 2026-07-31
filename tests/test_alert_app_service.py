@@ -4,14 +4,23 @@ import pytest
 
 from contexts.alert.application.alert_app_service import AlertApplicationService
 from contexts.alert.domain.alert import AlertLevel, AlertRule
+
+# noinspection PyProtectedMember
 from contexts.alert.infrastructure.repositories import _metric_decimal
+
+
+def _undecorate(handler):
+    """Strip Sanic/openapi decorators to reach the raw handler."""
+    while hasattr(handler, "__wrapped__"):
+        handler = handler.__wrapped__
+    return handler
 
 
 class FakeMetrics:
     def __init__(self, value=Decimal("8")):
         self.value = value
 
-    async def snapshot(self, project_id, ym=None):
+    async def snapshot(self, _project_id, ym=None):
         return ym or "2026-07", {"gross_profit_rate": self.value}
 
 
@@ -31,7 +40,8 @@ class FakeRepository:
         self.outbox = []
         self.counts = {}
 
-    async def rules(self):
+    @staticmethod
+    async def rules():
         return [
             AlertRule(
                 "GROSS_PROFIT_LOW",
@@ -52,14 +62,13 @@ class FakeRepository:
         return self.alerts.get(fingerprint)
 
     async def save(self, alert):
-        if alert.id is None:
-            alert.id = len(self.alerts) + 1
         self.alerts[alert.fingerprint] = alert
 
+    # noinspection PyUnusedParameter
     async def record_event(self, alert, event_type, actor_id=None, note=""):
         self.events.append(event_type)
 
-    async def add_outbox(self, alert, event_type):
+    async def add_outbox(self, _alert, event_type):
         self.outbox.append(event_type)
 
     async def get(self, alert_id):
@@ -70,15 +79,16 @@ class FakeRepository:
 async def test_evaluate_triggers_and_auto_resolves_alert():
     repo = FakeRepository()
     metrics = FakeMetrics()
+    # noinspection PyTypeChecker
     service = AlertApplicationService(repo, metrics, FakeDispatcher())
 
-    result = await AlertApplicationService.evaluate.__wrapped__(service, 10, "2026-07")
+    result = await _undecorate(AlertApplicationService.evaluate)(service, 10, "2026-07")
     assert result["triggered"] == 1
     assert repo.events == ["triggered"]
     assert repo.outbox == ["triggered"]
 
     metrics.value = Decimal("12")
-    result = await AlertApplicationService.evaluate.__wrapped__(service, 10, "2026-07")
+    result = await _undecorate(AlertApplicationService.evaluate)(service, 10, "2026-07")
     assert result["resolved"] == 1
     assert repo.events[-1] == "auto_resolved"
     assert repo.outbox[-1] == "resolved"

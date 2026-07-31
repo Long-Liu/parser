@@ -89,11 +89,13 @@ async def _run_pipeline(path: Path):
         template = next((t for t in templates if t.matches_sheet(sheet.name)), None)
         if template is None:
             continue
-        grid = unmerger.unmerge(sheet.grid, sheet.merged_ranges)
-        flat = flattener.flatten(grid, template.header_spec.header_rows)
-        rows = extractor.extract(grid, flat, template)
-        valid, errors = validator.validate(rows, template)
-        results[template.id.value] = (valid, errors)
+        tid = template.id
+        if tid is not None:
+            grid = unmerger.unmerge(sheet.grid, sheet.merged_ranges)
+            flat = flattener.flatten(grid, template.header_spec.header_rows)
+            rows = extractor.extract(grid, flat, template)
+            valid, errors = validator.validate(rows, template)
+            results[tid.value] = (valid, errors)
     return results
 
 

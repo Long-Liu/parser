@@ -16,6 +16,22 @@ from contexts.shared.domain.pagination import Pagination
 def _job_to_dict(job: ParseJob) -> dict:
     if job.id is None:
         raise RuntimeError("persisted parse job has no id")
+    sheets = []
+    for s in job.sheets:
+        tid = s.template_id
+        template_id = None
+        if tid is not None:
+            template_id = tid.value
+        sheets.append(
+            {
+                "sheet_name": s.sheet_name,
+                "template_id": template_id,
+                "match_status": s.match_status.value,
+                "total_rows": s.total_rows,
+                "success_rows": s.success_rows,
+                "error_rows": s.error_rows,
+            }
+        )
     return {
         "id": job.id.value,
         "project_id": job.project_id.value,
@@ -24,17 +40,7 @@ def _job_to_dict(job: ParseJob) -> dict:
         "file_size": job.file_info.size,
         "status": job.result_status,
         "job_status": job.status.value,
-        "sheets": [
-            {
-                "sheet_name": s.sheet_name,
-                "template_id": str(s.template_id) if s.template_id else None,
-                "match_status": s.match_status.value,
-                "total_rows": s.total_rows,
-                "success_rows": s.success_rows,
-                "error_rows": s.error_rows,
-            }
-            for s in job.sheets
-        ],
+        "sheets": sheets,
     }
 
 

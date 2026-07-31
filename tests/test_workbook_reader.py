@@ -9,6 +9,7 @@ from contexts.parsing.infrastructure.workbook_reader import worksheet_to_grid
 def test_worksheet_to_grid_ignores_format_only_used_range():
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
     ws["A1"] = "名称"
     ws["A2"] = "数据"
     ws.merge_cells("A3:C3")

@@ -25,7 +25,7 @@ def parse_int(value: str | None, default: int) -> int:
     try:
         return default if value is None else int(value)
     except (ValueError, TypeError):
-        raise ValidationError(f"invalid integer: {value}") from None
+        raise ValidationError(f"invalid integer: {value or ''}") from None
 
 
 def pagination_from(request, max_size: int = 100, default_size: int = 20) -> Pagination:

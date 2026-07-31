@@ -37,13 +37,13 @@ class TemplatesController(BaseController):
     @require_auth
     @openapi.tag("Template")
     @openapi.summary("Get template detail")
-    async def get_template(self, request, template_id: str):
+    async def get_template(self, _request, template_id: str):
         return self.json(await self.svc.get_by_id(TemplateId(template_id)))
 
     @require_auth
     @openapi.tag("Template")
     @openapi.summary("Download template skeleton xlsx")
-    async def download_template(self, request, template_id: str):
+    async def download_template(self, _request, template_id: str):
         content, filename = await self.svc.build_download(TemplateId(template_id))
         # RFC 5987: ASCII fallback filename + percent-encoded UTF-8 filename*
         disposition = f"attachment; filename=\"{template_id}.xlsx\"; filename*=UTF-8''{quote(filename)}"

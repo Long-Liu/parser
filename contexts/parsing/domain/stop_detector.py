@@ -34,8 +34,8 @@ class StopDetector:
     ) -> bool:
         return self.match_rule(row_index, grid, stop_rules) is not None
 
+    @staticmethod
     def _check_cell_match(
-        self,
         grid: list[list],
         row_index: int,
         patterns: list[str],
@@ -56,8 +56,8 @@ class StopDetector:
                         return True
         return False
 
+    @staticmethod
     def _check_consecutive_empty(
-        self,
         grid: list[list],
         row_index: int,
         count: int,

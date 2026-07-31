@@ -87,13 +87,13 @@ def require_project_access(*, roles: set[str] | None = None):
                 return await f(*args, **kwargs)
             raw = kwargs.get("project_id")
             if raw is None:
-                raw = request.args.get("project_id") or request.form.get("project_id")
+                raw = (request.args or {}).get("project_id") or (request.form or {}).get("project_id")
             try:
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require(
                     UserId(current_auth(request).user_id),
-                    int(str(raw)),
+                    int(raw or ""),
                     roles,
                 )
             except (TypeError, ValueError):
@@ -117,7 +117,7 @@ def require_batch_access(*, roles: set[str] | None = None):
                 return await f(*args, **kwargs)
             raw = kwargs.get("batch_id")
             if raw is None:
-                raw = request.args.get("batch_id") or request.form.get("batch_id")
+                raw = (request.args or {}).get("batch_id") or (request.form or {}).get("batch_id")
             if raw is None:
                 return json({"error": "batch_id is required"}, status=400)
             try:
@@ -125,7 +125,7 @@ def require_batch_access(*, roles: set[str] | None = None):
                 policy: ProjectAccessPolicy = services.project_access
                 await policy.require_batch(
                     UserId(current_auth(request).user_id),
-                    int(str(raw)),
+                    int(raw or ""),
                     roles,
                 )
             except (TypeError, ValueError):

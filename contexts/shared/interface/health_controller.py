@@ -9,7 +9,7 @@ bp = Blueprint("health")
 
 @bp.get("/favicon.ico")
 @openapi.exclude(True)
-async def favicon(request):
+async def favicon(_request):
     """Browsers request this automatically when opening Swagger UI."""
     return empty(status=204)
 

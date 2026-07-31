@@ -121,6 +121,7 @@ class FakeAlertService:
 def _controller():
     analytics = FakeAnalyticsService()
     alerts = FakeAlertService()
+    # noinspection PyTypeChecker
     return (
         AnalyticsController(analytics, SimpleNamespace(), alerts),
         analytics,

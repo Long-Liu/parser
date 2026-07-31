@@ -23,6 +23,7 @@ def worksheet_to_grid(ws) -> tuple[list[list], list[MergedCellRange]]:
     # real uploads report 65k rows or all 16,384 columns for only a handful of
     # populated cells.  Determine bounds from cells that actually carry values,
     # while retaining merged-range edges required by CellUnmerger.
+    # noinspection PyProtectedMember
     populated = [cell for cell in ws._cells.values() if cell.value is not None]
     max_row = max(
         [cell.row for cell in populated] + [item.max_row + 1 for item in ranges],

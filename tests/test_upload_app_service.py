@@ -1,6 +1,8 @@
 import contextlib
 
 import pytest
+
+# noinspection PyPackageRequirements
 import tortoise.transactions
 
 from contexts.parsing.application.dto import UploadedFile
@@ -26,6 +28,13 @@ from contexts.template.domain.template import (
     StopRuleType,
     Template,
 )
+
+
+def _undecorate(handler):
+    """Strip Sanic/openapi decorators to reach the raw handler."""
+    while hasattr(handler, "__wrapped__"):
+        handler = handler.__wrapped__
+    return handler
 
 
 class FakeRepo(ParseJobRepository):
@@ -127,16 +136,17 @@ class FakePreviewRepo:
     def __init__(self):
         self.data = None
 
-    async def save(self, batch_id, payload, summary):
+    async def save(self, _batch_id, payload, summary):
         self.data = {"payload": payload, "summary": summary}
 
-    async def get(self, batch_id):
+    async def get(self, _batch_id):
         return self.data
 
-    async def delete(self, batch_id):
+    async def delete(self, _batch_id):
         self.data = None
 
-    async def cleanup_expired(self, max_age_hours=24):
+    @staticmethod
+    async def cleanup_expired(_max_age_hours=24):
         return 0
 
 
@@ -151,14 +161,20 @@ class FakeProjectRepo(ProjectRepository):
         return None
 
     async def list_all(
-        self, *, keyword: str = "", status: str = "", offset: int = 0, limit: int = 20
+        self,
+        *,
+        keyword: str = "",
+        status: str = "",
+        user_id: UserId | None = None,
+        offset: int = 0,
+        limit: int = 20,
     ) -> tuple[list[Project], int]:
         return [], 0
 
 
 async def test_upload_process_records_extracted_event_and_counts(monkeypatch):
     @contextlib.asynccontextmanager
-    async def fake_transaction(connection_name=None):
+    async def fake_transaction(_connection_name=None):
         yield object()
 
     monkeypatch.setattr(tortoise.transactions, "in_transaction", fake_transaction)
@@ -228,13 +244,14 @@ async def test_upload_rejects_unknown_project_before_storing_file():
 
 async def test_upload_preview_does_not_write_until_confirmed(monkeypatch):
     @contextlib.asynccontextmanager
-    async def fake_transaction(connection_name=None):
+    async def fake_transaction(_connection_name=None):
         yield object()
 
     monkeypatch.setattr(tortoise.transactions, "in_transaction", fake_transaction)
     repo = FakeRepo()
     preview_repo = FakePreviewRepo()
     sink = FakeSink()
+    # noinspection PyTypeChecker
     service = UploadApplicationService(
         repo=repo,
         template_repo=FakeTemplateCatalog(),
@@ -255,7 +272,7 @@ async def test_upload_preview_does_not_write_until_confirmed(monkeypatch):
     assert preview["sheets"][0]["preview"] == [{"amount": 1}]
     assert sink.rows == []
 
-    confirmed = await UploadApplicationService.confirm.__wrapped__(
+    confirmed = await _undecorate(UploadApplicationService.confirm)(
         service,
         preview["batch_id"],
         UserId(1),
@@ -273,6 +290,7 @@ async def test_preview_does_not_hold_transaction_while_reading_workbook():
             assert transactions.active is False
             return await super().read(filepath)
 
+    # noinspection PyTypeChecker
     service = UploadApplicationService(
         repo=FakeRepo(),
         template_repo=FakeTemplateCatalog(),

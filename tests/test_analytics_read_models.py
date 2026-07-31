@@ -12,6 +12,8 @@ from decimal import Decimal
 from itertools import count
 
 import pytest
+
+# noinspection PyPackageRequirements
 from tortoise import Tortoise
 
 from contexts.analytics.domain.scoring import compare_scores, grade_for
@@ -22,6 +24,8 @@ from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.pagination import Pagination
+
+# noinspection PyProtectedMember
 from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import (
     SETTLE_CONTRACT_PRICE,
@@ -55,7 +59,7 @@ _seq = count(1)
 async def make_project(**kwargs) -> Project:
     n = next(_seq)
     defaults = {
-        "code": f"P{n:04d}",
+        "code": f"P{int(n):04d}",
         "name": f"项目{n}",
         "contract_price": Decimal("1000"),
         "progress": Decimal("80"),
@@ -67,7 +71,7 @@ async def make_project(**kwargs) -> Project:
 
 async def make_batch(project_id: int, ym: str, file_name: str = "cost.xlsx") -> UploadBatch:
     return await UploadBatch.create(
-        batch_no=f"T{next(_seq):06d}",
+        batch_no=f"T{int(next(_seq)):06d}",
         project_id=project_id,
         ym=ym,
         file_name=file_name,
@@ -406,7 +410,7 @@ async def test_month_comparison_computes_mom_changes(db):
             hierarchy_code="一",
             item_name="项目管理费",
             incurred_cost=Decimal(cost),
-            forecast_with_tax=Decimal(str(Decimal(cost) + Decimal("5"))),
+            forecast_with_tax=Decimal(f"{Decimal(cost) + Decimal('5')}"),
         )
 
     repo = TortoiseAnalyticsRepository()

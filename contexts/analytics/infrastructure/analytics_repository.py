@@ -5,7 +5,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, cast
 
+# noinspection PyPackageRequirements
 from tortoise.expressions import Q
+
+# noinspection PyPackageRequirements
 from tortoise.functions import Count, Sum
 
 from contexts.alert.infrastructure.tables import AlertModel
@@ -46,6 +49,15 @@ from contexts.shared.infrastructure.database.tables import (
 
 def _number(value) -> float:
     return float(value) if value is not None else 0.0
+
+
+def _number_or_none(value) -> float | None:
+    """Convert a numeric cell to float, preserving None for absent values.
+
+    Unlike ``_number`` (missing -> 0.0), callers that format or threshold
+    rates keep None so missing data is not presented as a 0% figure.
+    """
+    return float(value) if value is not None else None
 
 
 def _rate(profit: float, revenue: float) -> float:
@@ -505,13 +517,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         total = len(projects)
 
         pids = [project.id for project in projects]
-        batch_query = UploadBatch.filter(project_id__in=pids, status="success")
-        if ym:
-            batch_query = batch_query.filter(ym=ym)
-        batches: dict[int, UploadBatch] = {}
-        for batch in await batch_query.order_by("project_id", "-ym", "-id"):
-            if batch.project_id not in batches:
-                batches[batch.project_id] = batch
+        batches = await TortoiseAnalyticsRepository._latest_batch_map(pids, ym)
 
         rows_by_batch: dict[int, list[DataBudgetLease]] = {}
         if batches:
@@ -548,8 +554,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
 
         def total_for(path: tuple[str, ...]) -> float:
             values = []
-            for item in items:
-                value: Any = item
+            for entry in items:
+                value: Any = entry
                 for key in path:
                     value = value[key]
                 values.append(float(value))
@@ -580,15 +586,10 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             },
         }
 
-    async def _load_batches(self, projects, ym):
+    @staticmethod
+    async def _load_batches(projects, ym):
         pids = [p.id for p in projects]
-        batch_query = UploadBatch.filter(project_id__in=pids, status="success")
-        if ym:
-            batch_query = batch_query.filter(ym=ym)
-        batch_map = {}
-        for batch in await batch_query.order_by("project_id", "-ym", "-id"):
-            if batch.project_id not in batch_map:
-                batch_map[batch.project_id] = batch
+        batch_map = await TortoiseAnalyticsRepository._latest_batch_map(pids, ym)
         settlement_rows = await DataSettlementOutput.filter(batch_id__in=[b.id for b in batch_map.values()])
         profit_map = {}
         for row in settlement_rows:
@@ -605,7 +606,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             indicator_map[row.batch_id] = indicator_map.get(row.batch_id, 0.0) + float(value)
         return batch_map, profit_map, indicator_map
 
-    def _profit_item(self, project, batch_map, profit_map, indicator_map, ym) -> dict:
+    @staticmethod
+    def _profit_item(project, batch_map, profit_map, indicator_map, ym) -> dict:
         batch = batch_map.get(project.id)
         indicators = profit_map.get(batch.id) if batch else None
         indicators = indicators or {}
@@ -906,17 +908,22 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batch = await self._batch(project_id, ym)
         monthly = await self._monthly_item(batch) if batch else None
         # Repository helpers return numeric rates, but keep the API resilient to
-        # nullable/legacy rows before formatting or comparing them.
-        rate = _number(profits.get("profit_rate"))
-        health = "warning" if project.status == "warning" or rate < 10 else "healthy"
-        forecast_rate = _number(monthly.get("expected_complete_profit_rate")) if monthly else None
-        writeoff_rate = _number(monthly.get("write_off_rate")) if monthly else None
-        summary = f"当前毛利率为 {rate:.2f}%，项目状态为 {project.status}。"
+        # nullable/legacy rows: missing rates stay None so they are omitted from
+        # the summary instead of being reported as a misleading 0.00%.
+        rate = _number_or_none(profits.get("profit_rate"))
+        forecast_rate = _number_or_none(monthly.get("expected_complete_profit_rate")) if monthly else None
+        writeoff_rate = _number_or_none(monthly.get("write_off_rate")) if monthly else None
+        if rate is None:
+            health = "warning" if project.status == "warning" else "healthy"
+            summary = f"项目状态为 {project.status}。"
+        else:
+            health = "warning" if project.status == "warning" or rate < 10 else "healthy"
+            summary = f"当前毛利率为 {rate:.2f}%，项目状态为 {project.status}。"
         if forecast_rate is not None:
             summary += f"预计完工毛利率 {forecast_rate:.2f}%。"
         if writeoff_rate is not None:
             summary += f"租借核销率 {writeoff_rate:.2f}%。"
-        fallback = {
+        fallback: dict[str, Any] = {
             "project_id": project_id,
             "ym": profits["ym"],
             "health": health,
@@ -925,7 +932,11 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 {
                     "type": "profit",
                     "title": "毛利率表现",
-                    "message": f"当前毛利 {profits['profit']:.2f}，毛利率 {rate:.2f}%",
+                    "message": (
+                        f"当前毛利 {profits['profit']:.2f}，毛利率 {rate:.2f}%"
+                        if rate is not None
+                        else f"当前毛利 {profits['profit']:.2f}，毛利率数据缺失"
+                    ),
                 },
                 {
                     "type": "progress",
@@ -1044,7 +1055,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
         }
 
-    async def _business_search(self, keyword: str, project_ids: list[int] | None, limit: int) -> tuple[list[dict], int]:
+    @staticmethod
+    async def _business_search(keyword: str, project_ids: list[int] | None, limit: int) -> tuple[list[dict], int]:
         """Search parsed business data (materials / cost items / alerts).
 
         Data rows are scoped to the latest successful batch of each in-scope
@@ -1262,10 +1274,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
 
     @staticmethod
     async def _batch(project_id: int, ym: str | None):
-        query = UploadBatch.filter(project_id=project_id, status="success")
-        if ym:
-            query = query.filter(ym=ym)
-        return await query.order_by("-ym", "-id").first()
+        return (await TortoiseAnalyticsRepository._latest_batch_map([project_id], ym)).get(project_id)
 
     @staticmethod
     async def _latest_batch_map(project_ids: list[int], ym: str | None) -> dict[int, UploadBatch]:

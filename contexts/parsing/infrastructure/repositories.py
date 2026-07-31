@@ -32,10 +32,14 @@ def _job_to_batch_values(job: ParseJob) -> dict:
 
 
 def _sheet_to_log_values(sheet: SheetResult, batch_id: int) -> dict:
+    tid = sheet.template_id
+    template_id = None
+    if tid is not None:
+        template_id = tid.value
     return {
         "batch_id": batch_id,
         "sheet_name": sheet.sheet_name,
-        "template_id": str(sheet.template_id) if sheet.template_id else None,
+        "template_id": template_id,
         "action": ("matched" if sheet.match_status == MatchStatus.MATCHED else sheet.match_status.value),
         "total_rows": sheet.total_rows,
         "success_rows": sheet.success_rows,
@@ -131,6 +135,7 @@ class TortoiseParseJobRepository(ParseJobRepository):
 
 class TortoiseUploadPreviewRepository(UploadPreviewRepository):
     async def save(self, batch_id: int, payload: list[dict], summary: list[dict]) -> None:
+        # noinspection PyPackageRequirements
         from tortoise.exceptions import IntegrityError
 
         existing = await UploadPreview.get_or_none(batch_id=batch_id)

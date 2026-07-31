@@ -4,7 +4,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+# noinspection PyPackageRequirements
 from tortoise.exceptions import IntegrityError
+
+# noinspection PyPackageRequirements
 from tortoise.transactions import atomic
 
 from contexts.auth.infrastructure.tables import (

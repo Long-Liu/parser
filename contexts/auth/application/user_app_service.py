@@ -57,11 +57,7 @@ class UserApplicationService(TransactionalService):
             project_map = {user_id.value: await self._users.list_projects(user_id) for user_id in user_ids}
         result = []
         for index, user in enumerate(users, start=pagination.offset + 1):
-            projects = (
-                cast(list[dict[str, Any]], cast(object, project_map.get(user.id.value, [])))
-                if user.id
-                else []
-            )
+            projects = project_map.get(user.id.value, []) if user.id else []
             base = self._serialize(user, projects)
             base["serial_number"] = index
             base["main_projects"] = [p for p in projects if p["is_primary"]]
@@ -184,7 +180,7 @@ class UserApplicationService(TransactionalService):
         }
 
     @transactional
-    async def set_project_permissions(self, user_id: int, permissions: list[dict]) -> dict:
+    async def set_project_permissions(self, user_id: int, permissions: list[dict[str, Any]]) -> dict:
         allowed = {"manager", "viewer", "none"}
         if any("project_id" not in item or item.get("role") not in allowed for item in permissions):
             raise ValidationError("each permission requires project_id and role manager, viewer or none")
@@ -201,7 +197,7 @@ class UserApplicationService(TransactionalService):
                 await self._event_publisher.publish(events)
 
     @staticmethod
-    def _serialize(user: User, projects: list[dict]) -> dict:
+    def _serialize(user: User, projects: list[dict[str, Any]]) -> dict:
         return {
             "id": user.id.value if user.id else None,
             "username": user.username,

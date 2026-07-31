@@ -170,7 +170,7 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("project:create")
     @require_project_access(roles={"manager"})
-    async def delete_milestone(self, request, project_id: int, milestone_id: int):
+    async def delete_milestone(self, _request, project_id: int, milestone_id: int):
         await self.analytics_svc.delete_milestone(project_id, milestone_id)
         return self.json_ok()
 
@@ -196,7 +196,7 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:delete")
     @require_project_access(roles={"manager"})
-    async def delete_monthly_data(self, request, project_id: int, ym: str):
+    async def delete_monthly_data(self, _request, project_id: int, ym: str):
         await self.analytics_svc.delete_monthly_data(project_id, ym)
         return self.json_ok()
 
@@ -218,8 +218,8 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     async def cost_categories(self, request):
         try:
-            raw = request.args.get("project_ids", "")
-            ids = [int(v) for v in raw.split(",") if v.strip()]
+            raw_ids = request.args.get("project_ids", "")
+            ids = [int(v) for v in raw_ids.split(",") if v.strip()]
             ids = await self._project_scope(request, ids or None)
             return self.json(
                 await self.analytics_svc.cost_categories(
@@ -357,7 +357,7 @@ class AnalyticsController(BaseController):
         )
 
     @require_auth
-    async def sync_status(self, request):
+    async def sync_status(self, _request):
         return self.json(await self.analytics_svc.sync_status())
 
     # ── export endpoints ────────────────────────────────────────────────
@@ -411,6 +411,7 @@ class AnalyticsController(BaseController):
         result = await self.analytics_svc.project_analysis(project_id, request.args.get("ym"))
         wb = Workbook()
         overview = wb.active
+        assert overview is not None
         overview.title = "项目概览"
         for k, v in result["project"].items():
             overview.append([k, v])

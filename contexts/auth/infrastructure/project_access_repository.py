@@ -8,14 +8,11 @@ from contexts.shared.infrastructure.database.tables import TEMPLATE_DATA_MODELS
 
 class TortoiseProjectAccessRepository(ProjectAccessRepository):
     async def projects_for_user(self, user_id: int) -> list[int]:
-        return cast(
-            list[int],
-            list(
-                await ProjectUser.filter(user_id=user_id).values_list(
-                    "project_id",
-                    flat=True,
-                )
-            ),
+        return list(
+            await ProjectUser.filter(user_id=user_id).values_list(
+                "project_id",
+                flat=True,
+            )
         )
 
     async def membership_role(self, user_id: int, project_id: int) -> str | None:

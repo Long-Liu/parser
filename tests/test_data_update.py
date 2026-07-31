@@ -2,16 +2,25 @@
 
 import json as jsonlib
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
-from contexts.data.application.data_app_service import DataApplicationService
 from contexts.auth.interface.request_context import RequestAuth
+from contexts.data.application.data_app_service import DataApplicationService
 from contexts.data.domain.data_query import DataRow
 from contexts.data.domain.data_row_update import build_updates
 from contexts.data.domain.repositories import DataQueryRepository
 from contexts.data.interface.data_controller import DataController
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
+
+
+def _undecorate(handler):
+    """Strip Sanic/openapi decorators to reach the raw handler."""
+    while hasattr(handler, "__wrapped__"):
+        handler = handler.__wrapped__
+    return handler
+
 
 FIELD_TYPES = {
     "id": "other",
@@ -75,8 +84,10 @@ class FakeRepo(DataQueryRepository):
         return [], 0
 
     async def get_by_id(self, template_id: str, row_id: int):
-        row = self.rows.get((template_id, row_id))
-        return DataRow(fields=dict(row)) if row is not None else None
+        row: Any = self.rows.get((template_id, row_id))
+        if row is None:
+            return None
+        return DataRow(fields=dict(row))
 
     async def delete_by_id(self, template_id: str, row_id: int) -> None:
         self.rows.pop((template_id, row_id), None)
@@ -171,7 +182,7 @@ class FakeAuthorization:
     def __init__(self, permissions):
         self._permissions = permissions
 
-    async def authenticate(self, token):
+    async def authenticate(self, _token):
         return SimpleNamespace(
             user_id=1,
             username="tester",
@@ -217,10 +228,11 @@ def _controller():
         field_types={"gross_profit": FIELD_TYPES},
     )
     access = FakeAccessPolicy()
+    # noinspection PyTypeChecker
     return DataController(DataApplicationService(repo), access), access
 
 
-def _authed_request(controller, body, permissions=("data:upload",)):
+def _authed_request(_controller, body, permissions=("data:upload",)):
     req = _request(body=body)
     req.ctx.auth = RequestAuth(
         user_id=1,
@@ -232,7 +244,7 @@ def _authed_request(controller, body, permissions=("data:upload",)):
 
 async def test_put_handler_returns_updated_row():
     controller, access = _controller()
-    raw = DataController.update.__wrapped__.__wrapped__  # strip auth decorators
+    raw = _undecorate(DataController.update)  # strip auth decorators
     req = _authed_request(
         controller,
         {
@@ -251,7 +263,7 @@ async def test_put_handler_returns_updated_row():
 
 async def test_put_handler_rejects_non_object_fields():
     controller, _ = _controller()
-    raw = DataController.update.__wrapped__.__wrapped__
+    raw = _undecorate(DataController.update)
     req = _authed_request(controller, {"fields": "oops"})
     with pytest.raises(ValidationError, match="fields"):
         await raw(controller, req, template_id="gross_profit", row_id=5)
@@ -259,7 +271,7 @@ async def test_put_handler_rejects_non_object_fields():
 
 async def test_put_handler_missing_row_raises_not_found():
     controller, _ = _controller()
-    raw = DataController.update.__wrapped__.__wrapped__
+    raw = _undecorate(DataController.update)
     req = _authed_request(controller, {"fields": {"remark": "x"}})
     with pytest.raises(NotFoundError, match="row 999"):
         await raw(controller, req, template_id="gross_profit", row_id=999)
@@ -323,13 +335,13 @@ def _protected_app(permissions, *, with_permission: bool):
         @app.get("/protected")
         @require_auth
         @require_permission("data:upload")
-        async def protected(request):
+        async def protected(_request):
             return json({"ok": True})
     else:
 
         @app.get("/protected")
         @require_auth
-        async def protected(request):
+        async def protected(_request):
             return json({"ok": True})
 
     app.finalize()

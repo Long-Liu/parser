@@ -1,6 +1,9 @@
 """Tortoise models for the parsing context."""
 
+# noinspection PyPackageRequirements
 from tortoise import fields
+
+# noinspection PyPackageRequirements
 from tortoise.models import Model
 
 

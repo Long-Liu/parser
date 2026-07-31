@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from contexts.shared.domain.base_value_object import ValueObject
 
@@ -9,7 +10,7 @@ from contexts.shared.domain.base_value_object import ValueObject
 class FilterCriterion(ValueObject):
     field: str
     operator: str
-    value: object
+    value: Any
 
 
 @dataclass(frozen=True)

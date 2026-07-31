@@ -19,7 +19,7 @@ class TemplateApplicationService:
         return {
             "templates": [
                 {
-                    "template_id": str(t.id),
+                    "template_id": t.id.value if t.id else None,
                     "description": t.description,
                     "sheet_pattern": t.sheet_pattern,
                     "data_table": t.data_table,
@@ -34,7 +34,7 @@ class TemplateApplicationService:
         if not t:
             raise NotFoundError(f"template {template_id} not found")
         return {
-            "template_id": str(t.id),
+            "template_id": t.id.value if t.id else None,
             "description": t.description,
             "data_table": t.data_table,
             "fixed_columns": [c.db_field for c in t.fixed_columns],
@@ -46,5 +46,5 @@ class TemplateApplicationService:
         t = await self._repo.find_by_id(template_id)
         if not t:
             raise NotFoundError(f"template {template_id} not found")
-        filename = f"{t.description or str(template_id)}.xlsx"
+        filename = f"{t.description or template_id}.xlsx"
         return build_template_workbook(t), filename

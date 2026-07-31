@@ -109,7 +109,9 @@ class AlertController(BaseController):
     async def acknowledge(self, request, alert_id: int):
         await self._authorize_alert(request, alert_id)
         body = request.json or {}
-        return self.json(await self.alert_svc.acknowledge(alert_id, current_auth(request).user_id, body.get("note", "")))
+        return self.json(
+            await self.alert_svc.acknowledge(alert_id, current_auth(request).user_id, body.get("note", ""))
+        )
 
     @require_auth
     @require_permission("data:delete")

@@ -41,6 +41,7 @@ def _hash_old() -> str:
     global _old_hash
     if _old_hash is None:
         _old_hash = _hasher.hash(OLD_PASSWORD)
+    assert _old_hash is not None
     return _old_hash
 
 
@@ -59,6 +60,7 @@ class FakeUserRepository:
         return next((u for u in self.users.values() if u.username == username), None)
 
     async def save(self, user):
+        # noinspection PyUnreachableCode
         if user.id is None:
             user.id = UserId(max(self.users, default=0) + 1)
         self.users[user.id.value] = user
@@ -99,6 +101,7 @@ def stack():
     repo = FakeUserRepository()
     jwt_svc = JwtService(TEST_SECRET)
     revocations = FakeTokenRevocationRepository()
+    # noinspection PyTypeChecker
     auth_svc = AuthApplicationService(
         repo,
         AuthenticationService(_hasher),
@@ -108,6 +111,7 @@ def stack():
         None,
         revocations,
     )
+    # noinspection PyTypeChecker
     authz = AuthorizationApplicationService(repo, jwt_svc, revocations)
     return SimpleNamespace(
         repo=repo,
@@ -203,11 +207,12 @@ async def test_change_password_revoked_token_hits_middleware_401(stack):
     # tests/test_endpoint_smoke.py).
     app = Sanic("auth_revoked_smoke")
     app.asgi = True
+    # noinspection PyTypeChecker
     app.ctx.services = RequestServices(authorization=stack.authz, project_access=None)
 
     @app.get("/protected")
     @require_auth
-    async def protected(request):
+    async def protected(_request):
         return json({"ok": True})
 
     app.finalize()
@@ -281,6 +286,7 @@ def _settings(allow_open: bool) -> Settings:
 
 
 async def test_register_open_allows_anonymous(stack):
+    # noinspection PyTypeChecker
     controller = AuthController(stack.auth, user_svc=None)
     request = _request(
         settings=_settings(True),
@@ -292,6 +298,7 @@ async def test_register_open_allows_anonymous(stack):
 
 
 async def test_register_closed_rejects_anonymous_401(stack):
+    # noinspection PyTypeChecker
     controller = AuthController(stack.auth, user_svc=None)
     request = _request(
         settings=_settings(False),
@@ -302,7 +309,9 @@ async def test_register_closed_rejects_anonymous_401(stack):
 
 
 async def test_register_closed_rejects_non_admin_403(stack):
+    # noinspection PyTypeChecker
     controller = AuthController(stack.auth, user_svc=None)
+    # noinspection PyTypeChecker
     services = RequestServices(authorization=stack.authz, project_access=None)
     token = stack.jwt.generate(UserId(1), "alice")  # no user:manage
     request = _request(
@@ -316,7 +325,9 @@ async def test_register_closed_rejects_non_admin_403(stack):
 
 
 async def test_register_closed_allows_user_manage_admin(stack):
+    # noinspection PyTypeChecker
     controller = AuthController(stack.auth, user_svc=None)
+    # noinspection PyTypeChecker
     services = RequestServices(authorization=stack.authz, project_access=None)
     token = stack.jwt.generate(UserId(2), "admin")
     request = _request(

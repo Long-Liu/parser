@@ -1,6 +1,8 @@
 from decimal import Decimal
 
 import pytest
+
+# noinspection PyPackageRequirements
 from tortoise import Tortoise
 
 from contexts.auth.infrastructure.tables import User as OrmUser
@@ -10,7 +12,16 @@ from contexts.project.infrastructure.repositories import TortoiseUserDirectory
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId
 from contexts.shared.domain.pagination import Pagination
+
+# noinspection PyProtectedMember
 from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
+
+
+def _undecorate(handler):
+    """Strip Sanic/openapi decorators to reach the raw handler."""
+    while hasattr(handler, "__wrapped__"):
+        handler = handler.__wrapped__
+    return handler
 
 
 @pytest.fixture
@@ -44,8 +55,7 @@ class FakeProjectRepository:
         return self.project if project_id.value == 1 else None
 
     async def save(self, project):
-        if project.id is None:
-            project.id = ProjectId(2)
+        project.id = project.id or ProjectId(2)
         self.project = project
 
     async def list_all(self, **kwargs):
@@ -65,16 +75,19 @@ class FakeCleanup:
 
 
 class FakeUsers:
-    async def exists(self, user_id):
+    @staticmethod
+    async def exists(user_id):
         return user_id.value == 7
 
-    async def user_id_by_real_name(self, real_name):
+    @staticmethod
+    async def user_id_by_real_name(real_name):
         return 7 if real_name == "张三" else None
 
 
 @pytest.mark.asyncio
 async def test_project_list_is_filtered_and_paginated():
     repo = FakeProjectRepository()
+    # noinspection PyTypeChecker
     result = await ProjectApplicationService(repo).list_all(
         keyword=" 上高 ",
         status="normal",
@@ -93,8 +106,10 @@ async def test_project_list_is_filtered_and_paginated():
 @pytest.mark.asyncio
 async def test_project_create_generates_code_for_ui_form_without_code():
     repo = FakeProjectRepository()
-    result = await ProjectApplicationService.create.__wrapped__(
-        ProjectApplicationService(repo),
+    # noinspection PyTypeChecker
+    service = ProjectApplicationService(repo)
+    result = await _undecorate(ProjectApplicationService.create)(
+        service,
         "",
         "无编号项目",
     )
@@ -105,8 +120,10 @@ async def test_project_create_generates_code_for_ui_form_without_code():
 @pytest.mark.asyncio
 async def test_project_create_resolves_ui_leader_name():
     repo = FakeProjectRepository()
-    result = await ProjectApplicationService.create.__wrapped__(
-        ProjectApplicationService(repo, users=FakeUsers()),
+    # noinspection PyTypeChecker
+    service = ProjectApplicationService(repo, users=FakeUsers())
+    result = await _undecorate(ProjectApplicationService.create)(
+        service,
         "",
         "负责人项目",
         manager_name="张三",
@@ -127,8 +144,9 @@ async def test_project_manager_lookup_rejects_duplicate_real_names(db):
 async def test_project_update_and_delete():
     repo = FakeProjectRepository()
     cleanup = FakeCleanup()
+    # noinspection PyTypeChecker
     service = ProjectApplicationService(repo, cleanup=cleanup)
-    updated = await ProjectApplicationService.update.__wrapped__(
+    updated = await _undecorate(ProjectApplicationService.update)(
         service,
         1,
         name="新名称",
@@ -136,7 +154,7 @@ async def test_project_update_and_delete():
     )
     assert updated["name"] == "新名称"
     assert updated["progress"] == 90.0
-    await ProjectApplicationService.delete.__wrapped__(service, 1)
+    await _undecorate(ProjectApplicationService.delete)(service, 1)
     assert cleanup.deleted == 1
     assert repo.deleted == 1
 
@@ -145,9 +163,10 @@ async def test_project_update_and_delete():
 async def test_project_assignment_rejects_unknown_user():
     from contexts.shared.domain.exceptions import NotFoundError
 
+    # noinspection PyTypeChecker
     service = ProjectApplicationService(FakeProjectRepository(), users=FakeUsers())
     with pytest.raises(NotFoundError, match="user 99"):
-        await ProjectApplicationService.assign_user.__wrapped__(
+        await _undecorate(ProjectApplicationService.assign_user)(
             service,
             1,
             99,
@@ -168,7 +187,7 @@ class EnrichFakeRepository:
     def __init__(self, projects):
         self.projects = projects
 
-    async def list_all(self, **kwargs):
+    async def list_all(self, **_kwargs):
         return self.projects, len(self.projects)
 
     async def find_by_id(self, project_id):
@@ -180,7 +199,8 @@ class FakeUsersWithNames:
         self.names = names
         self.name_calls = []
 
-    async def exists(self, user_id):
+    @staticmethod
+    async def exists(_user_id):
         return True
 
     async def real_names(self, user_ids):
@@ -218,11 +238,8 @@ async def test_project_list_enriched_with_manager_name_and_latest_metrics():
             1: {"latest_ym": "2025-05", "revenue": 1000.0, "cost": 800.0, "profit": 200.0, "profit_rate": 0.2},
         }
     )
-    service = ProjectApplicationService(
-        EnrichFakeRepository(projects),
-        users=users,
-        metrics=metrics,
-    )
+    # noinspection PyTypeChecker
+    service = ProjectApplicationService(EnrichFakeRepository(projects), users=users, metrics=metrics)
     result = await service.list_all(pagination=Pagination(1, 20, max_size=100))
     items = {p["id"]: p for p in result["projects"]}
 
@@ -260,11 +277,10 @@ async def test_project_detail_enriched_with_manager_name_and_latest_metrics():
             1: {"latest_ym": "2025-06", "revenue": 2000.0, "cost": 1500.0, "profit": 500.0, "profit_rate": 0.25},
         }
     )
-    service = ProjectApplicationService(
-        EnrichFakeRepository([_make_project(1, manager=7)]),
-        users=users,
-        metrics=metrics,
-    )
+    # noinspection PyTypeChecker
+    repo = EnrichFakeRepository([_make_project(1, manager=7)])
+    # noinspection PyTypeChecker
+    service = ProjectApplicationService(repo, users=users, metrics=metrics)
     detail = await service.get_by_id(ProjectId(1))
     assert detail["manager_name"] == "张三"
     assert detail["latest_ym"] == "2025-06"
@@ -278,6 +294,7 @@ async def test_project_detail_enriched_with_manager_name_and_latest_metrics():
 
 @pytest.mark.asyncio
 async def test_project_enrichment_defaults_to_none_without_providers():
+    # noinspection PyTypeChecker
     service = ProjectApplicationService(EnrichFakeRepository([_make_project(1, 7)]))
     item = (await service.list_all(pagination=Pagination(1, 20, max_size=100)))["projects"][0]
     assert item["manager_name"] is None

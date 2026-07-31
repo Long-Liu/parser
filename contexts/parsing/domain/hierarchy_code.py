@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from typing import Any
 
 # Full-width ASCII variants (Ａ-ｚ０-９（）．etc.) → half-width, plus ideographic space.
 _FULLWIDTH_TRANS = {c: c - 0xFEE0 for c in range(0xFF01, 0xFF5F)}
@@ -30,7 +31,7 @@ MAX_CODE_LENGTH = 50
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def normalize_serial_text(value: object) -> str | None:
+def normalize_serial_text(value: Any) -> str | None:
     """Stringify a raw cell value into candidate serial text, or None."""
     if value is None or isinstance(value, (datetime, date, bool)):
         return None

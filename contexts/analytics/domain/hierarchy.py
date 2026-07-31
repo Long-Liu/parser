@@ -42,11 +42,10 @@ def resolve_hierarchy_paths(items: list[dict]) -> list[dict]:
     """
     current_top: str | None = None
     for item in items:
-        code = item.get("hierarchy_code")
+        code = str(item.get("hierarchy_code") or "")
         if not code:
             item["level"] = None
             continue
-        code = str(code)
         if _CN_NUMERAL_RE.match(code):
             current_top = code
             item["level"] = 1

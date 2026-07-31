@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.domain.alert import Alert, AlertLevel, AlertRule, AlertStatus
@@ -76,7 +77,7 @@ def _payload(row: AlertModel) -> dict:
 
 def _metric_decimal(value: Decimal) -> Decimal:
     """Match the alert table's DECIMAL(..., 4) scale before MySQL sees it."""
-    return Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return Decimal(f"{value}").quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 class TortoiseAlertRepository(AlertRepository):
@@ -370,9 +371,9 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
             # the rule threshold scale. When the indicator row is missing the
             # metric stays absent so the rule keeps skipping instead of
             # evaluating a fabricated default.
-            rate = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
+            rate: Any = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
             if rate is not None:
-                metrics["gross_profit_rate"] = Decimal(str(rate)) * 100
+                metrics["gross_profit_rate"] = Decimal(f"{rate}") * 100
             rows = await DataDynamicIndicator.filter(batch_id=batch.id)
             indicator = sum((Decimal(row.indicator_with_tax or 0) for row in rows), Decimal("0"))
             actual = sum((Decimal(row.incurred_cost or 0) for row in rows), Decimal("0"))
