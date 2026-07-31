@@ -22,6 +22,10 @@ logger = logging.getLogger("parser")
 # How often the alert outbox is swept for failed messages awaiting retry.
 OUTBOX_RETRY_INTERVAL_SECONDS = 30
 
+# How often expired JWT-blacklist rows are purged. The request path only
+# SELECTs; the DELETE moved here to avoid per-request write amplification.
+TOKEN_PURGE_INTERVAL_SECONDS = 60
+
 
 class AlertOutboxDispatcher(Protocol):
     """Structural port for the alert outbox dispatcher.
@@ -33,12 +37,23 @@ class AlertOutboxDispatcher(Protocol):
     async def dispatch_pending(self) -> None: ...
 
 
+class TokenPurge(Protocol):
+    """Structural port for the revoked-token cleanup task.
+
+    Declared locally so the shared context never imports from the auth
+    context (the concrete implementation is TortoiseTokenRevocationRepository).
+    """
+
+    async def purge_expired(self) -> int: ...
+
+
 def register(
     app,
     settings: Settings,
     alert_dispatcher: AlertOutboxDispatcher,
     template_config_provider: Callable[[], list[str]] | None = None,
     seeder: Callable[[], Awaitable[None]] | None = None,
+    token_purge: TokenPurge | None = None,
 ):
     @app.listener("before_server_start")
     async def startup(_sanic_app):
@@ -67,7 +82,7 @@ def register(
         logger.info("%d data tables ready", len(template_ids))
 
     @app.listener("after_server_start")
-    async def start_outbox_retry(sanic_app):
+    async def start_background_tasks(sanic_app):
         async def _retry_loop():
             while True:
                 await asyncio.sleep(OUTBOX_RETRY_INTERVAL_SECONDS)
@@ -85,6 +100,24 @@ def register(
             OUTBOX_RETRY_INTERVAL_SECONDS,
         )
 
+        async def _purge_loop(purge: TokenPurge) -> None:
+            while True:
+                await asyncio.sleep(TOKEN_PURGE_INTERVAL_SECONDS)
+                # noinspection PyBroadException
+                try:
+                    await purge.purge_expired()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("periodic revoked-token purge failed")
+
+        if token_purge is not None:
+            sanic_app.ctx.token_purge_task = asyncio.create_task(_purge_loop(token_purge))
+            logger.info(
+                "revoked-token purge scheduled every %ds",
+                TOKEN_PURGE_INTERVAL_SECONDS,
+            )
+
     @app.listener("after_server_stop")
     async def shutdown(sanic_app):
         task: asyncio.Task | None = getattr(sanic_app.ctx, "alert_outbox_retry_task", None)
@@ -93,5 +126,11 @@ def register(
             with suppress(asyncio.CancelledError):
                 await task
             sanic_app.ctx.alert_outbox_retry_task = None
+        purge_task: asyncio.Task | None = getattr(sanic_app.ctx, "token_purge_task", None)
+        if purge_task is not None:
+            purge_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await purge_task
+            sanic_app.ctx.token_purge_task = None
         await db_close()
         logger.info("db closed")

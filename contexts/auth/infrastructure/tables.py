@@ -70,12 +70,12 @@ class Notification(Model):
     title = fields.CharField(max_length=200)
     message = fields.TextField()
     project_id = fields.IntField(null=True)
-    is_read = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "notifications"
-        indexes = (("user_id", "is_read"),)
+        # 已读状态存于 notification_reads；is_read 死列已在迁移 0010 移除。
+        indexes = (("user_id",),)
 
 
 class NotificationRead(Model):
@@ -95,7 +95,8 @@ class RevokedToken(Model):
     ``jti`` is either a real token id (single-token revocation, logout) or the
     user-wide sentinel ``user:{user_id}`` (revoke every token issued at/before
     ``revoked_at``, password change). Rows past ``expires_at`` are dead weight
-    and are purged lazily during blacklist checks.
+    and are purged by the periodic ``purge_expired`` background task (see
+    ``contexts.shared.infrastructure.database.bootstrap``).
     """
 
     id = fields.IntField(primary_key=True)

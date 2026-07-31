@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, cast
 
 # noinspection PyPackageRequirements
-from tortoise.expressions import Q
+from tortoise.expressions import Q, Subquery
 
 # noinspection PyPackageRequirements
 from tortoise.functions import Count, Sum
@@ -165,19 +166,28 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             ym__in=list(set(months)),
             status="success",
         ).order_by("ym", "-id")
+        # 批量加载全部月份的数据，避免逐月 4 次查询（settlement/dynamic/lease + 成本科目）。
+        batch_ids = [batch.id for batch in batches]
+        data_maps = await self._monthly_data_maps(batch_ids)
+        cost_rows = (
+            await DataDynamicIndicator.filter(batch_id__in=batch_ids).exclude(item_name=None).order_by("id")
+            if batch_ids
+            else []
+        )
+        costs_by_batch: dict[int, list[DataDynamicIndicator]] = defaultdict(list)
+        for row in cost_rows:
+            costs_by_batch[row.batch_id].append(row)
         seen = set()
         items = []
         for batch in batches:
             if batch.ym in seen:
                 continue
             seen.add(batch.ym)
-            item = await self._monthly_item(batch)
-            cost_rows = (
-                await DataDynamicIndicator.filter(
-                    batch_id=batch.id,
-                )
-                .exclude(item_name=None)
-                .order_by("id")
+            item = self._monthly_item_from_data(
+                batch,
+                data_maps["settlement"].get(batch.id, []),
+                data_maps["dynamic"].get(batch.id, []),
+                data_maps["lease"].get(batch.id, []),
             )
             costs = [
                 {
@@ -188,7 +198,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                         row.forecast_with_tax if row.forecast_with_tax is not None else row.estimated_with_tax
                     ),
                 }
-                for row in cost_rows
+                for row in costs_by_batch.get(batch.id, [])
             ]
             resolve_hierarchy_paths(costs)
             item["cost_categories"] = costs
@@ -258,14 +268,6 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         # cost_categories/profits kept for backward compatibility; "projects"
         # carries the 9-metric comparison table plus five-dimension scores.
         return {"cost_categories": costs["projects"], "profits": profits, "projects": metrics}
-
-    async def _compare_item(self, project: Project, ym: str | None) -> dict:
-        batch = await self._batch(project.id, ym)
-        indicators: dict = {}
-        if batch is not None:
-            rows = await DataSettlementOutput.filter(batch_id=batch.id)
-            indicators = settlement_indicator_map(rows)
-        return self._compare_item_from_data(project, batch, indicators, ym)
 
     @staticmethod
     def _compare_item_from_data(
@@ -353,29 +355,32 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             totals.append(total)
             # 层级路径解析是位置状态机（中文数字大类下编号会重启），必须在
             # 完整有序行集上运行后再分页切片，不能先 OFFSET/LIMIT。
-            items = [
-                {
-                    "hierarchy_code": row.hierarchy_code,
-                    "name": row.item_name,
-                    "indicator": _number(row.indicator_with_tax),
-                    "actual": _number(row.incurred_cost),
-                    "deviation": round(_number(row.incurred_cost) - _number(row.indicator_with_tax), 2),
-                    "deviation_rate": _rate(
-                        _number(row.incurred_cost) - _number(row.indicator_with_tax),
-                        _number(row.indicator_with_tax),
-                    ),
-                    # 六口径补充列（data_dynamic_indicator 现有列）：
-                    "list_target": _number(row.estimated_with_tax),  # 预计完工量含税指标
-                    "adj_target": _number(row.adjusted_with_tax),  # 分包策划调整后指标
-                    "budget": _number(row.current_budget),  # 现执行预算
-                    # 新数据优先使用预计完工成本（动态情况）含税值；
-                    # 迁移前存量数据回退预计完工量含税指标。
-                    "forecast": _number(
-                        row.forecast_with_tax if row.forecast_with_tax is not None else row.estimated_with_tax
-                    ),
-                }
-                for row in rows
-            ]
+            items = []
+            for row in rows:
+                indicator = _number(row.indicator_with_tax)
+                actual = _number(row.incurred_cost)
+                deviation = round(actual - indicator, 2)
+                items.append(
+                    {
+                        "hierarchy_code": row.hierarchy_code,
+                        "name": row.item_name,
+                        "indicator": indicator,
+                        "actual": actual,
+                        "deviation": deviation,
+                        # 偏差率沿用旧行为：用未取整差值计算（round 后偏差与旧版
+                        # 可能在半分位边界差 0.01pp，这里保持与历史值一致）。
+                        "deviation_rate": _rate(actual - indicator, indicator),
+                        # 六口径补充列（data_dynamic_indicator 现有列）：
+                        "list_target": _number(row.estimated_with_tax),  # 预计完工量含税指标
+                        "adj_target": _number(row.adjusted_with_tax),  # 分包策划调整后指标
+                        "budget": _number(row.current_budget),  # 现执行预算
+                        # 新数据优先使用预计完工成本（动态情况）含税值；
+                        # 迁移前存量数据回退预计完工量含税指标。
+                        "forecast": _number(
+                            row.forecast_with_tax if row.forecast_with_tax is not None else row.estimated_with_tax
+                        ),
+                    }
+                )
             # hierarchy_code 重写为全路径（如 "二.2.1"）并补 level；
             # 存量数据该列为 NULL 的行保持平铺（level=None）。
             resolve_hierarchy_paths(items)
@@ -690,12 +695,62 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "health_radar": self._health_radar_from_data(projects, profits["projects"]),
         }
 
+    async def dashboard_summary(self, project_ids: list[int] | None = None) -> dict:
+        """Lightweight summary for /dashboard/summary.
+
+        The full dashboard() additionally computes trends, cost composition and
+        the health radar — wasted work for callers that only read the summary.
+        total_profit is the same per-project current-profit aggregation used by
+        dashboard(), computed here without the sibling report queries.
+        """
+        summary = await self.project_summary(project_ids)
+        query = Project.all()
+        if project_ids is not None:
+            query = query.filter(id__in=project_ids)
+        projects = await query.order_by("id")
+        batch_map, profit_map, indicator_map = await self._load_batches(projects, None)
+        total_profit = round(
+            sum(
+                self._profit_item(project, batch_map, profit_map, indicator_map, None)["current"]["profit"]
+                for project in projects
+            ),
+            2,
+        )
+        return {**summary, "total_profit": total_profit}
+
+    async def dashboard_status(
+        self,
+        project_ids: list[int] | None = None,
+        pagination: Pagination | None = None,
+    ) -> dict:
+        """Paged project status rows for /dashboard/project-status.
+
+        The full dashboard() projects every row then slices in Python; this
+        pushes the LIMIT/OFFSET into SQL.
+        """
+        query = Project.all()
+        if project_ids is not None:
+            query = query.filter(id__in=project_ids)
+        total = await query.count()
+        page = pagination or Pagination(1, 20, max_size=100)
+        projects = await query.order_by("id").offset(page.offset).limit(page.size)
+        status = [
+            {
+                "id": p.id,
+                "name": p.name,
+                "status": p.status,
+                "progress": _number(p.progress),
+            }
+            for p in projects
+        ]
+        return {"projects": status, "pagination": {"page": page.page, "size": page.size, "total": total}}
+
     async def health_radar(self, project_ids: list[int] | None = None) -> dict:
         query = Project.all()
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
         projects = await query
-        profits = await self.project_profits(None, Pagination(1, 100, max_size=100), project_ids)
+        profits = await self.project_profits(None, Pagination(1, 10_000, max_size=10_000), project_ids)
         return self._health_radar_from_data(projects, profits["projects"])
 
     @staticmethod
@@ -787,21 +842,26 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         query = Notification.filter(Q(user_id=user_id) | Q(user_id=None))
         if project_ids is not None:
             query = query.filter(Q(project_id__in=project_ids) | Q(project_id=None))
-        all_ids = list(await query.values_list("id", flat=True))
+        # 已读集合用子查询而非全量拉取 ID 列表（原实现每请求把全部可见通知
+        # 与全部已读 ID 拉进内存再做 exclude），通知量增长后不再线性膨胀。
+        # 注意：Tortoise 1.1.7 的 __in 不接受未求值的 QuerySet，必须用 Subquery 包装。
+        read_subquery = Subquery(
+            NotificationRead.filter(user_id=user_id).values_list("notification_id", flat=True)
+        )
+        unread = await query.exclude(id__in=read_subquery).count()
+        if unread_only:
+            query = query.exclude(id__in=read_subquery)
+        total = unread if unread_only else await query.count()
+        rows = await query.order_by("-id").offset(pagination.offset).limit(pagination.size)
         read_ids = (
             set(
-                await NotificationRead.filter(
-                    user_id=user_id,
-                    notification_id__in=all_ids,
-                ).values_list("notification_id", flat=True)
+                await NotificationRead.filter(user_id=user_id, notification_id__in=[r.id for r in rows]).values_list(
+                    "notification_id", flat=True
+                )
             )
-            if all_ids
+            if rows
             else set()
         )
-        if unread_only:
-            query = query.exclude(id__in=list(read_ids))
-        total = await query.count()
-        rows = await query.order_by("-id").offset(pagination.offset).limit(pagination.size)
         return {
             "notifications": [
                 {
@@ -815,7 +875,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                 }
                 for row in rows
             ],
-            "unread": len(all_ids) - len(read_ids),
+            "unread": unread,
             "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
         }
 
@@ -1072,7 +1132,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batch_ids = list(latest.values())
         if not batch_ids:
             return [], 0
-        batch_to_project = {b.id: b.project_id for b in batches if b.id in latest.values()}
+        latest_ids = set(latest.values())
+        batch_to_project = {b.id: b.project_id for b in batches if b.id in latest_ids}
         project_names = {p.id: p.name for p in await Project.filter(id__in=latest.keys())}
 
         alert_query = AlertModel.filter(Q(title__icontains=keyword) | Q(message__icontains=keyword))
@@ -1264,13 +1325,6 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "profit": profit,
             "profit_rate": _settle_rate(indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue),
         }
-
-    async def _profits_for_ids(self, project_ids: list[int], ym: str | None) -> list[dict]:
-        result = []
-        for project in await Project.filter(id__in=project_ids).order_by("id"):
-            profit = await self._profit_for(project.id, ym)
-            result.append({"project_id": project.id, "project_name": project.name, **profit})
-        return result
 
     @staticmethod
     async def _batch(project_id: int, ym: str | None):

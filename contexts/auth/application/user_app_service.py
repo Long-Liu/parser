@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import secrets
 from typing import Any, cast
@@ -110,7 +111,7 @@ class UserApplicationService(TransactionalService):
         user = User.create(
             None,
             username,
-            self._password_hasher.hash(str(Password(password))),
+            await asyncio.to_thread(self._password_hasher.hash, str(Password(password))),
             real_name,
             email,
             phone,
@@ -167,7 +168,7 @@ class UserApplicationService(TransactionalService):
             raise NotFoundError(f"user {user_id} not found")
         if self._password_hasher is None:
             raise RuntimeError("password hasher is not configured")
-        user.reset_password(self._password_hasher.hash(str(Password(password))))
+        user.reset_password(await asyncio.to_thread(self._password_hasher.hash, str(Password(password))))
         await self._users.save(user)
         await self._publish_events(user)
 

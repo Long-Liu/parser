@@ -269,7 +269,7 @@ class AnalyticsController(BaseController):
     @require_auth
     @require_permission("data:view")
     async def dashboard_summary(self, request):
-        return self.json((await self.analytics_svc.dashboard(await self._project_scope(request)))["summary"])
+        return self.json(await self.analytics_svc.dashboard_summary(await self._project_scope(request)))
 
     @require_auth
     @require_permission("data:view")
@@ -290,15 +290,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     async def dashboard_status(self, request):
         p = pagination_from(request)
-        result = await self.analytics_svc.dashboard(await self._project_scope(request))
-        rows = result["project_status"]
-        start = (p.page - 1) * p.size
-        return self.json(
-            {
-                "projects": rows[start : start + p.size],
-                "pagination": {"page": p.page, "size": p.size, "total": len(rows)},
-            }
-        )
+        return self.json(await self.analytics_svc.dashboard_status(await self._project_scope(request), p))
 
     @require_auth
     @require_permission("data:view")
@@ -409,16 +401,23 @@ class AnalyticsController(BaseController):
     @require_project_access()
     async def export_project(self, request, project_id: int):
         result = await self.analytics_svc.project_analysis(project_id, request.args.get("ym"))
-        wb = Workbook()
-        overview = wb.active
-        assert overview is not None
-        overview.title = "项目概览"
-        for k, v in result["project"].items():
-            overview.append([k, v])
-        costs = wb.create_sheet("成本明细")
-        costs.append(["科目", "指标", "实际", "偏差", "偏差率"])
-        for item in result["cost_categories"]:
-            costs.append([item["name"], item["indicator"], item["actual"], item["deviation"], item["deviation_rate"]])
+
+        def build() -> Workbook:
+            workbook = Workbook()
+            overview = workbook.active
+            assert overview is not None
+            overview.title = "项目概览"
+            for k, v in result["project"].items():
+                overview.append([k, v])
+            costs = workbook.create_sheet("成本明细")
+            costs.append(["科目", "指标", "实际", "偏差", "偏差率"])
+            for item in result["cost_categories"]:
+                costs.append(
+                    [item["name"], item["indicator"], item["actual"], item["deviation"], item["deviation_rate"]]
+                )
+            return workbook
+
+        wb = await asyncio.to_thread(build)
         return await _xlsx(wb, "项目导出_" + result["project"]["name"] + ".xlsx", f"project-{project_id}.xlsx")
 
     @require_auth

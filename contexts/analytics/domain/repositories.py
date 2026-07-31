@@ -76,6 +76,16 @@ class AnalyticsRepository(ABC):
     async def dashboard(self, project_ids: list[int] | None = None) -> dict: ...
 
     @abstractmethod
+    async def dashboard_summary(self, project_ids: list[int] | None = None) -> dict: ...
+
+    @abstractmethod
+    async def dashboard_status(
+        self,
+        project_ids: list[int] | None = None,
+        pagination: Pagination | None = None,
+    ) -> dict: ...
+
+    @abstractmethod
     async def health_radar(self, project_ids: list[int] | None = None) -> dict: ...
 
     @abstractmethod

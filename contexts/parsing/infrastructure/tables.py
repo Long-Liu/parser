@@ -20,6 +20,8 @@ class UploadBatch(Model):
 
     class Meta:
         table = "upload_batches"
+        # 报表热路径按 project_id/ym/status 过滤并排序；与迁移 0010 对齐。
+        indexes = (("project_id", "ym", "status"),)
 
 
 class UploadLog(Model):

@@ -9,6 +9,9 @@ from sanic.response import json
 from sanic_ext import Extend
 
 from contexts.auth.infrastructure.seed import seed_defaults
+from contexts.auth.infrastructure.token_revocation_repository import (
+    TortoiseTokenRevocationRepository,
+)
 from contexts.auth.interface.request_services import RequestServices
 from contexts.container import build_container, build_controllers
 from contexts.shared.domain.exceptions import DomainError
@@ -65,6 +68,7 @@ def create_app(settings: Settings | None = None) -> Sanic:
         components.alert_dispatcher,
         template_config_provider=YamlTemplateLoader().template_ids,
         seeder=lambda: seed_defaults(components.password_hasher.hash, cast(Settings, settings)),
+        token_purge=TortoiseTokenRevocationRepository(),
     )
     sanic_app.blueprint(health_bp)
 

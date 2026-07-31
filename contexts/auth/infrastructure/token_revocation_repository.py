@@ -9,8 +9,10 @@ Revocation scheme
   used by change-password to invalidate every outstanding session. The
   sentinel is a single upserted row, so repeated password changes simply move
   the cutoff forward.
-- ``is_revoked`` lazily deletes rows whose ``expires_at`` has passed; no
-  scheduled cleanup job is needed.
+- ``is_revoked`` only SELECTs the user's blacklist rows; expired rows are
+  purged by the periodic ``purge_expired`` background task registered in
+  ``contexts.shared.infrastructure.database.bootstrap`` (every 60s), keeping
+  the per-request path free of DELETE write amplification.
 """
 
 from __future__ import annotations
@@ -59,10 +61,9 @@ class TortoiseTokenRevocationRepository(TokenRevocationRepository):
         )
 
     async def is_revoked(self, *, jti: str | None, user_id: UserId, issued_at: float | None) -> bool:
-        # Lazy purge: rows past expires_at cover only naturally-expired tokens.
-        await RevokedToken.filter(
-            expires_at__lte=datetime.now(UTC),
-        ).delete()
+        # Expired rows are purged by a periodic background task (bootstrap), not
+        # on the request path — per-request DELETE was write amplification and
+        # wasted a round trip on every authenticated call.
         candidates = [_user_marker(user_id)]
         if jti:
             candidates.append(jti)
@@ -73,3 +74,7 @@ class TortoiseTokenRevocationRepository(TokenRevocationRepository):
             if row.jti == candidates[0] and issued_at is not None and _epoch(row.revoked_at) >= issued_at:
                 return True
         return False
+
+    async def purge_expired(self) -> int:
+        """Delete blacklist rows past their natural expiry (periodic task)."""
+        return await RevokedToken.filter(expires_at__lte=datetime.now(UTC)).delete()

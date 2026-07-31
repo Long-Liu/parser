@@ -23,6 +23,9 @@ class DataRowExtractor:
         data_start = template.header_spec.data_start_row - 1
         hierarchy_col = self._resolve_hierarchy_column(grid, template)
         separator = template.hierarchy_config.separator if template.hierarchy_config is not None else "."
+        # 列→字段映射对每个 sheet 恒定；预计算一次，避免每行每列重复线性扫描
+        # 模板列映射（O(行×列×映射数) → O(列×映射数)）。
+        header_map = self._build_header_map(flat_headers, template, hierarchy_col)
         rows: list[ParsedRow] = []
         for ri in range(data_start, len(grid)):
             fired = self._stop_detector.match_rule(ri, grid, template.stop_rules)
@@ -32,7 +35,7 @@ class DataRowExtractor:
                         rows,
                         grid,
                         ri,
-                        flat_headers,
+                        header_map,
                         template,
                         hierarchy_col,
                         separator,
@@ -43,31 +46,57 @@ class DataRowExtractor:
                 rows,
                 grid,
                 ri,
-                flat_headers,
+                header_map,
                 template,
                 hierarchy_col,
                 separator,
             )
         return rows
 
+    @classmethod
+    def _build_header_map(
+        cls,
+        flat_headers: list[str],
+        template: Template,
+        hierarchy_col: int | None,
+    ) -> list[tuple[str, str] | None]:
+        """Resolve every header column once, mirroring the old per-row logic.
+
+        Entries are (kind, key) tuples: ("fixed", db_field), ("dynamic",
+        monthly_data_key) or ("extra", extra_col_N_header); None when the
+        column can never carry data (hierarchy column / blank header).
+        """
+        header_occurrences: dict[str, int] = {}
+        header_map: list[tuple[str, str] | None] = []
+        for ci, header in enumerate(flat_headers):
+            header_occurrences[header] = header_occurrences.get(header, 0) + 1
+            fixed = template.find_column(header, header_occurrences[header])
+            if fixed is not None:
+                header_map.append(("fixed", fixed.db_field))
+                continue
+            dyn = template.find_dynamic_column(header)
+            if dyn is not None:
+                header_map.append(("dynamic", f"{dyn.db_prefix}_{header}"))
+                continue
+            if ci != hierarchy_col and header:
+                header_map.append(("extra", f"extra_col_{ci + 1}_{header}"))
+            else:
+                header_map.append(None)
+        return header_map
+
     def _append_row(
         self,
         rows: list[ParsedRow],
         grid: list[list],
         ri: int,
-        flat_headers: list[str],
+        header_map: list[tuple[str, str] | None],
         template: Template,
         hierarchy_col: int | None,
         separator: str,
         stop_rule: StopRule | None = None,
     ) -> None:
         row = grid[ri]
-        row_data = self._extract_row(
-            row,
-            flat_headers,
-            template,
-            hierarchy_col=hierarchy_col,
-        )
+        row_data = self._extract_row(row, header_map)
         if row_data is None:
             return
         if stop_rule is not None:
@@ -135,33 +164,29 @@ class DataRowExtractor:
     def _extract_row(
         self,
         row: list,
-        flat_headers: list[str],
-        template: Template,
-        hierarchy_col: int | None = None,
+        header_map: list[tuple[str, str] | None],
     ) -> ParsedRow | None:
         fields: dict = {}
         monthly_data: dict = {}
-        header_occurrences: dict[str, int] = {}
-        for ci, header in enumerate(flat_headers):
-            if ci >= len(row):
+        for ci in range(min(len(row), len(header_map))):
+            entry = header_map[ci]
+            if entry is None:
                 continue
+            kind, key = entry
             value = row[ci]
-            header_occurrences[header] = header_occurrences.get(header, 0) + 1
-            fixed = template.find_column(header, header_occurrences[header])
-            if fixed:
-                fields[fixed.db_field] = value
+            if kind == "fixed":
+                fields[key] = value
                 continue
-            dyn = template.find_dynamic_column(header)
-            if dyn:
-                monthly_data[f"{dyn.db_prefix}_{header}"] = self._json_value(value)
+            if kind == "dynamic":
+                monthly_data[key] = self._json_value(value)
                 continue
             # Preserve every populated, non-hierarchy source column even when
             # the template has no dedicated typed field for it.  The physical
             # data tables all expose ``monthly_data`` as their lossless JSON
             # extension area.  Prefixing with the 1-based source column keeps
             # duplicate/blank-looking multi-row headers unambiguous.
-            if ci != hierarchy_col and header and value not in (None, ""):
-                monthly_data[f"extra_col_{ci + 1}_{header}"] = self._json_value(value)
+            if value not in (None, ""):
+                monthly_data[key] = self._json_value(value)
         has_fixed_value = any(value not in (None, "") for value in fields.values())
         if has_fixed_value or monthly_data:
             return ParsedRow(

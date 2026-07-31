@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -15,8 +16,16 @@ EventT = TypeVar("EventT", bound=DomainEvent)
 
 
 class DomainEventBus(EventPublisher):
+    """Dispatches domain events to their subscribed handlers.
+
+    Handlers run as background tasks: evaluation work (alert checks, …) must
+    not extend the request coroutine that committed the originating write.
+    ``drain`` exists for tests and shutdown that need deterministic completion.
+    """
+
     def __init__(self) -> None:
         self._handlers: dict[type[DomainEvent], list[EventHandler]] = defaultdict(list)
+        self._tasks: set[asyncio.Task] = set()
 
     def subscribe(
         self,
@@ -37,10 +46,23 @@ class DomainEventBus(EventPublisher):
 
     async def _publish_now(self, events: list[DomainEvent]) -> None:
         for event in events:
-            handlers = self._handlers.get(type(event), [])
-            for handler in handlers:
-                # noinspection PyBroadException
-                try:
-                    await handler(event)
-                except Exception:
-                    logger.exception("Event handler failed for %s", type(event).__name__)
+            for handler in self._handlers.get(type(event), []):
+                self._spawn(handler, event)
+
+    def _spawn(self, handler: EventHandler, event: DomainEvent) -> None:
+        task = asyncio.create_task(self._run_handler(handler, event))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    @staticmethod
+    async def _run_handler(handler: EventHandler, event: DomainEvent) -> None:
+        # noinspection PyBroadException
+        try:
+            await handler(event)
+        except Exception:
+            logger.exception("Event handler failed for %s", type(event).__name__)
+
+    async def drain(self) -> None:
+        """Await completion of every in-flight handler task."""
+        if self._tasks:
+            await asyncio.gather(*list(self._tasks), return_exceptions=True)

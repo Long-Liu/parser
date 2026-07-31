@@ -50,6 +50,7 @@ async def test_parse_job_completed_triggers_alert_evaluation():
             )
         ]
     )
+    await bus.drain()
     assert alerts.evaluations == [(7, "2026-07")]
 
 
@@ -67,6 +68,7 @@ async def test_preview_completion_does_not_trigger_alert_evaluation():
             )
         ]
     )
+    await bus.drain()
     assert alerts.evaluations == []
 
 
@@ -83,6 +85,7 @@ async def test_parse_job_confirmed_triggers_alert_evaluation():
             )
         ]
     )
+    await bus.drain()
     assert alerts.evaluations == [(7, "2026-07")]
 
 
@@ -92,6 +95,7 @@ async def test_project_created_and_updated_trigger_alert_evaluation():
     bus = _wired_bus(alerts)
     await bus.publish([ProjectCreated(aggregate_id=5, code="P005", name="新项目")])
     await bus.publish([ProjectUpdated(aggregate_id=5, changed_fields=("progress",))])
+    await bus.drain()
     assert alerts.evaluations == [(5, None), (5, None)]
 
 
@@ -100,6 +104,7 @@ async def test_project_deleted_triggers_alert_cleanup():
     alerts = FakeAlertService()
     bus = _wired_bus(alerts)
     await bus.publish([ProjectDeleted(aggregate_id=5, code="P005")])
+    await bus.drain()
     assert alerts.deleted_projects == [5]
     assert alerts.evaluations == []
 

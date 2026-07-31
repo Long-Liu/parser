@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -23,6 +24,11 @@ from contexts.shared.domain.exceptions import (
 from contexts.shared.domain.identifiers import UserId
 
 logger = logging.getLogger("parser.auth")
+
+# bcrypt(12) dummy hash for the username-enumeration timing guard in login().
+# 必须是合法哈希：checkpw 才会执行完整 cost-12 校验（约 190ms）；
+# 此前 61 字符的 aaaa... 串是非法 salt，checkpw 立即抛 ValueError。
+_DUMMY_BCRYPT_HASH = "$2b$12$7hg7GarN0meBUEBzs6Cn4.dVowAepN9kqwpGwupSghfxV3noxSgoO"
 
 
 class AuthApplicationService(TransactionalService):
@@ -51,13 +57,11 @@ class AuthApplicationService(TransactionalService):
         # Always run password verify to prevent username enumeration via timing.
         # When user doesn't exist, verify against a dummy hash so the bcrypt cost
         # is identical to the "user exists, wrong password" path.
+        # bcrypt is CPU-bound and sync; offload so login never blocks the loop.
         if user is not None:
-            self._auth.verify_credentials(user, cmd.password)
+            await asyncio.to_thread(self._auth.verify_credentials, user, cmd.password)
         else:
-            self._password_hasher.verify(
-                cmd.password,
-                "$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            )
+            await asyncio.to_thread(self._password_hasher.verify, cmd.password, _DUMMY_BCRYPT_HASH)
             raise AuthenticationError("invalid credentials")
         if user.id is None:
             raise AuthenticationError("invalid credentials")
@@ -73,7 +77,7 @@ class AuthApplicationService(TransactionalService):
         existing = await self._users.find_by_username(cmd.username)
         if existing:
             raise ConflictError("username already exists")
-        hashed = self._password_hasher.hash(cmd.password)
+        hashed = await asyncio.to_thread(self._password_hasher.hash, cmd.password)
         user = User.create(
             user_id=None,
             username=cmd.username,
@@ -103,8 +107,8 @@ class AuthApplicationService(TransactionalService):
         user = await self._users.find_by_id(UserId(user_id))
         if user is None:
             raise AuthenticationError("invalid credentials")
-        self._auth.verify_credentials(user, old_password)
-        user.reset_password(self._password_hasher.hash(str(Password(new_password))))
+        await asyncio.to_thread(self._auth.verify_credentials, user, old_password)
+        user.reset_password(await asyncio.to_thread(self._password_hasher.hash, str(Password(new_password))))
         await self._users.save(user)
         if self._event_publisher:
             await self._event_publisher.publish(user.pull_events())

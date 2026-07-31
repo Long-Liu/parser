@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -34,6 +35,14 @@ from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
 from contexts.template.domain.repositories import TemplateCatalog
 
 logger = logging.getLogger("parser.upload")
+
+# isoformat 输出空间：date -> YYYY-MM-DD，datetime -> YYYY-MM-DD[T ]HH:MM[:SS[.ffffff]]，
+# 带 tzinfo 时追加 Z / +HH:MM 后缀（当前值空间均为 naive datetime，此覆盖为防御性；
+# 即使正则过度匹配，fromisoformat 抛错时由 except 兜底保持原值）。
+# 用于 _restore_types 的预分派，避免异常作控制流。
+_ISO_DATETIME_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::\d{2}(?::\d{2}(?:\.\d+)?)?)?)?)?$"
+)
 
 
 class UploadApplicationService(TransactionalService):
@@ -221,18 +230,57 @@ class UploadApplicationService(TransactionalService):
         except Exception:
             logger.warning("failed to remove temp file %s", stored_file.path, exc_info=True)
 
-    @transactional
     async def _process_workbook(self, stored_path: str, job: ParseJob) -> list[dict]:
+        """Parse first, persist second — the DB transaction only covers writes.
+
+        Excel parsing is CPU-bound and can run minutes for a 50MB file; holding
+        a pooled connection (pool_size=5) plus row locks across the whole parse
+        would serialize concurrent uploads. The job row is inserted up front in
+        its own tiny transaction (match_sheet/set_extracted require a persisted
+        id — same split the preview path uses), then template lookups and the
+        parse run without a transaction, and finally the inserts + job updates
+        commit in one short transaction.
+        """
+        async with self.transaction_manager.transaction():
+            await self._repo.save(job)
+
         workbook_sheets = await self._workbook_reader.read(stored_path)
-        sheet_results = []
-        await self._repo.save(job)
-        job.confirm_submitted()
+        prepared: list[dict] = []
         for sheet in workbook_sheets:
-            r = await self._process_sheet(sheet, job)
-            sheet_results.append(r)
-        job.complete()
-        await self._repo.save(job)
-        return sheet_results
+            template = await self._template_repo.find_matching(sheet.name)
+            if template is None:
+                job.match_sheet(sheet.name, None)
+                prepared.append({"name": sheet.name, "template": None, "rows": 0, "status": "skipped"})
+                continue
+            if template.id is None:
+                raise RuntimeError("matched template has no id")
+            template_id = template.id.value
+            job.match_sheet(sheet.name, template_id)
+            valid_rows, errors = await self._run_parsing_pipeline(sheet, job, template)
+            prepared.append(
+                {
+                    "name": sheet.name,
+                    "template": template_id,
+                    "rows": len(valid_rows),
+                    "status": "success" if not errors else "partial",
+                    "valid_rows": valid_rows,
+                }
+            )
+
+        async with self.transaction_manager.transaction():
+            job.confirm_submitted()
+            if job.id is None:
+                raise RuntimeError("ParseJob repository did not assign an id")
+            for item in prepared:
+                if item["valid_rows"]:
+                    await self._data_sink.insert_data_rows(item["template"], job.id.value, item["valid_rows"])
+            job.complete()
+            await self._repo.save(job)
+
+        return [
+            {"name": item["name"], "template": item["template"], "rows": item["rows"], "status": item["status"]}
+            for item in prepared
+        ]
 
     @transactional
     async def _save_failed_job(self, job: ParseJob) -> None:
@@ -330,15 +378,13 @@ class UploadApplicationService(TransactionalService):
         if isinstance(value, (list, tuple)):
             return [cls._restore_types(item) for item in value]
         if isinstance(value, str):
-            # Try date/datetime first (isoformat)
-            try:
-                return datetime.fromisoformat(value)
-            except (ValueError, TypeError):
-                pass
-            try:
-                return date.fromisoformat(value)
-            except (ValueError, TypeError):
-                pass
+            if _ISO_DATETIME_RE.match(value):
+                # 3.11 起 fromisoformat 接受纯日期串并返回午夜 datetime；
+                # 这里保持旧语义（date-only 也走 datetime），避免预览往返类型漂移。
+                try:
+                    return datetime.fromisoformat(value)
+                except (ValueError, TypeError):
+                    pass
             # Try Decimal (numeric string)
             try:
                 return Decimal(value)

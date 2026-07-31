@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+# noinspection PyPackageRequirements
+from tortoise.functions import Sum
+
 from contexts.alert.application.constants import ALL_PROJECTS
 from contexts.alert.domain.alert import Alert, AlertLevel, AlertRule, AlertStatus
 from contexts.alert.domain.repositories import AlertMetricProvider, AlertRepository
@@ -374,9 +377,18 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
             rate: Any = indicators.get(SETTLE_CURRENT_PROFIT_RATE)
             if rate is not None:
                 metrics["gross_profit_rate"] = Decimal(f"{rate}") * 100
-            rows = await DataDynamicIndicator.filter(batch_id=batch.id)
-            indicator = sum((Decimal(row.indicator_with_tax or 0) for row in rows), Decimal("0"))
-            actual = sum((Decimal(row.incurred_cost or 0) for row in rows), Decimal("0"))
+            # SQL 端聚合代替全量拉取后逐行 Decimal 累加（SUM 忽略 NULL，与
+            # 原 Decimal(row.x or 0) 语义一致）。
+            totals = (
+                await DataDynamicIndicator.filter(batch_id=batch.id)
+                .annotate(indicator_total=Sum("indicator_with_tax"), actual_total=Sum("incurred_cost"))
+                .values("indicator_total", "actual_total")
+            )
+            row = totals[0] if totals else {}
+            indicator = (
+                Decimal(str(row["indicator_total"])) if row.get("indicator_total") is not None else Decimal("0")
+            )
+            actual = Decimal(str(row["actual_total"])) if row.get("actual_total") is not None else Decimal("0")
             metrics["cost_deviation_rate"] = (actual - indicator) / indicator * 100 if indicator else Decimal("0")
         return batch.ym if batch else ym, metrics
 

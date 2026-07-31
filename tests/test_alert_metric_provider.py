@@ -30,6 +30,20 @@ class _FakeQuery:
     def order_by(self, *_args):
         return self
 
+    def annotate(self, **_kwargs):
+        return self
+
+    async def values(self, *_args, **_kwargs):
+        # Emulate SQL SUM over the dynamic-indicator rows (aggregate path).
+        if not self._result or not hasattr(self._result[0], "indicator_with_tax"):
+            return []
+        return [
+            {
+                "indicator_total": sum(row.indicator_with_tax or 0 for row in self._result),
+                "actual_total": sum(row.incurred_cost or 0 for row in self._result),
+            }
+        ]
+
     async def first(self):
         return self._result
 
@@ -105,3 +119,38 @@ async def test_snapshot_converts_settlement_rate_to_percent(monkeypatch):
     _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
 
     assert metrics["gross_profit_rate"] == Decimal("0.106968") * 100
+
+
+@pytest.mark.asyncio
+async def test_snapshot_aggregates_dynamic_indicator_sums(monkeypatch):
+    """SQL SUM 聚合路径：混合行 + 全 NULL 行（SUM 忽略 NULL）。"""
+    _patch_models(
+        monkeypatch,
+        settlement_rows=[_settlement_row("截至当期毛利", Decimal("106716.415051"))],
+        indicator_rows=[
+            SimpleNamespace(indicator_with_tax=Decimal("100"), incurred_cost=Decimal("90")),
+            SimpleNamespace(indicator_with_tax=Decimal("200"), incurred_cost=Decimal("180")),
+            SimpleNamespace(indicator_with_tax=None, incurred_cost=None),
+        ],
+    )
+
+    _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
+
+    # (90+180) − (100+200) / (100+200) × 100 = −10%（NULL 行不参与求和）
+    assert metrics["cost_deviation_rate"] == Decimal("-10")
+
+
+@pytest.mark.asyncio
+async def test_snapshot_zero_indicator_total_keeps_rate_zero(monkeypatch):
+    """分母为零（SUM 结果为 0/None）时 cost_deviation_rate 保持 0，不抛 ZeroDivisionError。"""
+    _patch_models(
+        monkeypatch,
+        settlement_rows=[_settlement_row("截至当期毛利", Decimal("1"))],
+        indicator_rows=[
+            SimpleNamespace(indicator_with_tax=Decimal("0"), incurred_cost=Decimal("5")),
+        ],
+    )
+
+    _, metrics = await TortoiseAlertMetricProvider().snapshot(1, "2026-07")
+
+    assert metrics["cost_deviation_rate"] == Decimal("0")

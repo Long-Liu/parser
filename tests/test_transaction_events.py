@@ -31,4 +31,5 @@ async def test_events_are_dispatched_after_transaction_body():
             order.append("return")
 
     await Service(NoopTransactionManager()).execute()
+    await bus.drain()
     assert order == ["write", "return", "event"]

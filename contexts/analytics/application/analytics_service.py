@@ -83,6 +83,16 @@ class AnalyticsApplicationService:
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
         return await self._repository.dashboard(project_ids)
 
+    async def dashboard_summary(self, project_ids: list[int] | None = None) -> dict:
+        return await self._repository.dashboard_summary(project_ids)
+
+    async def dashboard_status(
+        self,
+        project_ids: list[int] | None = None,
+        pagination: Pagination | None = None,
+    ) -> dict:
+        return await self._repository.dashboard_status(project_ids, pagination)
+
     async def health_radar(self, project_ids: list[int] | None = None) -> dict:
         return await self._repository.health_radar(project_ids)
 

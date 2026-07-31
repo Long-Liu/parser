@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from decimal import Decimal
 
 from contexts.alert.domain.alert import Alert, AlertRule, AlertStatus
@@ -17,6 +19,8 @@ from contexts.shared.application.transaction import (
 from contexts.shared.domain.exceptions import NotFoundError, ValidationError
 from contexts.shared.domain.pagination import Pagination
 
+logger = logging.getLogger("parser.alert")
+
 
 class AlertApplicationService(TransactionalService):
     def __init__(
@@ -30,6 +34,8 @@ class AlertApplicationService(TransactionalService):
         self._repository = repository
         self._metrics = metrics
         self._dispatcher = dispatcher
+        # 分发任务登记：done 后自动移除，避免停机时残留不可追踪的后台任务。
+        self._dispatch_tasks: set[asyncio.Task] = set()
 
     @transactional
     async def evaluate(self, project_id: int, ym: str | None = None) -> dict:
@@ -252,8 +258,25 @@ class AlertApplicationService(TransactionalService):
         return alert
 
     def _schedule_dispatch(self) -> None:
-        if not defer_after_commit(self._dispatcher.dispatch_pending):
-            return
+        # 推送始终在后台任务执行：请求协程只提交事务，不串行 await 各 socket。
+        # 事务内 defer 到 after-commit（提交后再读 outbox），否则立即调度。
+        if not defer_after_commit(self._spawn_dispatch_task):
+            self._track_dispatch(asyncio.create_task(self._safe_dispatch()))
+
+    async def _spawn_dispatch_task(self) -> None:
+        # defer_after_commit 的回调会被事务包装器 await，必须保持 awaitable。
+        self._track_dispatch(asyncio.create_task(self._safe_dispatch()))
+
+    def _track_dispatch(self, task: asyncio.Task) -> None:
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
+
+    async def _safe_dispatch(self) -> None:
+        # noinspection PyBroadException
+        try:
+            await self._dispatcher.dispatch_pending()
+        except Exception:
+            logger.exception("alert outbox dispatch failed")
 
     @staticmethod
     def _message(name: str, value: Decimal, threshold: Decimal) -> str:

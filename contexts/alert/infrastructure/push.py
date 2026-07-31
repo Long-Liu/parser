@@ -29,19 +29,32 @@ class AlertWebSocketHub:
                 self._connections.pop(user_id, None)
 
     async def publish(self, project_id: int, message: dict) -> None:
-        stale = []
+        # 各 socket 并发发送并设单 socket 超时：慢客户端不再串行阻塞
+        # 对其他项目的推送（此前逐个 await send）。
+        payload = json.dumps(message, ensure_ascii=False)
+        targets = []
         for user_id, sockets in list(self._connections.items()):
             for websocket in list(sockets):
                 allowed = self._projects.get(websocket, set())
                 if project_id not in allowed and ALL_PROJECTS not in allowed:
                     continue
-                # noinspection PyBroadException
-                try:
-                    await websocket.send(json.dumps(message, ensure_ascii=False))
-                except Exception:
-                    stale.append((user_id, websocket))
+                targets.append((user_id, websocket))
+        stale = []
+        if targets:
+            await asyncio.gather(
+                *(self._send(user_id, websocket, payload, stale) for user_id, websocket in targets),
+                return_exceptions=True,
+            )
         for user_id, websocket in stale:
             await self.disconnect(user_id, websocket)
+
+    @staticmethod
+    async def _send(user_id: int, websocket, payload: str, stale: list) -> None:
+        # noinspection PyBroadException
+        try:
+            await asyncio.wait_for(websocket.send(payload), timeout=10)
+        except Exception:
+            stale.append((user_id, websocket))
 
 
 class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
