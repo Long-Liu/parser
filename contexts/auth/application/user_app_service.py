@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from contexts.auth.domain.password import Password
 from contexts.auth.domain.ports import PasswordHasher
-from contexts.auth.domain.repositories import UserRepository
+from contexts.auth.domain.repositories import TokenRevocationRepository, UserRepository
+from contexts.auth.domain.role import SystemRole
 from contexts.auth.domain.user import User
 from contexts.shared.application.transaction import (
     TransactionalService,
@@ -27,17 +29,35 @@ from contexts.shared.domain.pagination import Pagination
 class UserApplicationService(TransactionalService):
     """Application service for the personnel-management view."""
 
+    # Covers the default 24h token lifetime (and then some) so the revocation
+    # sentinel outlives every outstanding token of a disabled/deleted user.
+    _REVOCATION_HORIZON = timedelta(hours=48)
+
     def __init__(
         self,
         users: UserRepository,
         password_hasher: PasswordHasher | None = None,
         event_publisher: EventPublisher | None = None,
         transaction_manager: TransactionManager | None = None,
+        token_revocations: TokenRevocationRepository | None = None,
     ) -> None:
         super().__init__(transaction_manager)
         self._users = users
         self._password_hasher = password_hasher
         self._event_publisher = event_publisher
+        self._token_revocations = token_revocations
+
+    async def _revoke_all_tokens(self, user_id: int) -> None:
+        """Invalidate every outstanding token of the user (disabling, deletion,
+        admin password reset) — same user-wide sentinel the change-password
+        path uses, so legacy tokens without a jti are covered too."""
+        if self._token_revocations is None:
+            return
+        horizon = datetime.now(UTC) + self._REVOCATION_HORIZON
+        await self._token_revocations.revoke_all_for_user(
+            user_id=UserId(user_id),
+            expires_at=horizon,
+        )
 
     async def list_all(
         self,
@@ -124,7 +144,7 @@ class UserApplicationService(TransactionalService):
         with contextlib.suppress(NotImplementedError):
             await self._users.set_system_role(
                 persisted_user_id,
-                "admin" if is_admin else "viewer",
+                SystemRole.ADMIN if is_admin else SystemRole.VIEWER,
             )
         await self._publish_events(user)
         result = await self.get(persisted_user_id.value)
@@ -141,6 +161,7 @@ class UserApplicationService(TransactionalService):
         if self._password_hasher is None:
             raise RuntimeError("password hasher is not configured")
         is_admin = values.pop("is_admin", None)
+        was_active = user.is_active
         user.update_profile(**values)
         await self._users.save(user)
         if is_admin is not None:
@@ -149,6 +170,9 @@ class UserApplicationService(TransactionalService):
                     UserId(user_id),
                     "admin" if is_admin else "viewer",
                 )
+        if was_active and not user.is_active:
+            # Disabled users must not keep using already-issued tokens.
+            await self._revoke_all_tokens(user_id)
         await self._publish_events(user)
         return await self.get(user_id)
 
@@ -159,6 +183,7 @@ class UserApplicationService(TransactionalService):
             raise NotFoundError(f"user {user_id} not found")
         user.mark_deleted()
         await self._users.delete(UserId(user_id))
+        await self._revoke_all_tokens(user_id)
         await self._publish_events(user)
 
     @transactional
@@ -170,6 +195,7 @@ class UserApplicationService(TransactionalService):
             raise RuntimeError("password hasher is not configured")
         user.reset_password(await asyncio.to_thread(self._password_hasher.hash, str(Password(password))))
         await self._users.save(user)
+        await self._revoke_all_tokens(user_id)
         await self._publish_events(user)
 
     async def project_permissions(self, user_id: int) -> dict:
@@ -208,6 +234,6 @@ class UserApplicationService(TransactionalService):
             "department": user.department,
             "is_active": user.is_active,
             "system_roles": [{"id": r.role_id, "code": r.code, "name": r.name} for r in user.roles],
-            "is_admin": any(r.code == "admin" for r in user.roles),
+            "is_admin": any(r.code == SystemRole.ADMIN for r in user.roles),
             "projects": projects,
         }

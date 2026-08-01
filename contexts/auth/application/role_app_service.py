@@ -124,14 +124,9 @@ class RoleApplicationService(TransactionalService):
                 valid_ids.add(role.id.value)
         if not set(role_ids).issubset(valid_ids):
             raise NotFoundError("one or more roles do not exist")
-        for role in roles:
-            if role.id is None:
-                continue
-            rid = role.id.value
-            if rid in role_ids:
-                await self._repo.assign_to_user(UserId(user_id), RoleId(rid))
-            else:
-                await self._repo.remove_from_user(UserId(user_id), RoleId(rid))
+        # One DELETE + one bulk CREATE at the repository, instead of a
+        # per-role assign/remove round trip for every role in the system.
+        await self._repo.set_user_roles(UserId(user_id), list(role_ids))
 
     # ── helpers ───────────────────────────────────────────────────
 

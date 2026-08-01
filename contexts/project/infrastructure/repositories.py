@@ -4,9 +4,11 @@ from typing import Any, cast
 
 # noinspection PyPackageRequirements
 from tortoise.expressions import Q
+from tortoise.functions import Max
 
 from contexts.auth.infrastructure.tables import Notification
 from contexts.auth.infrastructure.tables import User as OrmUser
+from contexts.parsing.domain.parse_job import UploadBatchStatus
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.domain.project import Project
@@ -175,10 +177,26 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
     async def latest_gross_profit(self, project_ids: list[int]) -> dict[int, dict]:
         if not project_ids:
             return {}
-        batches = (
+        # Latest month per project is resolved in SQL (GROUP BY + MAX), so only
+        # the newest-month batches are loaded instead of every historical batch
+        # of every project (which grew without bound as months accumulated).
+        latest_ym = (
             await UploadBatch.filter(
                 project_id__in=list(project_ids),
-                status="success",
+                status=UploadBatchStatus.SUCCESS,
+            )
+            .annotate(max_ym=Max("ym"))
+            .group_by("project_id")
+            .values("project_id", "max_ym")
+        )
+        if not latest_ym:
+            return {}
+        max_ym_by_project = {int(row["project_id"]): row["max_ym"] for row in latest_ym}
+        batches = (
+            await UploadBatch.filter(
+                project_id__in=list(max_ym_by_project),
+                ym__in=list(set(max_ym_by_project.values())),
+                status=UploadBatchStatus.SUCCESS,
             )
             .order_by("project_id", "-ym", "-id")
             .values("id", "project_id", "ym")
@@ -186,6 +204,8 @@ class TortoiseProjectMetrics(ProjectMetricsPort):
         latest: dict[int, dict[str, Any]] = {}
         for batch in batches:
             project_id = int(batch["project_id"])
+            if batch["ym"] != max_ym_by_project[project_id]:
+                continue
             latest.setdefault(project_id, cast(dict[str, Any], batch))
         if not latest:
             return {}

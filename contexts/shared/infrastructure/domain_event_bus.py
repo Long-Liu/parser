@@ -23,6 +23,14 @@ class DomainEventBus(EventPublisher):
     ``drain`` exists for tests and shutdown that need deterministic completion.
     """
 
+    # A handler failure is retried a couple of times with a short delay to
+    # survive transient errors (DB connection blips, …). Handlers must be
+    # idempotent: a partially-applied handler may run again. Events are still
+    # not raised to the publisher — a persistent failure is logged loudly
+    # instead of failing the request that committed the originating write.
+    _MAX_RETRIES = 2
+    _RETRY_DELAY_SECONDS = 0.5
+
     def __init__(self) -> None:
         self._handlers: dict[type[DomainEvent], list[EventHandler]] = defaultdict(list)
         self._tasks: set[asyncio.Task] = set()
@@ -54,13 +62,28 @@ class DomainEventBus(EventPublisher):
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    @staticmethod
-    async def _run_handler(handler: EventHandler, event: DomainEvent) -> None:
-        # noinspection PyBroadException
-        try:
-            await handler(event)
-        except Exception:
-            logger.exception("Event handler failed for %s", type(event).__name__)
+    @classmethod
+    async def _run_handler(cls, handler: EventHandler, event: DomainEvent) -> None:
+        for attempt in range(cls._MAX_RETRIES + 1):
+            # noinspection PyBroadException
+            try:
+                await handler(event)
+                return
+            except Exception:
+                if attempt < cls._MAX_RETRIES:
+                    logger.warning(
+                        "Event handler failed for %s (attempt %d/%d), retrying",
+                        type(event).__name__,
+                        attempt + 1,
+                        cls._MAX_RETRIES + 1,
+                    )
+                    await asyncio.sleep(cls._RETRY_DELAY_SECONDS)
+                else:
+                    logger.exception(
+                        "Event handler failed permanently for %s after %d attempts",
+                        type(event).__name__,
+                        cls._MAX_RETRIES + 1,
+                    )
 
     async def drain(self) -> None:
         """Await completion of every in-flight handler task."""

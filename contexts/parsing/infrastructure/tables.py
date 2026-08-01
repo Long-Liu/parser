@@ -6,6 +6,8 @@ from tortoise import fields
 # noinspection PyPackageRequirements
 from tortoise.models import Model
 
+from contexts.parsing.domain.parse_job import UploadBatchStatus
+
 
 class UploadBatch(Model):
     id = fields.IntField(primary_key=True)
@@ -15,7 +17,7 @@ class UploadBatch(Model):
     uploaded_by = fields.IntField(null=True)
     file_name = fields.CharField(max_length=500, null=True)
     file_size = fields.BigIntField(null=True)
-    status = fields.CharField(max_length=20, default="processing")
+    status = fields.CharField(max_length=20, default=UploadBatchStatus.PROCESSING.value)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

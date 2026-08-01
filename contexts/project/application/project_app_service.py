@@ -7,7 +7,7 @@ from contexts.project.domain.events import (
     ProjectDeleted,
     ProjectUpdated,
 )
-from contexts.project.domain.project import Project
+from contexts.project.domain.project import Project, ProjectStatus
 from contexts.project.domain.repositories import (
     ProjectDataCleanup,
     ProjectMetricsPort,
@@ -73,7 +73,7 @@ class ProjectApplicationService(TransactionalService):
             raise ConflictError("project code already exists")
         project = Project.create(project_id=None, code=code, name=name, created_by=created_by, **details)
         await self._repo.save(project)
-        if project.status == "warning" and self._notifications and project.id:
+        if project.status == ProjectStatus.WARNING and self._notifications and project.id:
             await self._notifications.publish_warning(project.id, project.name)
         if project.id is None:
             raise RuntimeError("project repository did not assign an id")
@@ -171,7 +171,7 @@ class ProjectApplicationService(TransactionalService):
         details.pop("code", None)
         project.update_details(**details)
         await self._repo.save(project)
-        if project.status == "warning" and self._notifications and project.id:
+        if project.status == ProjectStatus.WARNING and self._notifications and project.id:
             await self._notifications.publish_warning(project.id, project.name)
         project.record(
             ProjectUpdated(

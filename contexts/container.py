@@ -140,8 +140,12 @@ def build_container(
 
     password_hasher = BCryptPasswordHasher()
     jwt_service = JwtService(settings.jwt.secret, settings.jwt.expiry_hours)
-    user_repo = overrides.user_repository or TortoiseUserRepository()
-    role_repo = TortoiseRoleRepository()
+    # Shared permission cache: role-write paths (RoleRepository) invalidate the
+    # same cache the user-repository permission lookups read from, so role
+    # changes take effect immediately instead of after the 30s TTL.
+    permission_cache: dict[int, tuple[float, set[str]]] = {}
+    user_repo = overrides.user_repository or TortoiseUserRepository(permission_cache)
+    role_repo = TortoiseRoleRepository(permission_cache)
     project_access_repo = TortoiseProjectAccessRepository()
     project_repo = TortoiseProjectRepository()
     parsed_data_cleanup = ParsedDataCleanup()

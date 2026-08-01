@@ -4,7 +4,7 @@ import asyncio
 import logging
 from decimal import Decimal
 
-from contexts.alert.domain.alert import Alert, AlertRule, AlertStatus
+from contexts.alert.domain.alert import Alert, AlertEventType, AlertRule, AlertStatus
 from contexts.alert.domain.repositories import (
     AlertMetricProvider,
     AlertPushDispatcher,
@@ -105,8 +105,10 @@ class AlertApplicationService(TransactionalService):
         value: Decimal,
         fingerprint: str,
     ) -> int:
-        if existing is not None and existing.status == AlertStatus.IGNORED:
-            return 0
+        # An IGNORED alert is re-triggered when the metric crosses the
+        # threshold again on a later evaluation (see Alert.retrigger →
+        # "reopened"). Silencing it permanently here would make the IGNORED
+        # status irreversible and silently drop future alerts for the rule.
         message = self._message(rule.name, value, rule.threshold)
         if existing is not None:
             event_type = existing.retrigger(value, rule.level, message)
@@ -125,7 +127,7 @@ class AlertApplicationService(TransactionalService):
                 fingerprint=fingerprint,
                 ym=period,
             )
-            event_type = "triggered"
+            event_type = AlertEventType.TRIGGERED
         await self._repository.save(alert)
         await self._repository.record_event(alert, event_type)
         await self._repository.add_outbox(alert, event_type)
@@ -134,8 +136,8 @@ class AlertApplicationService(TransactionalService):
     async def _auto_resolve_alert(self, existing: Alert) -> int:
         existing.resolve()
         await self._repository.save(existing)
-        await self._repository.record_event(existing, "auto_resolved", note="指标已恢复正常")
-        await self._repository.add_outbox(existing, "resolved")
+        await self._repository.record_event(existing, AlertEventType.AUTO_RESOLVED, note="指标已恢复正常")
+        await self._repository.add_outbox(existing, AlertEventType.RESOLVED)
         return 1
 
     async def find(
@@ -214,7 +216,7 @@ class AlertApplicationService(TransactionalService):
     async def acknowledge(self, alert_id: int, actor_id: int, note: str = "") -> dict:
         alert = await self._required(alert_id)
         alert.acknowledge()
-        await self._persist_action(alert, "acknowledged", actor_id, note)
+        await self._persist_action(alert, AlertEventType.ACKNOWLEDGED, actor_id, note)
         return await self.get(alert_id)
 
     @transactional
@@ -223,7 +225,7 @@ class AlertApplicationService(TransactionalService):
             raise ValidationError("resolution note is required")
         alert = await self._required(alert_id)
         alert.resolve()
-        await self._persist_action(alert, "resolved", actor_id, note.strip())
+        await self._persist_action(alert, AlertEventType.RESOLVED, actor_id, note.strip())
         return await self.get(alert_id)
 
     @transactional
@@ -232,7 +234,7 @@ class AlertApplicationService(TransactionalService):
             raise ValidationError("ignore reason is required")
         alert = await self._required(alert_id)
         alert.ignore()
-        await self._persist_action(alert, "ignored", actor_id, note.strip())
+        await self._persist_action(alert, AlertEventType.IGNORED, actor_id, note.strip())
         return await self.get(alert_id)
 
     async def project_id(self, alert_id: int) -> int:
@@ -245,7 +247,7 @@ class AlertApplicationService(TransactionalService):
     async def missed_notifications(self, project_ids: list[int], since: str | None) -> list[dict]:
         return await self._repository.missed_outbox(project_ids, since)
 
-    async def _persist_action(self, alert: Alert, event_type: str, actor_id: int, note: str) -> None:
+    async def _persist_action(self, alert: Alert, event_type: AlertEventType, actor_id: int, note: str) -> None:
         await self._repository.save(alert)
         await self._repository.record_event(alert, event_type, actor_id, note)
         await self._repository.add_outbox(alert, event_type)

@@ -22,6 +22,20 @@ class AlertStatus(StrEnum):
     IGNORED = "ignored"
 
 
+class AlertEventType(StrEnum):
+    """Event types recorded per alert transition and mirrored into the outbox
+    (outbox rows are prefixed with ``alert.``). Values are persisted strings —
+    do not rename."""
+
+    TRIGGERED = "triggered"
+    ESCALATED = "escalated"
+    REOPENED = "reopened"
+    RESOLVED = "resolved"
+    AUTO_RESOLVED = "auto_resolved"
+    ACKNOWLEDGED = "acknowledged"
+    IGNORED = "ignored"
+
+
 @dataclass(frozen=True)
 class AlertRule:
     code: str
@@ -89,9 +103,13 @@ class Alert(AggregateRoot[int]):
     def open(self) -> bool:
         return self.status in {AlertStatus.ACTIVE, AlertStatus.ACKNOWLEDGED}
 
-    def retrigger(self, value: Decimal, level: AlertLevel, message: str) -> str:
-        """Update alert with new metric value. Returns the event type string
-        ('triggered', 'escalated', or 'reopened') for use in event recording."""
+    def retrigger(self, value: Decimal, level: AlertLevel, message: str) -> AlertEventType:
+        """Update alert with new metric value. Returns the event type
+        ('triggered', 'escalated', or 'reopened') for use in event recording.
+
+        RESOLVED and IGNORED alerts are reopened (back to ACTIVE) when the
+        metric crosses the threshold again — IGNORED means "silence the current
+        event", not "never alert for this rule again"."""
         previous = self.level
         self.metric_value = value
         self.level = level
@@ -100,9 +118,9 @@ class Alert(AggregateRoot[int]):
         self.trigger_count += 1
         if self.status in {AlertStatus.RESOLVED, AlertStatus.IGNORED}:
             self.status = AlertStatus.ACTIVE
-            return "reopened"
+            return AlertEventType.REOPENED
         order = {AlertLevel.INFO: 0, AlertLevel.WARNING: 1, AlertLevel.CRITICAL: 2}
-        return "escalated" if order[level] > order[previous] else "triggered"
+        return AlertEventType.ESCALATED if order[level] > order[previous] else AlertEventType.TRIGGERED
 
     def acknowledge(self) -> None:
         if self.status != AlertStatus.ACTIVE:

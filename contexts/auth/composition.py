@@ -53,7 +53,13 @@ def build_auth_components(
             token_revocations,
         ),
         authorization=AuthorizationApplicationService(users, tokens, token_revocations),
-        users=UserApplicationService(users, password_hasher, events, transactions),
+        users=UserApplicationService(
+            users,
+            password_hasher,
+            events,
+            transactions,
+            token_revocations,
+        ),
         roles=RoleApplicationService(roles, events, users, transactions),
         project_access=ProjectAccessPolicy(project_access),
     )

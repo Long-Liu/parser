@@ -33,6 +33,19 @@ class MatchStatus(StrEnum):
     ERROR = "error"
 
 
+class UploadBatchStatus(StrEnum):
+    """Persisted status of an upload batch row (upload_batches.status) and the
+    batch/sheet status surfaced by upload & preview APIs. Values are DB/API
+    strings — do not rename."""
+
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+
+
 @dataclass(frozen=True)
 class FileInfo(ValueObject):
     filename: str
@@ -349,12 +362,12 @@ class ParseJob(AggregateRoot[JobId]):
         )
 
     @property
-    def result_status(self) -> str:
+    def result_status(self) -> UploadBatchStatus:
         if self.status == JobStatus.FAILED:
-            return "failed"
+            return UploadBatchStatus.FAILED
         successes = [s for s in self._sheets.values() if s.match_status == MatchStatus.MATCHED]
         if not successes:
-            return "skipped"
+            return UploadBatchStatus.SKIPPED
         if all(s.error_rows == 0 for s in successes):
-            return "success"
-        return "partial"
+            return UploadBatchStatus.SUCCESS
+        return UploadBatchStatus.PARTIAL

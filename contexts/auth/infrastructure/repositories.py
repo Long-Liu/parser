@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any, cast
 
 # noinspection PyPackageRequirements
@@ -10,7 +11,7 @@ from tortoise.expressions import Q
 
 from contexts.auth.domain.name import Name
 from contexts.auth.domain.repositories import RoleRepository, UserRepository
-from contexts.auth.domain.role import PermissionRef, Role
+from contexts.auth.domain.role import PermissionRef, Role, SystemRole
 from contexts.auth.domain.user import RoleRef, User
 from contexts.auth.infrastructure.tables import (
     Permission as OrmPermission,
@@ -52,7 +53,23 @@ async def _load_roles(user_id: int) -> list[dict]:
     return list(cast(Any, await OrmRole.filter(id__in=list(role_ids)).values("id", "code", "name")))
 
 
+# Permissions are low-churn data (role assignments change rarely); caching
+# them briefly on the request hot path avoids 3 serial DB round-trips per
+# authenticated call. 30s staleness after a role change is acceptable —
+# user disable/delete still takes effect immediately via token revocation.
+_PERMISSION_CACHE_TTL_SECONDS = 30.0
+
+
 class TortoiseUserRepository(UserRepository):
+    def __init__(
+        self,
+        permission_cache: dict[int, tuple[float, set[str]]] | None = None,
+    ) -> None:
+        # Shared with TortoiseRoleRepository in production (container.py) so
+        # role-write paths can invalidate entries immediately; a standalone
+        # instance (tests) falls back to its own dict.
+        self._permission_cache = permission_cache if permission_cache is not None else {}
+
     async def save(self, user: User) -> None:
         values: dict[str, Any] = {
             "username": user.username,
@@ -193,16 +210,17 @@ class TortoiseUserRepository(UserRepository):
             await ProjectUser.bulk_create(links)
 
     async def set_system_role(self, user_id: UserId, role_code: str) -> None:
-        if role_code not in {"admin", "viewer"}:
+        if role_code not in {s.value for s in SystemRole}:
             raise ValidationError(f"unknown system role: {role_code}")
         role = await OrmRole.get_or_none(code=role_code)
         if role is None:
             raise ValidationError(f"unknown system role: {role_code}")
-        if role_code == "admin":
+        if role_code == SystemRole.ADMIN:
             await _ensure_user_role(user_id.value, role.id)
+            self._invalidate_permissions(user_id.value)
             return
 
-        admin = await OrmRole.get_or_none(code="admin")
+        admin = await OrmRole.get_or_none(code=SystemRole.ADMIN)
         if admin is not None:
             await UserRole.filter(
                 user_id=user_id.value,
@@ -210,8 +228,21 @@ class TortoiseUserRepository(UserRepository):
             ).delete()
         if not await UserRole.filter(user_id=user_id.value).exists():
             await _ensure_user_role(user_id.value, role.id)
+        self._invalidate_permissions(user_id.value)
 
     async def get_permissions(self, user_id: UserId) -> set[str]:
+        now = time.monotonic()
+        cached = self._permission_cache.get(user_id.value)
+        if cached is not None and now - cached[0] < _PERMISSION_CACHE_TTL_SECONDS:
+            return set(cached[1])  # copy — callers must not mutate the cache
+        permissions = await self._load_permissions(user_id)
+        self._permission_cache[user_id.value] = (now, permissions)
+        return set(permissions)  # copy on the miss path too
+
+    def _invalidate_permissions(self, user_id: int) -> None:
+        self._permission_cache.pop(user_id, None)
+
+    async def _load_permissions(self, user_id: UserId) -> set[str]:
         role_ids = await UserRole.filter(user_id=user_id.value).values_list("role_id", flat=True)
         if not role_ids:
             return set()
@@ -226,10 +257,16 @@ class TortoiseUserRepository(UserRepository):
 
 
 class TortoiseRoleRepository(RoleRepository):
+    def __init__(
+        self,
+        permission_cache: dict[int, tuple[float, set[str]]] | None = None,
+    ) -> None:
+        # Shared with TortoiseUserRepository in production (container.py):
+        # every role-write path below invalidates the permission cache so role
+        # changes take effect immediately.
+        self._permission_cache = permission_cache if permission_cache is not None else {}
+
     async def save(self, role: Role) -> None:
-        role_id = role.id
-        if role_id is None:
-            raise ValueError("role id is required to save")
         values: dict[str, Any] = {
             "code": role.code,
             "name": role.name,
@@ -271,13 +308,14 @@ class TortoiseRoleRepository(RoleRepository):
         await RolePermission.bulk_create(
             [
                 RolePermission(
-                    role_id=role_id.value,
+                    role_id=role.id.value,
                     permission_id=existing_permissions[code].id,
                 )
                 for code in permission_specs
             ],
             ignore_conflicts=True,
         )
+        self._permission_cache.clear()  # role permission changes affect every user
 
     async def find_by_id(self, role_id: RoleId) -> Role | None:
         orm = await OrmRole.get_or_none(id=role_id.value)
@@ -328,12 +366,28 @@ class TortoiseRoleRepository(RoleRepository):
         await RolePermission.filter(role_id=role_id.value).delete()
         await UserRole.filter(role_id=role_id.value).delete()
         await OrmRole.filter(id=role_id.value).delete()
+        self._permission_cache.clear()  # role removal affects every user
 
     async def assign_to_user(self, user_id: UserId, role_id: RoleId) -> None:
         await _ensure_user_role(user_id.value, role_id.value)
+        self._permission_cache.pop(user_id.value, None)
 
     async def remove_from_user(self, user_id: UserId, role_id: RoleId) -> None:
         await UserRole.filter(user_id=user_id.value, role_id=role_id.value).delete()
+        self._permission_cache.pop(user_id.value, None)
+
+    async def set_user_roles(self, user_id: UserId, role_ids: list[int]) -> None:
+        """Replace the user's role set atomically: one DELETE + one bulk CREATE
+        instead of per-role get_or_none/create round trips."""
+        # Deduplicate: repeated ids would violate user_roles.unique_together
+        # (the old per-role path was idempotent; bulk_create is not).
+        unique_ids = list(dict.fromkeys(role_ids))
+        await UserRole.filter(user_id=user_id.value).delete()
+        if unique_ids:
+            await UserRole.bulk_create(
+                [UserRole(user_id=user_id.value, role_id=rid) for rid in unique_ids]
+            )
+        self._permission_cache.pop(user_id.value, None)
 
 
 async def _ensure_permission(code: str, name: str) -> int:

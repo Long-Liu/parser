@@ -5,10 +5,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 # noinspection PyPackageRequirements
-from tortoise.functions import Sum
+from tortoise.expressions import Q
+from tortoise.functions import Count, Sum
 
 from contexts.alert.application.constants import ALL_PROJECTS
-from contexts.alert.domain.alert import Alert, AlertLevel, AlertRule, AlertStatus
+from contexts.alert.domain.alert import Alert, AlertEventType, AlertLevel, AlertRule, AlertStatus
 from contexts.alert.domain.repositories import AlertMetricProvider, AlertRepository
 from contexts.alert.infrastructure.tables import (
     AlertEventModel,
@@ -17,6 +18,7 @@ from contexts.alert.infrastructure.tables import (
     AlertRuleModel,
     AlertRuleStateModel,
 )
+from contexts.parsing.domain.parse_job import UploadBatchStatus
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
@@ -262,14 +264,18 @@ class TortoiseAlertRepository(AlertRepository):
         )
         now = datetime.now(UTC)
         updates: dict[str, object] = {}
-        if event_type == "acknowledged":
+        if event_type == AlertEventType.ACKNOWLEDGED:
             updates = {"acknowledged_by": actor_id, "acknowledged_at": now}
-        elif event_type in {"resolved", "auto_resolved"} or event_type == "ignored":
+        elif event_type in {
+            AlertEventType.RESOLVED,
+            AlertEventType.AUTO_RESOLVED,
+            AlertEventType.IGNORED,
+        }:
             updates = {"resolved_by": actor_id, "resolved_at": now, "resolution_note": note or None}
         if updates:
             await AlertModel.filter(id=alert.id).update(**updates)
 
-    async def add_outbox(self, alert: Alert, event_type: str) -> None:
+    async def add_outbox(self, alert: Alert, event_type: AlertEventType) -> None:
         """Queue an outbox entry for the given alert.  Uses in-memory alert data
         plus the just-persisted auto_now fields from AlertModel."""
         row = await AlertModel.get(id=alert.id)
@@ -315,12 +321,21 @@ class TortoiseAlertRepository(AlertRepository):
         query = AlertModel.filter(status__in=["active", "acknowledged"])
         if project_ids is not None:
             query = query.filter(project_id__in=project_ids)
+        # One GROUP BY aggregation instead of five separate COUNT queries.
+        rows = await query.annotate(
+            total=Count("id"),
+            active=Count("id", _filter=Q(status="active")),
+            acknowledged=Count("id", _filter=Q(status="acknowledged")),
+            critical=Count("id", _filter=Q(level="critical")),
+            warning=Count("id", _filter=Q(level="warning")),
+        ).values("total", "active", "acknowledged", "critical", "warning")
+        row = rows[0] if rows else {}
         return {
-            "total": await query.count(),
-            "active": await query.filter(status="active").count(),
-            "acknowledged": await query.filter(status="acknowledged").count(),
-            "critical": await query.filter(level="critical").count(),
-            "warning": await query.filter(level="warning").count(),
+            "total": int(row.get("total") or 0),
+            "active": int(row.get("active") or 0),
+            "acknowledged": int(row.get("acknowledged") or 0),
+            "critical": int(row.get("critical") or 0),
+            "warning": int(row.get("warning") or 0),
         }
 
     async def delete_project(self, project_id: int) -> None:
@@ -357,7 +372,7 @@ class TortoiseAlertMetricProvider(AlertMetricProvider):
         project = await Project.get_or_none(id=project_id)
         if project is None:
             return ym, {}
-        batch_query = UploadBatch.filter(project_id=project_id, status="success")
+        batch_query = UploadBatch.filter(project_id=project_id, status=UploadBatchStatus.SUCCESS)
         if ym:
             batch_query = batch_query.filter(ym=ym)
         batch = await batch_query.order_by("-ym", "-id").first()

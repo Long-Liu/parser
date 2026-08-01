@@ -2,15 +2,26 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId, UserId
 
 
+class ProjectStatus(StrEnum):
+    """Persisted project status (projects.status). Values are DB strings — do
+    not rename."""
+
+    NORMAL = "normal"
+    WARNING = "warning"
+    SUSPENDED = "suspended"
+    CLOSED = "closed"
+
+
 class Project(AggregateRoot[ProjectId]):
     _VALID_STAGES = {"planning", "design", "construction", "completion", "maintenance"}
-    _VALID_STATUSES = {"normal", "warning", "suspended", "closed"}
+    _VALID_STATUSES = {s.value for s in ProjectStatus}
 
     def __init__(
         self,

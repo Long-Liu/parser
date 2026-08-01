@@ -6,6 +6,8 @@ from tortoise import fields
 # noinspection PyPackageRequirements
 from tortoise.models import Model
 
+from contexts.project.domain.project import ProjectStatus
+
 
 class Project(Model):
     id = fields.IntField(primary_key=True)
@@ -18,7 +20,7 @@ class Project(Model):
     end_date = fields.DateField(null=True)
     manager_id = fields.IntField(null=True)
     stage = fields.CharField(max_length=50, default="planning")
-    status = fields.CharField(max_length=20, default="normal")
+    status = fields.CharField(max_length=20, default=ProjectStatus.NORMAL.value)
     progress = fields.DecimalField(max_digits=5, decimal_places=2, default=0)
     description = fields.TextField(null=True)
     created_by = fields.IntField(null=True)

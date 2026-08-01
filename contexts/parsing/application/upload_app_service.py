@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import uuid
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, cast
 
 from contexts.parsing.application.dto import UploadedFile
@@ -15,7 +14,7 @@ from contexts.parsing.domain.data_extractor import DataRowExtractor
 from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.data_validator import DataValidator
 from contexts.parsing.domain.header_flattener import HeaderFlattener
-from contexts.parsing.domain.parse_job import FileInfo, ParsedRow, ParseJob
+from contexts.parsing.domain.parse_job import FileInfo, ParsedRow, ParseJob, UploadBatchStatus
 from contexts.parsing.domain.repositories import (
     ParseJobRepository,
     UploadPreviewRepository,
@@ -35,14 +34,6 @@ from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
 from contexts.template.domain.repositories import TemplateCatalog
 
 logger = logging.getLogger("parser.upload")
-
-# isoformat 输出空间：date -> YYYY-MM-DD，datetime -> YYYY-MM-DD[T ]HH:MM[:SS[.ffffff]]，
-# 带 tzinfo 时追加 Z / +HH:MM 后缀（当前值空间均为 naive datetime，此覆盖为防御性；
-# 即使正则过度匹配，fromisoformat 抛错时由 except 兜底保持原值）。
-# 用于 _restore_types 的预分派，避免异常作控制流。
-_ISO_DATETIME_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::\d{2}(?::\d{2}(?:\.\d+)?)?)?)?)?$"
-)
 
 
 class UploadApplicationService(TransactionalService):
@@ -108,7 +99,7 @@ class UploadApplicationService(TransactionalService):
                 await self._event_publisher.publish(job.pull_events())
             except Exception:
                 logger.exception("failed to persist error status for %s", batch_no)
-            status = "failed"
+            status = UploadBatchStatus.FAILED
             sheet_results = []
         finally:
             if stored_file is not None:
@@ -210,7 +201,7 @@ class UploadApplicationService(TransactionalService):
         # ParseJobConfirmed is published after commit; the alert context
         # subscribes to it and evaluates alerts for this project/period.
         await self._event_publisher.publish(job.pull_events())
-        return {"batch_id": batch_id, "status": "success", "sheets": preview["summary"]}
+        return {"batch_id": batch_id, "status": UploadBatchStatus.SUCCESS, "sheets": preview["summary"]}
 
     @transactional
     async def cancel_preview(self, batch_id: int, user_id: UserId) -> None:
@@ -250,7 +241,7 @@ class UploadApplicationService(TransactionalService):
             template = await self._template_repo.find_matching(sheet.name)
             if template is None:
                 job.match_sheet(sheet.name, None)
-                prepared.append({"name": sheet.name, "template": None, "rows": 0, "status": "skipped"})
+                prepared.append({"name": sheet.name, "template": None, "rows": 0, "status": UploadBatchStatus.SKIPPED})
                 continue
             if template.id is None:
                 raise RuntimeError("matched template has no id")
@@ -262,7 +253,7 @@ class UploadApplicationService(TransactionalService):
                     "name": sheet.name,
                     "template": template_id,
                     "rows": len(valid_rows),
-                    "status": "success" if not errors else "partial",
+                    "status": UploadBatchStatus.SUCCESS if not errors else UploadBatchStatus.PARTIAL,
                     "valid_rows": valid_rows,
                 }
             )
@@ -292,7 +283,7 @@ class UploadApplicationService(TransactionalService):
 
         if template is None:
             job.match_sheet(sheet_name, None)
-            return {"name": sheet_name, "template": None, "rows": 0, "status": "skipped"}
+            return {"name": sheet_name, "template": None, "rows": 0, "status": UploadBatchStatus.SKIPPED}
 
         if template.id is None:
             raise RuntimeError("matched template has no id")
@@ -309,7 +300,7 @@ class UploadApplicationService(TransactionalService):
             "name": sheet_name,
             "template": template_id,
             "rows": len(valid_rows),
-            "status": "success" if not errors else "partial",
+            "status": UploadBatchStatus.SUCCESS if not errors else UploadBatchStatus.PARTIAL,
         }
         if not write:
             result.update(self._build_preview_data(valid_rows, errors))
@@ -370,26 +361,15 @@ class UploadApplicationService(TransactionalService):
 
     @classmethod
     def _restore_types(cls, value):
-        """Reverse _json_safe: convert isoformat strings back to date/datetime,
-        and numeric strings back to Decimal where appropriate.
-        Leaves non-string values unchanged."""
-        if isinstance(value, dict):
-            return {key: cls._restore_types(item) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [cls._restore_types(item) for item in value]
-        if isinstance(value, str):
-            if _ISO_DATETIME_RE.match(value):
-                # 3.11 起 fromisoformat 接受纯日期串并返回午夜 datetime；
-                # 这里保持旧语义（date-only 也走 datetime），避免预览往返类型漂移。
-                try:
-                    return datetime.fromisoformat(value)
-                except (ValueError, TypeError):
-                    pass
-            # Try Decimal (numeric string)
-            try:
-                return Decimal(value)
-            except InvalidOperation:
-                pass
+        """Preview payloads are stored JSON-safe (see _json_safe): Decimal and
+        date/datetime values are persisted as strings and written back
+        unchanged. Restoring Decimal/datetime objects here would make JSONField
+        rows (monthly_data) unserializable for json.dumps (TypeError on
+        confirm). Typed columns handle the strings at write time: Tortoise's
+        DateField/DatetimeField parse ISO strings in to_db_value (verified —
+        even "2026-07-15T10:30:00" is truncated to a date for DateField), and
+        DecimalField columns are re-quantized via
+        TortoiseParsedDataSink._model_values' Decimal(str(...))."""
         return value
 
     @staticmethod

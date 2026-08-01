@@ -69,6 +69,11 @@ class RoleRepository(ABC):
     @abstractmethod
     async def remove_from_user(self, user_id: UserId, role_id: RoleId) -> None: ...
 
+    @abstractmethod
+    async def set_user_roles(self, user_id: UserId, role_ids: list[int]) -> None:
+        """Replace the user's role set in one shot (bulk delete + bulk create),
+        avoiding per-role round trips on the assignment hot path."""
+
 
 class TokenRevocationRepository(ABC):
     """Blacklist store for revoked JWTs.

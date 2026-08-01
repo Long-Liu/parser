@@ -7,6 +7,7 @@ from contexts.parsing.domain.parse_job import (
     MatchStatus,
     ParseJob,
     SheetResult,
+    UploadBatchStatus,
 )
 from contexts.parsing.domain.repositories import (
     ParseJobRepository,
@@ -177,5 +178,9 @@ class TortoiseUploadPreviewRepository(UploadPreviewRepository):
         if not expired_ids:
             return 0
         await UploadPreview.filter(batch_id__in=expired_ids).delete()
-        await OrmBatch.filter(id__in=expired_ids, status="preview").update(status="cancelled")
+        # Expired preview batches must be flipped to cancelled regardless of
+        # their current status: batch rows never carry status "preview"
+        # (result_status yields failed/skipped/success/partial), so filtering
+        # on it here would silently leave stale success/partial rows behind.
+        await OrmBatch.filter(id__in=expired_ids).update(status=UploadBatchStatus.CANCELLED)
         return len(expired_ids)

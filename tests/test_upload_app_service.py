@@ -5,11 +5,14 @@ import pytest
 # noinspection PyPackageRequirements
 import tortoise.transactions
 
+from datetime import datetime
+from decimal import Decimal
+
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.file_storage import FileStorage, StoredFile
 from contexts.parsing.application.upload_app_service import UploadApplicationService
 from contexts.parsing.domain.data_sink import ParsedDataSink
-from contexts.parsing.domain.parse_job import ParseJob
+from contexts.parsing.domain.parse_job import FileInfo, ParseJob
 from contexts.parsing.domain.repositories import ParseJobRepository
 from contexts.parsing.domain.workbook import WorkbookReader, WorkbookSheet
 from contexts.parsing.domain.year_month import YearMonth
@@ -312,3 +315,62 @@ async def test_preview_does_not_hold_transaction_while_reading_workbook():
 
     assert result["status"] == "preview"
     assert transactions.entries == 2
+
+
+async def test_confirm_keeps_preview_payload_json_safe():
+    """Regression: _restore_types must not turn numeric/ISO strings back into
+    Decimal/datetime objects — JSONField columns (monthly_data) cannot be
+    json.dumps-serialized with such values, crashing confirm with TypeError."""
+    import json
+
+    repo = FakeRepo()
+    sink = FakeSink()
+    preview_repo = FakePreviewRepo()
+    service = UploadApplicationService(
+        repo=repo,
+        template_repo=FakeTemplateCatalog(),
+        data_sink=sink,
+        event_publisher=FakePublisher(),
+        file_storage=FakeStorage(),
+        workbook_reader=FakeWorkbookReader(),
+        project_repo=FakeProjectRepo(),
+        preview_repo=preview_repo,
+    )
+
+    job = ParseJob.submit(
+        None,
+        ProjectId(1),
+        YearMonth.parse("2026-07"),
+        FileInfo(filename="cost.xlsx", size=10),
+        "B-1",
+        UserId(1),
+    )
+    await service._start_preview(job)
+    job.mark_as_previewed()
+    job.complete()
+    payload = [
+        {
+            "template": "labor_cost",
+            "rows": [
+                {
+                    "row_index": 1,
+                    "fields": {"code": "0012", "amount": "12.50"},
+                    "hierarchy_code": None,
+                    "monthly_data": {"2026-07": "100.25", "2026-08": "2026-07-15"},
+                }
+            ],
+        }
+    ]
+    batch_id = await service._finish_preview(job, payload, [{"sheet": "Sheet1", "rows": 1}])
+
+    confirmed = await _undecorate(UploadApplicationService.confirm)(
+        service, batch_id, UserId(1)
+    )
+    assert confirmed["status"] == "success"
+
+    row = sink.rows[0]
+    # Leading-zero text codes keep their string form.
+    assert row.fields["code"] == "0012"
+    # monthly_data stays JSON-serializable — no Decimal/datetime objects.
+    json.dumps(row.monthly_data)
+    assert all(not isinstance(v, (Decimal, datetime)) for v in row.monthly_data.values())

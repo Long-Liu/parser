@@ -20,8 +20,10 @@ from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
 from contexts.analytics.domain.scoring import compare_scores
 from contexts.auth.infrastructure.tables import Notification, NotificationRead, User
+from contexts.parsing.domain.parse_job import UploadBatchStatus
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
+from contexts.project.domain.project import ProjectStatus
 from contexts.project.infrastructure.tables import Project, ProjectMilestone
 from contexts.shared.application.transaction import (
     NoopTransactionManager,
@@ -113,8 +115,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             query = query.filter(id__in=project_ids)
         aggregates = await query.annotate(
             total=Count("id"),
-            normal=Count("id", _filter=Q(status="normal")),
-            warning=Count("id", _filter=Q(status="warning")),
+            normal=Count("id", _filter=Q(status=ProjectStatus.NORMAL)),
+            warning=Count("id", _filter=Q(status=ProjectStatus.WARNING)),
             contract_total=Sum("contract_price"),
         ).values("total", "normal", "warning", "contract_total")
         row = aggregates[0] if aggregates else {}
@@ -130,7 +132,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         months = list(
             await UploadBatch.filter(
                 project_id=project_id,
-                status="success",
+                status=UploadBatchStatus.SUCCESS,
             )
             .order_by("-ym")
             .distinct()
@@ -142,7 +144,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         if selected:
             for batch in await UploadBatch.filter(
                 project_id=project_id,
-                status="success",
+                status=UploadBatchStatus.SUCCESS,
                 ym__in=selected,
             ).order_by("ym", "-id"):
                 if batch.ym not in batches_by_month:
@@ -167,7 +169,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batches = await UploadBatch.filter(
             project_id=project_id,
             ym__in=list(set(months)),
-            status="success",
+            status=UploadBatchStatus.SUCCESS,
         ).order_by("ym", "-id")
         # 批量加载全部月份的数据，避免逐月 4 次查询（settlement/dynamic/lease + 成本科目）。
         batch_ids = [batch.id for batch in batches]
@@ -780,7 +782,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         def _avg(values):
             return round(sum(values) / len(values), 2) if values else 0
 
-        warning_ratio = sum(p.status == "warning" for p in projects) / len(projects)
+        warning_ratio = sum(p.status == ProjectStatus.WARNING for p in projects) / len(projects)
         progress = _avg([_number(p.progress) for p in projects])
         risk = round((1 - warning_ratio) * 100, 2)
         return {
@@ -797,7 +799,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         }
 
     async def dashboard_trends(self, project_ids: list[int] | None = None) -> list[dict]:
-        base = UploadBatch.filter(status="success")
+        base = UploadBatch.filter(status=UploadBatchStatus.SUCCESS)
         if project_ids is not None:
             base = base.filter(project_id__in=project_ids)
         months = list(await base.order_by("-ym").distinct().values_list("ym", flat=True))[:12]
@@ -983,10 +985,10 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         forecast_rate = _number_or_none(monthly.get("expected_complete_profit_rate")) if monthly else None
         writeoff_rate = _number_or_none(monthly.get("write_off_rate")) if monthly else None
         if rate is None:
-            health = "warning" if project.status == "warning" else "healthy"
+            health = "warning" if project.status == ProjectStatus.WARNING else "healthy"
             summary = f"项目状态为 {project.status}。"
         else:
-            health = "warning" if project.status == "warning" or rate < 10 else "healthy"
+            health = "warning" if project.status == ProjectStatus.WARNING or rate < 10 else "healthy"
             summary = f"当前毛利率为 {rate:.2f}%，项目状态为 {project.status}。"
         if forecast_rate is not None:
             summary += f"预计完工毛利率 {forecast_rate:.2f}%。"
@@ -1141,7 +1143,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         Data rows are scoped to the latest successful batch of each in-scope
         project so stale monthly batches do not produce duplicate hits.
         """
-        batch_query = UploadBatch.filter(status="success")
+        batch_query = UploadBatch.filter(status=UploadBatchStatus.SUCCESS)
         if project_ids is not None:
             batch_query = batch_query.filter(project_id__in=project_ids)
         batches = await batch_query.order_by("project_id", "-ym", "-id")
@@ -1353,7 +1355,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     async def _latest_batch_map(project_ids: list[int], ym: str | None) -> dict[int, UploadBatch]:
         if not project_ids:
             return {}
-        query = UploadBatch.filter(project_id__in=project_ids, status="success")
+        query = UploadBatch.filter(project_id__in=project_ids, status=UploadBatchStatus.SUCCESS)
         if ym:
             query = query.filter(ym=ym)
         result: dict[int, UploadBatch] = {}

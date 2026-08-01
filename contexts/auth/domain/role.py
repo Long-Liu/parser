@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from contexts.auth.domain.events import RoleCreated, RolePermissionsChanged
 from contexts.auth.domain.name import Name
@@ -8,6 +9,14 @@ from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import RoleId
+
+
+class SystemRole(StrEnum):
+    """Built-in system roles assigned via set_system_role. Values are persisted
+    role codes — do not rename."""
+
+    ADMIN = "admin"
+    VIEWER = "viewer"
 
 
 @dataclass(frozen=True)

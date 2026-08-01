@@ -5,7 +5,7 @@ import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from contexts.alert.application.constants import ALL_PROJECTS
+from contexts.alert.application.constants import ALL_PROJECTS, OUTBOX_MAX_RETRIES, OUTBOX_SEND_TIMEOUT_SECONDS
 from contexts.alert.domain.repositories import AlertPushDispatcher
 from contexts.alert.infrastructure.tables import AlertOutboxModel
 
@@ -28,7 +28,11 @@ class AlertWebSocketHub:
             if not self._connections[user_id]:
                 self._connections.pop(user_id, None)
 
-    async def publish(self, project_id: int, message: dict) -> None:
+    async def publish(self, project_id: int, message: dict) -> int:
+        """Deliver a message to every subscribed socket, concurrently, with a
+        per-socket timeout. Returns the number of sockets that successfully
+        received the message — 0 means nobody could be reached (no subscriber
+        connected), which callers must not treat as a successful delivery."""
         # 各 socket 并发发送并设单 socket 超时：慢客户端不再串行阻塞
         # 对其他项目的推送（此前逐个 await send）。
         payload = json.dumps(message, ensure_ascii=False)
@@ -39,22 +43,29 @@ class AlertWebSocketHub:
                 if project_id not in allowed and ALL_PROJECTS not in allowed:
                     continue
                 targets.append((user_id, websocket))
-        stale = []
-        if targets:
-            await asyncio.gather(
-                *(self._send(user_id, websocket, payload, stale) for user_id, websocket in targets),
-                return_exceptions=True,
-            )
+        if not targets:
+            return 0
+        results = await asyncio.gather(
+            *(self._send(user_id, websocket, payload) for user_id, websocket in targets),
+            return_exceptions=True,
+        )
+        stale = [
+            (user_id, websocket)
+            for (user_id, websocket), result in zip(targets, results, strict=True)
+            if result is not True
+        ]
         for user_id, websocket in stale:
             await self.disconnect(user_id, websocket)
+        return len(targets) - len(stale)
 
     @staticmethod
-    async def _send(user_id: int, websocket, payload: str, stale: list) -> None:
+    async def _send(user_id: int, websocket, payload: str) -> bool:
         # noinspection PyBroadException
         try:
-            await asyncio.wait_for(websocket.send(payload), timeout=10)
+            await asyncio.wait_for(websocket.send(payload), timeout=OUTBOX_SEND_TIMEOUT_SECONDS)
+            return True
         except Exception:
-            stale.append((user_id, websocket))
+            return False
 
 
 class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
@@ -80,7 +91,7 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
             )
             for row in rows:
                 try:
-                    await self._hub.publish(
+                    delivered = await self._hub.publish(
                         row.project_id,
                         {
                             "event": row.event_type,
@@ -88,11 +99,30 @@ class TortoiseAlertOutboxDispatcher(AlertPushDispatcher):
                             "data": row.payload,
                         },
                     )
-                    row.status = "sent"
-                    row.sent_at = now
-                    row.last_error = None  # type: ignore[assignment]
                 except Exception as exc:
+                    # publish itself swallows per-socket errors, but keep a
+                    # defensive path in case a future transport raises.
                     row.retry_count += 1
                     row.last_error = str(exc)[:1000]
                     row.next_retry_at = now + timedelta(seconds=min(300, 2 ** min(row.retry_count, 8)))
+                    await row.save()
+                    continue
+                if delivered > 0:
+                    row.status = "sent"
+                    row.sent_at = now
+                    row.last_error = None  # type: ignore[assignment]
+                elif row.retry_count >= OUTBOX_MAX_RETRIES:
+                    # Nobody connected for the whole retry window: drop the
+                    # message with a trace instead of silently "succeeding".
+                    # The missed-notification query covers recent alerts, and
+                    # marking it terminal keeps the outbox from growing forever.
+                    row.status = "sent"
+                    row.sent_at = now
+                    row.last_error = "no connected subscriber after retries"
+                else:
+                    row.retry_count += 1
+                    row.last_error = "no connected subscriber"
+                    row.next_retry_at = now + timedelta(
+                        seconds=min(300, 2 ** min(row.retry_count, 8))
+                    )
                 await row.save()
