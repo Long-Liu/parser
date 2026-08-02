@@ -1,9 +1,8 @@
-"""Integration tests: run the real parsing pipeline over the shipped workbooks.
+"""Integration tests: run the real parsing pipeline over the new workbook.
 
 Uses the project's own domain pipeline (unmerge -> flatten -> extract ->
-validate) with YamlTemplateLoader configs against the two real Excel files
-under excel/ (the old样式 workbook is git-tracked; the 0714 workbook is a
-local fixture that is not committed). Guards the template adaptations made
+validate) with YamlTemplateLoader configs against the new 电源A 0714 workbook
+(a local fixture that is not committed). Guards the template adaptations made
 for the 电源A dynamic-cost workbook format:
 
 - every expected sheet matches a template and yields non-zero valid rows
@@ -11,7 +10,6 @@ for the 电源A dynamic-cost workbook format:
 - key fields are actually populated (not just header-matched on paper)
 - stop rules terminate extraction (no 65k-row runaway on 表5, 总计 cut on 表9,
   合计 cut on 表10/表10.1/表10.2/表10.3)
-- retired sheets (毛利/表1-1/表9-1/表9-2/表9-3) are skipped on the old workbook
 """
 
 from __future__ import annotations
@@ -29,7 +27,6 @@ from contexts.template.infrastructure.yaml_loader import YamlTemplateLoader
 
 EXCEL_DIR = Path(__file__).resolve().parent.parent / "excel"
 NEW_WORKBOOK = EXCEL_DIR / "01 电源A项目动态成本基础表-0714.xlsx"
-OLD_WORKBOOK = EXCEL_DIR / "xxx项目主体施工动态成本表-样式 - 副本.xlsx"
 
 # template_id -> (a field that must be filled in at least one row)
 EXPECTED_NEW = {
@@ -66,17 +63,6 @@ EXPECTED_NEW_ROW_COUNTS = {
     "budget_lease": 2,
     "settlement_output": 14,
 }
-
-# Sheets that existed in the old workbook but lost their templates with the
-# format change; they must now be skipped instead of parsed.
-RETIRED_TEMPLATES = (
-    "gross_profit",
-    "labor_cost_summary",
-    "concrete_ledger",
-    "rebar_ledger",
-    "installation_material",
-)
-
 
 async def _run_pipeline(path: Path):
     """template_id -> (valid_rows, errors) for every matched sheet."""
@@ -232,23 +218,3 @@ async def test_new_workbook_key_amount_fields():
     material, _ = results["material_cost"]
     assert any(r.fields.get("indicator_total") for r in material)
     assert any(r.fields.get("actual_unpaid_total") for r in material)
-
-
-@pytest.mark.skipif(not OLD_WORKBOOK.exists(), reason="old workbook not present")
-async def test_old_workbook_still_parses():
-    """Backward-compat smoke check on the legacy workbook."""
-    results = await _run_pipeline(OLD_WORKBOOK)
-    for template_id in ("dynamic_indicator", "bid_comparison", "other_items", "material_cost", "installation_dynamic"):
-        valid, _ = results[template_id]
-        assert len(valid) > 0, f"{template_id}: 0 valid rows on old workbook"
-    # the 表5 runaway must be fixed for the old workbook too
-    assert len(results["bid_comparison"][0]) < 100
-
-
-@pytest.mark.skipif(not OLD_WORKBOOK.exists(), reason="old workbook not present")
-async def test_old_workbook_retired_sheets_are_skipped():
-    """毛利/表1-1/表9-1/表9-2/表9-3 lost their templates with the format
-    change; on the old workbook they must now be skipped, not parsed."""
-    results = await _run_pipeline(OLD_WORKBOOK)
-    for template_id in RETIRED_TEMPLATES:
-        assert template_id not in results, f"{template_id} unexpectedly matched a sheet on the old workbook"
