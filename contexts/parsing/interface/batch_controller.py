@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from sanic_ext import openapi
 
-from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.application.project_access import (
+    ProjectAccessPolicy,
+    resolve_project_scope,
+)
 from contexts.auth.interface.auth_middleware import (
     require_auth,
     require_batch_access,
@@ -37,14 +40,25 @@ class BatchesController(BaseController):
     async def list_batches(self, request):
         project_id_raw = request.args.get("project_id")
         pagination = pagination_from(request)
+        auth = current_auth(request)
+        permissions = set(auth.permissions)
         project_id = None
+        scoped_project_ids: list[ProjectId] | None = None
         if project_id_raw:
-            auth = current_auth(request)
-            permissions = set(auth.permissions)
             if not ProjectAccessPolicy.has_elevated_permission(permissions):
                 await self.access_policy.require(UserId(auth.user_id), int(project_id_raw))
             project_id = ProjectId(parse_int(project_id_raw, 0))
-        result = await self.batch_query_svc.list_batches(project_id, pagination)
+        elif not ProjectAccessPolicy.has_elevated_permission(permissions):
+            # No project filter + non-elevated user: scope to the caller's
+            # accessible projects so batch metadata does not leak across
+            # tenants (previously this listed every project's batches).
+            accessible = await resolve_project_scope(
+                self.access_policy,
+                UserId(auth.user_id),
+                permissions,
+            )
+            scoped_project_ids = [ProjectId(pid) for pid in accessible or []]
+        result = await self.batch_query_svc.list_batches(project_id, pagination, scoped_project_ids)
         if result is None:
             return self.json({"error": "project not found"}, status=404)
         return self.json(result)

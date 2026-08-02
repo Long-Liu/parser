@@ -1,7 +1,8 @@
 """Tests for parsing domain services."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
+from typing import cast
 
 from contexts.parsing.domain.cell_unmerger import CellUnmerger, MergedCellRange
 from contexts.parsing.domain.data_extractor import DataRowExtractor
@@ -9,6 +10,7 @@ from contexts.parsing.domain.data_validator import DataValidator
 from contexts.parsing.domain.header_flattener import HeaderFlattener
 from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.parsing.domain.stop_detector import StopDetector
+from contexts.parsing.domain.template_spec import StopRuleSpec, TemplateSpec
 
 # noinspection PyProtectedMember
 from contexts.parsing.infrastructure.data_writer import _model_values
@@ -78,13 +80,19 @@ def test_flatten_empty_grid():
 
 
 def test_extractor_can_map_duplicate_header_by_occurrence():
-    template = Template(
-        template_id=TemplateId("duplicate_headers"),
-        header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
-        fixed_columns=[
-            ColumnMapping("first_note", ["备注"]),
-            ColumnMapping("final_note", ["备注"], occurrence=2),
-        ],
+    template = cast(
+        TemplateSpec,
+        cast(
+            object,
+            Template(
+                template_id=TemplateId("duplicate_headers"),
+                header_spec=HeaderSpec(header_rows=[0], data_start_row=2),
+                fixed_columns=[
+                    ColumnMapping("first_note", ["备注"]),
+                    ColumnMapping("final_note", ["备注"], occurrence=2),
+                ],
+            ),
+        ),
     )
     rows = DataRowExtractor().extract(
         [["备注", "备注"], ["前备注", "后备注"]],
@@ -107,13 +115,19 @@ def test_stop_on_cell_match():
         ["合计", "100"],
         ["More", "200"],
     ]
-    stop_rules = [
-        StopRule(
-            rule_type=StopRuleType.CELL_MATCH,
-            patterns=[r"^合.*"],
-            columns=["A"],
+    stop_rules = cast(
+        list[StopRuleSpec],
+        cast(
+            object,
+            [
+                StopRule(
+                    rule_type=StopRuleType.CELL_MATCH,
+                    patterns=[r"^合.*"],
+                    columns=["A"],
+                ),
+            ],
         ),
-    ]
+    )
     assert detector.should_stop(0, grid, stop_rules) is False
     assert detector.should_stop(1, grid, stop_rules) is True
 
@@ -128,34 +142,46 @@ def test_stop_on_consecutive_empty():
         [None, None],
         [None, None],
     ]
-    stop_rules = [
-        StopRule(
-            rule_type=StopRuleType.CONSECUTIVE_EMPTY,
-            patterns=[],
-            columns=[],
-            empty_row_count=5,
+    stop_rules = cast(
+        list[StopRuleSpec],
+        cast(
+            object,
+            [
+                StopRule(
+                    rule_type=StopRuleType.CONSECUTIVE_EMPTY,
+                    patterns=[],
+                    columns=[],
+                    empty_row_count=5,
+                ),
+            ],
         ),
-    ]
+    )
     assert detector.should_stop(0, grid, stop_rules) is False
     assert detector.should_stop(1, grid, stop_rules) is True
 
 
 def test_stop_past_grid_end():
     detector = StopDetector()
-    stop_rules = [
-        StopRule(
-            rule_type=StopRuleType.CELL_MATCH,
-            patterns=[r".*"],
-            columns=["A"],
+    stop_rules = cast(
+        list[StopRuleSpec],
+        cast(
+            object,
+            [
+                StopRule(
+                    rule_type=StopRuleType.CELL_MATCH,
+                    patterns=[r".*"],
+                    columns=["A"],
+                ),
+            ],
         ),
-    ]
+    )
     assert detector.should_stop(100, [["A"]], stop_rules) is True
 
 
 # ── DataValidator ────────────────────────────────────────────────────
 
 
-def _make_template(**kwargs) -> Template:
+def _make_template(**kwargs) -> TemplateSpec:
     defaults = dict(
         template_id=TemplateId("test"),
         description="test",
@@ -166,7 +192,8 @@ def _make_template(**kwargs) -> Template:
         dynamic_columns=[],
     )
     defaults.update(kwargs)
-    return Template(**defaults)
+    # Template structurally satisfies TemplateSpec (duck-typed protocol).
+    return cast(TemplateSpec, cast(object, Template(**defaults)))
 
 
 def test_validate_decimal_field():
@@ -206,6 +233,49 @@ def test_validate_all_valid():
     valid, errors = validator.validate(rows, template)
     assert len(valid) == 2
     assert len(errors) == 0
+
+
+def _date_template(db_type: str) -> TemplateSpec:
+    return _make_template(
+        fixed_columns=[ColumnMapping(db_field="when", match_headers=["When"], db_type=db_type)],
+    )
+
+
+def test_validate_normalizes_lenient_date_strings_to_iso():
+    """Non-ISO date text passes validation but must be normalized to the ISO
+    string Tortoise DateField/DatetimeField can parse — otherwise the raw
+    string reaches MySQL strict mode and aborts the whole batch insert."""
+    validator = DataValidator()
+    template = _date_template("date")
+    for raw in ("2026/07/15", "2026.07.15", "2026年7月15日", "2026-07-15", "2026-07-15T10:30:00"):
+        valid, errors = validator.validate([ParsedRow(row_index=1, fields={"when": raw})], template)
+        assert not errors, f"{raw!r} should be valid"
+        assert valid[0].fields["when"] == "2026-07-15", f"{raw!r} normalized to {valid[0].fields['when']!r}"
+
+
+def test_validate_normalizes_native_datetime_to_iso():
+    validator = DataValidator()
+    template = _date_template("date")
+    valid, errors = validator.validate([ParsedRow(row_index=1, fields={"when": datetime(2026, 7, 15, 10, 30)})], template)
+    assert not errors
+    assert valid[0].fields["when"] == "2026-07-15"  # time truncated for a date column
+
+    template = _date_template("datetime")
+    valid, errors = validator.validate([ParsedRow(row_index=1, fields={"when": date(2026, 7, 15)})], template)
+    assert not errors
+    assert valid[0].fields["when"] == "2026-07-15T00:00:00"
+
+
+def test_validate_rejects_freeform_datetime_text():
+    """Free-form text (no parseable date) is rejected rather than let through
+    to abort the batch insert."""
+    validator = DataValidator()
+    template = _date_template("date")
+    for raw in ("2027年6月", "abc", "not-a-date", "2026-13-99"):
+        valid, errors = validator.validate([ParsedRow(row_index=1, fields={"when": raw})], template)
+        assert not valid, f"{raw!r} should be rejected"
+        assert len(errors) == 1
+        assert "expected date" in errors[0].reason
 
 
 def test_data_writer_normalizes_float_for_decimal_column():

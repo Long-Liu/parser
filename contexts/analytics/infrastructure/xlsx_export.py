@@ -236,3 +236,20 @@ def build_compare_workbook(data: dict) -> Workbook:
     _append_cost_rows(costs, data["cost_categories"])
     _autosize(costs)
     return wb
+
+
+def build_project_export_workbook(result: dict) -> Workbook:
+    """单项目导出：项目概览 + 成本明细（原内联在接口层的构建移到此模块）。"""
+    wb = Workbook()
+    overview = wb.active
+    if overview is not None:
+        overview.title = "项目概览"
+        for key, value in result["project"].items():
+            overview.append([key, value])
+    costs = wb.create_sheet("成本明细")
+    costs.append(["科目", "指标", "实际", "偏差", "偏差率"])
+    for item in result["cost_categories"]:
+        costs.append(
+            [item["name"], item["indicator"], item["actual"], item["deviation"], item["deviation_rate"]]
+        )
+    return wb

@@ -2,23 +2,11 @@ from __future__ import annotations
 
 import fnmatch
 from dataclasses import dataclass, field
-from enum import StrEnum
 
 from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.identifiers import TemplateId
-
-
-class StopRuleType(StrEnum):
-    CELL_MATCH = "cell_match"
-    CONSECUTIVE_EMPTY = "consecutive_empty_rows"
-
-
-class StopRuleAction(StrEnum):
-    # EXCLUDE: drop the matched row and stop (default).
-    # LAST: keep the matched row as the final data row, then stop.
-    EXCLUDE = "exclude"
-    LAST = "last"
+from contexts.shared.domain.stop_rules import StopRuleAction, StopRuleType
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,11 @@ class CellUnmerger:
 
     @staticmethod
     def unmerge(grid: list[list], merged_ranges: list[MergedCellRange]) -> list[list]:
-        # ponytail: deepcopy avoids mutating caller's grid; acceptable for typical worksheet sizes
+        # No merges → nothing to fill, so skip the full grid deepcopy (a sheet
+        # with zero merged ranges pays no O(grid) copy in the hot parse path).
+        if not merged_ranges:
+            return grid
+        # deepcopy avoids mutating caller's grid; acceptable for typical worksheet sizes
         result = deepcopy(grid)
         for merged_range in merged_ranges:
             min_col = merged_range.min_col

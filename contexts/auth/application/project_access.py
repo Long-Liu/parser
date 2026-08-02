@@ -73,3 +73,27 @@ class ProjectAccessPolicy:
 
     async def accessible_project_ids(self, user_id: UserId) -> list[int]:
         return await self._repository.projects_for_user(user_id.value)
+
+
+async def resolve_project_scope(
+    access_policy: ProjectAccessPolicy,
+    user_id: UserId,
+    permissions: set[str],
+    requested: list[int] | None = None,
+) -> list[int] | None:
+    """Resolve which projects a request may see — the shared scoping rule used
+    by every project/batch listing controller.
+
+    Elevated users get ``requested`` unchanged (None = all projects). Other
+    users get their accessible projects; when ``requested`` is given, any
+    project outside the caller's access raises AuthorizationError.
+    """
+    if ProjectAccessPolicy.has_elevated_permission(permissions):
+        return requested
+    accessible = await access_policy.accessible_project_ids(user_id)
+    if requested is None:
+        return sorted(accessible)
+    denied = set(requested) - set(accessible)
+    if denied:
+        raise AuthorizationError(f"no access to projects: {sorted(denied)}")
+    return requested

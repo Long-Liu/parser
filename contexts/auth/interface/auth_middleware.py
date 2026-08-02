@@ -1,4 +1,13 @@
-"""JWT auth + permission decorators for Sanic routes."""
+"""JWT auth + permission decorators for Sanic routes.
+
+Dependency note: these decorators are applied statically at class-definition
+time, so they cannot receive constructor-injected dependencies. Services are
+resolved from ``request.app.ctx.services`` — Sanic's idiomatic application
+container, populated by the composition root — rather than a hand-rolled
+service locator. This is an intentional design decision: the alternative
+(request-scoped factories) would couple every route declaration to the
+container, trading a small coupling here for a much larger one everywhere.
+"""
 
 from functools import wraps
 
@@ -75,8 +84,16 @@ def require_permission(perm_code: str):
     return decorator
 
 
-def require_project_access(*, roles: set[str] | None = None):
-    """Require membership of the project identified by route, query or form."""
+def _require_access(
+    *,
+    id_key: str,
+    id_label: str,
+    policy_method: str,
+    missing_response: str | None,
+    handle_domain_error: bool,
+    roles: set[str] | None,
+):
+    """Shared implementation for project/batch access decorators."""
 
     def decorator(f):
         @wraps(f)
@@ -85,57 +102,52 @@ def require_project_access(*, roles: set[str] | None = None):
             permissions = set(current_auth(request).permissions)
             if ProjectAccessPolicy.has_elevated_permission(permissions):
                 return await f(*args, **kwargs)
-            raw = kwargs.get("project_id")
+            raw = kwargs.get(id_key)
             if raw is None:
-                raw = (request.args or {}).get("project_id") or (request.form or {}).get("project_id")
+                raw = (request.args or {}).get(id_key) or (request.form or {}).get(id_key)
+            if raw is None and missing_response is not None:
+                return json({"error": missing_response}, status=400)
             try:
                 services: RequestServices = request.app.ctx.services
                 policy: ProjectAccessPolicy = services.project_access
-                await policy.require(
+                await getattr(policy, policy_method)(
                     UserId(current_auth(request).user_id),
                     int(raw or ""),
                     roles,
                 )
             except (TypeError, ValueError):
-                return json({"error": "valid project_id is required"}, status=400)
-            except AuthorizationError as exc:
-                return json({"error": str(exc)}, status=403)
-            return await f(*args, **kwargs)
-
-        return decorated
-
-    return decorator
-
-
-def require_batch_access(*, roles: set[str] | None = None):
-    def decorator(f):
-        @wraps(f)
-        async def decorated(*args, **kwargs):
-            request = _extract_request(args)
-            permissions = set(current_auth(request).permissions)
-            if ProjectAccessPolicy.has_elevated_permission(permissions):
-                return await f(*args, **kwargs)
-            raw = kwargs.get("batch_id")
-            if raw is None:
-                raw = (request.args or {}).get("batch_id") or (request.form or {}).get("batch_id")
-            if raw is None:
-                return json({"error": "batch_id is required"}, status=400)
-            try:
-                services: RequestServices = request.app.ctx.services
-                policy: ProjectAccessPolicy = services.project_access
-                await policy.require_batch(
-                    UserId(current_auth(request).user_id),
-                    int(raw or ""),
-                    roles,
-                )
-            except (TypeError, ValueError):
-                return json({"error": "valid batch_id is required"}, status=400)
+                return json({"error": f"valid {id_label} is required"}, status=400)
             except AuthorizationError as exc:
                 return json({"error": str(exc)}, status=403)
             except DomainError as exc:
-                return error_to_response(exc)
+                if handle_domain_error:
+                    return error_to_response(exc)
+                raise
             return await f(*args, **kwargs)
 
         return decorated
 
     return decorator
+
+
+def require_project_access(*, roles: set[str] | None = None):
+    """Require membership of the project identified by route, query or form."""
+    return _require_access(
+        id_key="project_id",
+        id_label="project_id",
+        policy_method="require",
+        missing_response=None,
+        handle_domain_error=False,
+        roles=roles,
+    )
+
+
+def require_batch_access(*, roles: set[str] | None = None):
+    return _require_access(
+        id_key="batch_id",
+        id_label="batch_id",
+        policy_method="require_batch",
+        missing_response="batch_id is required",
+        handle_domain_error=True,
+        roles=roles,
+    )

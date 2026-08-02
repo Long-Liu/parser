@@ -32,12 +32,14 @@ from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
+from contexts.auth.application.notification_app_service import NotificationApplicationService
 from contexts.auth.application.project_access import ProjectAccessPolicy
 from contexts.auth.application.role_app_service import RoleApplicationService
 from contexts.auth.application.user_app_service import UserApplicationService
 from contexts.auth.composition import build_auth_components
 from contexts.auth.domain.repositories import UserRepository
 from contexts.auth.infrastructure.jwt_service import JwtService
+from contexts.auth.infrastructure.notification_repository import TortoiseNotificationRepository
 from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 from contexts.auth.infrastructure.project_access_repository import (
     TortoiseProjectAccessRepository,
@@ -64,7 +66,9 @@ from contexts.parsing.infrastructure.repositories import (
     TortoiseUploadPreviewRepository,
 )
 from contexts.parsing.infrastructure.workbook_reader import OpenPyxlWorkbookReader
+from contexts.project.application.milestone_app_service import MilestoneApplicationService
 from contexts.project.application.project_app_service import ProjectApplicationService
+from contexts.project.infrastructure.milestone_repository import TortoiseMilestoneRepository
 from contexts.project.composition import build_project_service
 from contexts.project.domain.events import (
     ProjectCreated,
@@ -88,6 +92,7 @@ from contexts.template.application.template_app_service import (
     TemplateApplicationService,
 )
 from contexts.template.infrastructure.repositories import YamlTemplateCatalog
+from contexts.template.infrastructure.xlsx_template_builder import build_template_workbook
 
 if TYPE_CHECKING:
     from contexts.shared.interface.base_controller import BaseController
@@ -106,11 +111,13 @@ class ApplicationComponents:
     user_service: UserApplicationService
     role_service: RoleApplicationService
     project_service: ProjectApplicationService
+    milestone_service: MilestoneApplicationService
     template_service: TemplateApplicationService
     data_service: DataApplicationService
     upload_service: UploadApplicationService
     analytics_service: AnalyticsApplicationService
     alert_service: AlertApplicationService
+    notification_service: NotificationApplicationService
     batch_query_service: BatchQueryApplicationService
     parse_job_repository: ParseJobRepository
     project_repository: ProjectRepository
@@ -201,7 +208,7 @@ def build_container(
         event_bus,
         transaction_manager,
     )
-    template_service = TemplateApplicationService(template_catalog)
+    template_service = TemplateApplicationService(template_catalog, build_template_workbook)
     data_service = DataApplicationService(data_repo, transaction_manager)
     upload_service = build_upload_service(
         parse_job_repo,
@@ -215,6 +222,8 @@ def build_container(
         transaction_manager,
     )
     analytics_service = AnalyticsApplicationService(analytics_repo)
+    notification_service = NotificationApplicationService(TortoiseNotificationRepository(transaction_manager))
+    milestone_service = MilestoneApplicationService(TortoiseMilestoneRepository(transaction_manager))
     batch_query_service = BatchQueryApplicationService(parse_job_repo, project_repo)
 
     return ApplicationComponents(
@@ -227,11 +236,13 @@ def build_container(
         user_service=auth.users,
         role_service=auth.roles,
         project_service=project_service,
+        milestone_service=milestone_service,
         template_service=template_service,
         data_service=data_service,
         upload_service=upload_service,
         analytics_service=analytics_service,
         alert_service=alert_service,
+        notification_service=notification_service,
         batch_query_service=batch_query_service,
         parse_job_repository=parse_job_repo,
         project_repository=project_repo,
@@ -244,6 +255,7 @@ def build_controllers(components: ApplicationComponents) -> tuple[BaseController
     from contexts.alert.interface.alert_controller import AlertController
     from contexts.analytics.interface.analytics_controller import AnalyticsController
     from contexts.auth.interface.auth_controller import AuthController
+    from contexts.auth.interface.notification_controller import NotificationController
     from contexts.auth.interface.role_controller import RolesController
     from contexts.auth.interface.user_controller import UsersController
     from contexts.data.interface.data_controller import DataController
@@ -268,6 +280,10 @@ def build_controllers(components: ApplicationComponents) -> tuple[BaseController
             components.auth_service,
             components.user_service,
         ),
+        NotificationController(
+            components.notification_service,
+            components.project_access_policy,
+        ),
         RolesController(components.role_service),
         UsersController(components.user_service),
         DataController(
@@ -279,6 +295,6 @@ def build_controllers(components: ApplicationComponents) -> tuple[BaseController
             components.project_access_policy,
         ),
         UploadsController(components.upload_service),
-        ProjectsController(components.project_service),
+        ProjectsController(components.project_service, components.milestone_service),
         TemplatesController(components.template_service),
     )

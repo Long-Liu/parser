@@ -201,6 +201,16 @@ CATALOG: dict[str, dict[str, EndpointDoc]] = {
             response=OK,
         ),
         "remove_user": doc("移除项目成员", "从项目中移除指定成员。", response=OK),
+        "milestones": doc("项目里程碑", "分页查询指定项目的里程碑。", paginated=True),
+        "project_progress": doc("项目进度", "分页查询指定项目的进度记录。", paginated=True),
+        "create_milestone": doc(
+            "创建里程碑",
+            "为指定项目创建里程碑。",
+            body=BODIES["milestone"],
+            status=201,
+        ),
+        "update_milestone": doc("更新里程碑", "更新指定项目里程碑。", body=BODIES["milestone"]),
+        "delete_milestone": doc("删除里程碑", "删除指定项目里程碑。", response=OK),
     },
     "UploadsController": {
         "upload": doc(
@@ -292,16 +302,6 @@ CATALOG: dict[str, dict[str, EndpointDoc]] = {
     "AnalyticsController": {
         "summary": doc("项目统计汇总", "汇总当前用户可访问项目的核心指标。"),
         "monthly_data": doc("项目月度数据", "分页查询指定项目的月度数据。", paginated=True),
-        "project_progress": doc("项目进度", "分页查询指定项目的进度记录。", paginated=True),
-        "milestones": doc("项目里程碑", "分页查询指定项目的里程碑。", paginated=True),
-        "create_milestone": doc(
-            "创建里程碑",
-            "为指定项目创建里程碑。",
-            body=BODIES["milestone"],
-            status=201,
-        ),
-        "update_milestone": doc("更新里程碑", "更新指定项目里程碑。", body=BODIES["milestone"]),
-        "delete_milestone": doc("删除里程碑", "删除指定项目里程碑。", response=OK),
         "cost_details": doc(
             "项目成本明细",
             "按月份分页查询项目成本明细。",
@@ -364,19 +364,6 @@ CATALOG: dict[str, dict[str, EndpointDoc]] = {
             query=(q("status", "告警状态"), q("level", "告警级别")),
             paginated=True,
         ),
-        "notifications": doc(
-            "通知列表",
-            "查询当前用户通知。",
-            query=(q("unread_only", "是否仅返回未读通知", bool),),
-            paginated=True,
-        ),
-        "create_notification": doc(
-            "创建通知",
-            "管理员创建一条通知。",
-            body=BODIES["notification"],
-            status=201,
-        ),
-        "mark_read": doc("标记通知已读", "将指定通知标记为已读。", response=OK),
         "ai_analysis": doc("项目 AI 分析", "生成指定项目的 AI 分析结果。", body=BODIES["ai"]),
         "global_search": doc(
             "全局搜索",
@@ -440,6 +427,21 @@ CATALOG: dict[str, dict[str, EndpointDoc]] = {
             "生成多项目对比的 AI 分析结果。",
             body=BODIES["compare"],
         ),
+    },
+    "NotificationController": {
+        "notifications": doc(
+            "通知列表",
+            "查询当前用户通知。",
+            query=(q("unread_only", "是否仅返回未读通知", bool),),
+            paginated=True,
+        ),
+        "create_notification": doc(
+            "创建通知",
+            "管理员创建一条通知。",
+            body=BODIES["notification"],
+            status=201,
+        ),
+        "mark_read": doc("标记通知已读", "将指定通知标记为已读。", response=OK),
         "mark_all_read": doc("全部通知已读", "将当前用户的全部通知标记为已读。", response=OK),
         "delete_notification": doc("删除通知", "删除当前用户的指定通知。", response=OK),
         "clear_notifications": doc("清空通知", "清空当前用户的全部通知。", response=OK),
@@ -458,6 +460,7 @@ TAGS = {
     "TemplatesController": "解析模板",
     "AlertController": "告警管理",
     "AnalyticsController": "统计分析",
+    "NotificationController": "通知",
 }
 
 

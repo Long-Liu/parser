@@ -10,7 +10,8 @@ from contexts.parsing.domain.hierarchy_code import (
 )
 from contexts.parsing.domain.parse_job import ParsedRow
 from contexts.parsing.domain.stop_detector import StopDetector
-from contexts.template.domain.template import StopRule, StopRuleAction, Template
+from contexts.parsing.domain.template_spec import StopRuleSpec, TemplateSpec
+from contexts.shared.domain.stop_rules import StopRuleAction
 
 
 class DataRowExtractor:
@@ -19,8 +20,10 @@ class DataRowExtractor:
     def __init__(self, stop_detector: StopDetector | None = None) -> None:
         self._stop_detector = stop_detector or StopDetector()
 
-    def extract(self, grid: list[list], flat_headers: list[str], template: Template) -> list[ParsedRow]:
-        data_start = template.header_spec.data_start_row - 1
+    def extract(self, grid: list[list], flat_headers: list[str], template: TemplateSpec) -> list[ParsedRow]:
+        # data_start_row is 1-based; clamp so data_start_row=0 (the template
+        # default) cannot turn into data_start=-1 and read grid[-1].
+        data_start = max(template.header_spec.data_start_row - 1, 0)
         hierarchy_col = self._resolve_hierarchy_column(grid, template)
         separator = template.hierarchy_config.separator if template.hierarchy_config is not None else "."
         # 列→字段映射对每个 sheet 恒定；预计算一次，避免每行每列重复线性扫描
@@ -57,7 +60,7 @@ class DataRowExtractor:
     def _build_header_map(
         cls,
         flat_headers: list[str],
-        template: Template,
+        template: TemplateSpec,
         hierarchy_col: int | None,
     ) -> list[tuple[str, str] | None]:
         """Resolve every header column once, mirroring the old per-row logic.
@@ -90,10 +93,10 @@ class DataRowExtractor:
         grid: list[list],
         ri: int,
         header_map: list[tuple[str, str] | None],
-        template: Template,
+        template: TemplateSpec,
         hierarchy_col: int | None,
         separator: str,
-        stop_rule: StopRule | None = None,
+        stop_rule: StopRuleSpec | None = None,
     ) -> None:
         row = grid[ri]
         row_data = self._extract_row(row, header_map)
@@ -117,8 +120,8 @@ class DataRowExtractor:
     def _normalize_stop_row(
         source_row: list,
         row_data: ParsedRow,
-        template: Template,
-        stop_rule: StopRule,
+        template: TemplateSpec,
+        stop_rule: StopRuleSpec,
     ) -> None:
         """Keep a total row valid even when its label occupies a numeric cell."""
         non_null = [v for v in source_row if v is not None]
@@ -139,12 +142,13 @@ class DataRowExtractor:
             row_data.fields[stop_rule.label_field] = marker
 
     @staticmethod
-    def _resolve_hierarchy_column(grid: list[list], template: Template) -> int | None:
+    def _resolve_hierarchy_column(grid: list[list], template: TemplateSpec) -> int | None:
         """Locate the hierarchy column by matching the configured column name
         against raw header cells (whitespace-insensitive).
 
-        YAML ``headers.rows`` are 1-based Excel row numbers; fall back to any
-        row above the data area when the configured rows do not match.
+        ``headers.rows`` are 0-based grid row indices (same convention as
+        HeaderFlattener and the YAML templates); fall back to any row above
+        the data area when the configured rows do not match.
         """
         config = template.hierarchy_config
         if config is None or not config.column_name:
@@ -153,7 +157,7 @@ class DataRowExtractor:
         if not target:
             return None
         data_start = max(template.header_spec.data_start_row - 1, 0)
-        preferred = [r - 1 for r in template.header_spec.header_rows if 0 < r <= len(grid)]
+        preferred = [r for r in template.header_spec.header_rows if 0 <= r < len(grid)]
         candidates = preferred + [r for r in range(min(data_start, len(grid))) if r not in preferred]
         for r in candidates:
             for ci, cell in enumerate(grid[r]):

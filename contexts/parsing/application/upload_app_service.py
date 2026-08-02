@@ -14,7 +14,7 @@ from contexts.parsing.domain.data_extractor import DataRowExtractor
 from contexts.parsing.domain.data_sink import ParsedDataSink
 from contexts.parsing.domain.data_validator import DataValidator
 from contexts.parsing.domain.header_flattener import HeaderFlattener
-from contexts.parsing.domain.parse_job import FileInfo, ParsedRow, ParseJob, UploadBatchStatus
+from contexts.parsing.domain.parse_job import FileInfo, ParsedRow, ParseJob
 from contexts.parsing.domain.repositories import (
     ParseJobRepository,
     UploadPreviewRepository,
@@ -28,6 +28,7 @@ from contexts.shared.application.transaction import (
     TransactionManager,
     transactional,
 )
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 from contexts.shared.domain.event_publisher import EventPublisher
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import JobId, ProjectId, UserId
@@ -140,7 +141,7 @@ class UploadApplicationService(TransactionalService):
             return {
                 "batch_id": persisted_job_id,
                 "batch_no": batch_no,
-                "status": "preview",
+                "status": UploadBatchStatus.PREVIEW,
                 "sheets": summary,
             }
         except Exception:
@@ -187,9 +188,9 @@ class UploadApplicationService(TransactionalService):
             rows = [
                 ParsedRow(
                     row_index=row["row_index"],
-                    fields=cast(dict[str, Any], self._restore_types(row["fields"])),
+                    fields=cast(dict[str, Any], row["fields"]),
                     hierarchy_code=row.get("hierarchy_code"),
-                    monthly_data=cast(dict[str, Any] | None, self._restore_types(row.get("monthly_data"))),
+                    monthly_data=cast(dict[str, Any] | None, row.get("monthly_data")),
                 )
                 for row in sheet["rows"]
             ]
@@ -238,22 +239,10 @@ class UploadApplicationService(TransactionalService):
         workbook_sheets = await self._workbook_reader.read(stored_path)
         prepared: list[dict] = []
         for sheet in workbook_sheets:
-            template = await self._template_repo.find_matching(sheet.name)
-            if template is None:
-                job.match_sheet(sheet.name, None)
-                prepared.append({"name": sheet.name, "template": None, "rows": 0, "status": UploadBatchStatus.SKIPPED})
-                continue
-            if template.id is None:
-                raise RuntimeError("matched template has no id")
-            template_id = template.id.value
-            job.match_sheet(sheet.name, template_id)
-            valid_rows, errors = await self._run_parsing_pipeline(sheet, job, template)
+            template_id, valid_rows, errors = await self._match_and_parse(sheet, job)
             prepared.append(
                 {
-                    "name": sheet.name,
-                    "template": template_id,
-                    "rows": len(valid_rows),
-                    "status": UploadBatchStatus.SUCCESS if not errors else UploadBatchStatus.PARTIAL,
+                    **self._sheet_result(sheet.name, template_id, valid_rows, errors),
                     "valid_rows": valid_rows,
                 }
             )
@@ -265,6 +254,9 @@ class UploadApplicationService(TransactionalService):
             for item in prepared:
                 if item["valid_rows"]:
                     await self._data_sink.insert_data_rows(item["template"], job.id.value, item["valid_rows"])
+                    # Free each sheet's rows once inserted so all sheets' rows
+                    # are not held simultaneously for the whole transaction.
+                    item["valid_rows"] = []
             job.complete()
             await self._repo.save(job)
 
@@ -277,32 +269,50 @@ class UploadApplicationService(TransactionalService):
     async def _save_failed_job(self, job: ParseJob) -> None:
         await self._repo.save(job)
 
-    async def _process_sheet(self, sheet: WorkbookSheet, job: ParseJob, write: bool = True) -> dict:
-        sheet_name = sheet.name
-        template = await self._template_repo.find_matching(sheet_name)
+    async def _match_and_parse(self, sheet: WorkbookSheet, job: ParseJob) -> tuple[str | None, list[ParsedRow], list]:
+        """Match a sheet's template and run the parse pipeline.
 
+        Returns ``(template_id, valid_rows, errors)``; ``template_id`` is None
+        when no template matches (sheet skipped). Shared by the two-phase
+        ``_process_workbook`` and the preview ``_process_sheet`` paths.
+        """
+        template = await self._template_repo.find_matching(sheet.name)
         if template is None:
-            job.match_sheet(sheet_name, None)
-            return {"name": sheet_name, "template": None, "rows": 0, "status": UploadBatchStatus.SKIPPED}
-
+            job.match_sheet(sheet.name, None)
+            return None, [], []
         if template.id is None:
             raise RuntimeError("matched template has no id")
         template_id = template.id.value
-        job.match_sheet(sheet_name, template_id)
+        job.match_sheet(sheet.name, template_id)
         valid_rows, errors = await self._run_parsing_pipeline(sheet, job, template)
+        return template_id, valid_rows, errors
 
-        if valid_rows and write:
-            if job.id is None:
-                raise RuntimeError("ParseJob repository did not assign an id")
-            await self._data_sink.insert_data_rows(template_id, job.id.value, valid_rows)
-
-        result = {
-            "name": sheet_name,
+    @staticmethod
+    def _sheet_result(
+        name: str,
+        template_id: str | None,
+        valid_rows: list[ParsedRow],
+        errors: list,
+    ) -> dict:
+        if template_id is None:
+            return {"name": name, "template": None, "rows": 0, "status": UploadBatchStatus.SKIPPED}
+        return {
+            "name": name,
             "template": template_id,
             "rows": len(valid_rows),
             "status": UploadBatchStatus.SUCCESS if not errors else UploadBatchStatus.PARTIAL,
         }
-        if not write:
+
+    async def _process_sheet(self, sheet: WorkbookSheet, job: ParseJob, write: bool = True) -> dict:
+        template_id, valid_rows, errors = await self._match_and_parse(sheet, job)
+
+        if template_id is not None and valid_rows and write:
+            if job.id is None:
+                raise RuntimeError("ParseJob repository did not assign an id")
+            await self._data_sink.insert_data_rows(template_id, job.id.value, valid_rows)
+
+        result = self._sheet_result(sheet.name, template_id, valid_rows, errors)
+        if not write and template_id is not None:
             result.update(self._build_preview_data(valid_rows, errors))
         return result
 
@@ -357,19 +367,6 @@ class UploadApplicationService(TransactionalService):
             return {key: cls._json_safe(item) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
             return [cls._json_safe(item) for item in value]
-        return value
-
-    @classmethod
-    def _restore_types(cls, value):
-        """Preview payloads are stored JSON-safe (see _json_safe): Decimal and
-        date/datetime values are persisted as strings and written back
-        unchanged. Restoring Decimal/datetime objects here would make JSONField
-        rows (monthly_data) unserializable for json.dumps (TypeError on
-        confirm). Typed columns handle the strings at write time: Tortoise's
-        DateField/DatetimeField parse ISO strings in to_db_value (verified —
-        even "2026-07-15T10:30:00" is truncated to a date for DateField), and
-        DecimalField columns are re-quantized via
-        TortoiseParsedDataSink._model_values' Decimal(str(...))."""
         return value
 
     @staticmethod

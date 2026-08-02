@@ -17,6 +17,7 @@ from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
 from contexts.auth.application.dto import LoginCommand
+from contexts.auth.application.login_throttle import LoginThrottler
 from contexts.auth.domain.auth_service import AuthenticationService
 from contexts.auth.domain.user import User
 from contexts.auth.infrastructure.jwt_service import JwtService
@@ -24,9 +25,15 @@ from contexts.auth.infrastructure.password_hasher import BCryptPasswordHasher
 from contexts.auth.interface.auth_controller import AuthController
 from contexts.auth.interface.auth_middleware import require_auth
 from contexts.auth.interface.request_services import RequestServices
-from contexts.shared.domain.exceptions import AuthenticationError, ValidationError
+from contexts.shared.domain.exceptions import (
+    AuthenticationError,
+    DomainError,
+    ValidationError,
+)
+from tests.asgi_client import get as _asgi_get, post as _asgi_post
 from contexts.shared.domain.identifiers import UserId
 from contexts.shared.infrastructure.config import AuthConfig, Settings
+from contexts.shared.interface.base_controller import error_to_response
 
 TEST_SECRET = "test-secret-key-for-pytest-32-bytes"
 OLD_PASSWORD = "oldpassword1"
@@ -148,6 +155,7 @@ def test_jwt_carries_jti_and_iat(stack):
 
 async def _change_password_app(stack):
     """Real Sanic app wiring the decorated change-password route."""
+    # noinspection PyTypeChecker
     controller = AuthController(stack.auth, user_svc=None)
     app = Sanic(f"auth_change_pw_{id(stack)}")
     app.asgi = True
@@ -159,55 +167,41 @@ async def _change_password_app(stack):
     return app
 
 
-async def _asgi_post(app, path: str, body: dict, token: str | None = None):
-    """Minimal ASGI POST client (mirrors _asgi_get above)."""
-    status: dict = {}
-    resp_body = bytearray()
-    payload = jsonlib.dumps(body).encode()
-    headers = [(b"content-type", b"application/json")]
-    if token is not None:
-        headers.append((b"authorization", f"Bearer {token}".encode()))
+async def _login_app(stack, throttler: LoginThrottler | None = None):
+    """Real Sanic app wiring the login route with brute-force protection."""
+    # noinspection PyTypeChecker
+    controller = AuthController(
+        stack.auth,
+        user_svc=None,
+        login_throttler=throttler or LoginThrottler(max_failures=3),
+    )
+    app = Sanic(f"auth_login_{id(stack)}")
+    app.asgi = True
+    # noinspection PyTypeChecker
+    app.ctx.services = RequestServices(authorization=stack.authz, project_access=None)
 
-    async def receive():
-        return {"type": "http.request", "body": payload, "more_body": False}
+    @app.exception(DomainError)
+    async def _on_domain_error(_request, exception: DomainError):
+        return error_to_response(exception)
 
-    async def send(message):
-        if message["type"] == "http.response.start":
-            status["code"] = message["status"]
-        elif message["type"] == "http.response.body":
-            resp_body.extend(message.get("body", b""))
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "root_path": "",
-        "headers": headers,
-        "client": ("127.0.0.1", 12345),
-        "server": ("127.0.0.1", 80),
-    }
-    await app(scope, receive, send)
-    return status.get("code"), bytes(resp_body)
+    app.add_route(controller.login, "/auth/login", methods=["POST"])
+    app.finalize()
+    app.signalize(allow_fail_builtin=False)
+    return app
 
 
-async def test_change_password_endpoint_rejects_non_admin_403(stack):
+async def test_change_password_endpoint_allows_self_service(stack):
+    """Any authenticated user may rotate their own password (not admin-only)."""
     app = await _change_password_app(stack)
     token = stack.jwt.generate(UserId(1), "alice")  # no user:manage
-    code, body = await _asgi_post(
+    code, _body = await _asgi_post(
         app,
         "/auth/change-password",
         {"old_password": OLD_PASSWORD, "new_password": NEW_PASSWORD},
         token,
     )
-    assert code == 403
-    assert "user:manage" in jsonlib.loads(body)["error"]
-    # Password untouched.
-    assert _hasher.verify(OLD_PASSWORD, stack.repo.users[1].password_hash)
+    assert code == 200
+    assert _hasher.verify(NEW_PASSWORD, stack.repo.users[1].password_hash)
 
 
 async def test_change_password_endpoint_allows_user_manage_admin(stack):
@@ -300,39 +294,6 @@ async def test_change_password_revoked_token_hits_middleware_401(stack):
     assert "revoked" in jsonlib.loads(body)["error"]
 
 
-async def _asgi_get(app, path: str, token: str | None = None):
-    """Minimal ASGI GET client (mirrors tests/test_endpoint_smoke.py)."""
-    status: dict = {}
-    body = bytearray()
-
-    async def receive():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    async def send(message):
-        if message["type"] == "http.response.start":
-            status["code"] = message["status"]
-        elif message["type"] == "http.response.body":
-            body.extend(message.get("body", b""))
-
-    headers = []
-    if token is not None:
-        headers.append((b"authorization", f"Bearer {token}".encode()))
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "root_path": "",
-        "headers": headers,
-        "client": ("127.0.0.1", 12345),
-        "server": ("127.0.0.1", 80),
-    }
-    await app(scope, receive, send)
-    return status.get("code"), bytes(body)
 
 
 # ── logout ────────────────────────────────────────────────────────────
@@ -415,3 +376,33 @@ async def test_register_closed_allows_user_manage_admin(stack):
     )
     response = await controller.register(request)
     assert response.status == 201
+
+
+# ── login brute-force protection ─────────────────────────────────────
+
+
+async def _fail_logins(app, count: int, username: str = "alice") -> None:
+    """Post ``count`` wrong-password logins, each rejected with 401."""
+    for _ in range(count):
+        code, _ = await _asgi_post(app, "/auth/login", {"username": username, "password": "wrong"})
+        assert code == 401
+
+
+async def test_login_locks_out_after_repeated_failures(stack):
+    app = await _login_app(stack)
+    await _fail_logins(app, 3)
+    # Locked out: correct password is rejected with 429 until the cooldown.
+    code, body = await _asgi_post(app, "/auth/login", {"username": "alice", "password": OLD_PASSWORD})
+    assert code == 429
+    assert "too many failed" in jsonlib.loads(body)["error"]
+
+
+async def test_successful_login_resets_lockout(stack):
+    app = await _login_app(stack)
+    await _fail_logins(app, 2)
+    # Successful login below the threshold clears the failure counter.
+    code, _ = await _asgi_post(app, "/auth/login", {"username": "alice", "password": OLD_PASSWORD})
+    assert code == 200
+    await _fail_logins(app, 3)
+    code, _ = await _asgi_post(app, "/auth/login", {"username": "alice", "password": OLD_PASSWORD})
+    assert code == 429

@@ -455,8 +455,3 @@ TEMPLATE_DATA_MODELS: dict[str, type[Model]] = {
     "budget_lease": DataBudgetLease,
     "settlement_output": DataSettlementOutput,
 }
-
-
-def data_model_for(template_id: str) -> type[Model]:
-    """Return the Tortoise data model class for a given template_id."""
-    return TEMPLATE_DATA_MODELS[template_id]

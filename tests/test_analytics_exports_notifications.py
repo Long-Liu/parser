@@ -20,15 +20,11 @@ suite.
 import io
 import json as jsonlib
 from decimal import Decimal
-from itertools import count
 from types import SimpleNamespace
 from urllib.parse import quote
 
 import pytest
 from openpyxl import load_workbook
-
-# noinspection PyPackageRequirements
-from tortoise import Tortoise
 
 from contexts.analytics.application.analytics_service import (
     AnalyticsApplicationService,
@@ -46,9 +42,11 @@ from contexts.analytics.infrastructure.xlsx_export import (
     content_disposition,
 )
 from contexts.analytics.interface.analytics_controller import AnalyticsController
+from contexts.auth.application.notification_app_service import NotificationApplicationService
+from contexts.auth.infrastructure.notification_repository import TortoiseNotificationRepository
 from contexts.auth.infrastructure.tables import Notification, NotificationRead
+from contexts.auth.interface.notification_controller import NotificationController
 from contexts.auth.interface.request_context import RequestAuth
-from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.exceptions import (
     AuthorizationError,
@@ -57,8 +55,6 @@ from contexts.shared.domain.exceptions import (
 )
 from contexts.shared.domain.pagination import Pagination
 
-# noinspection PyProtectedMember
-from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import (
     SETTLE_CONTRACT_PRICE,
     SETTLE_CUMULATIVE_COST,
@@ -68,8 +64,8 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_FORECAST_PROFIT,
     SETTLE_FORECAST_REVENUE,
     DataDynamicIndicator,
-    DataSettlementOutput,
 )
+from tests.analytics_factories import make_batch, make_project, make_settlement
 
 
 def _undecorate(handler):
@@ -77,53 +73,6 @@ def _undecorate(handler):
     while hasattr(handler, "__wrapped__"):
         handler = handler.__wrapped__
     return handler
-
-
-@pytest.fixture
-async def db():
-    await Tortoise.init(
-        db_url="sqlite://:memory:",
-        modules={"models": list(_MODEL_MODULES)},
-    )
-    await Tortoise.generate_schemas()
-    yield
-    await Tortoise.close_connections()
-
-
-_seq = count(1)
-
-
-async def make_project(**kwargs) -> Project:
-    n = next(_seq)
-    defaults = {
-        "code": f"P{int(n):04d}",
-        "name": f"项目{n}",
-        "contract_price": Decimal("1000"),
-        "progress": Decimal("80"),
-        "status": "normal",
-    }
-    defaults.update(kwargs)
-    return await Project.create(**defaults)
-
-
-async def make_batch(project_id: int, ym: str) -> UploadBatch:
-    return await UploadBatch.create(
-        batch_no=f"T{int(next(_seq)):06d}",
-        project_id=project_id,
-        ym=ym,
-        file_name="cost.xlsx",
-        status="success",
-    )
-
-
-async def make_settlement(batch_id: int, **indicators) -> None:
-    """Create 表11 settlement rows: one vertical row per indicator name."""
-    for name, value in indicators.items():
-        await DataSettlementOutput.create(
-            batch_id=batch_id,
-            indicator_name=name,
-            cumulative_value=Decimal(str(value)),
-        )
 
 
 async def make_profit_with_calibers(batch_id: int) -> None:
@@ -514,7 +463,7 @@ async def test_mark_all_notifications_read_own_and_broadcast(db):
     broadcast = await make_notification(None, "广播")
     other = await make_notification(2, "他人")
 
-    repo = TortoiseAnalyticsRepository()
+    repo = TortoiseNotificationRepository()
     marked = await repo.mark_all_notifications_read(1)
     assert marked == 2  # 本人 + 广播；他人通知不可见
 
@@ -532,7 +481,7 @@ async def test_delete_notification_only_own(db):
     other = await make_notification(2)
     broadcast = await make_notification(None)
 
-    repo = TortoiseAnalyticsRepository()
+    repo = TortoiseNotificationRepository()
     await repo.delete_notification(1, mine.id)
     assert await Notification.get_or_none(id=mine.id) is None
 
@@ -552,7 +501,7 @@ async def test_clear_notifications_keeps_broadcast_and_others(db):
     other = await make_notification(2)
     broadcast = await make_notification(None)
 
-    repo = TortoiseAnalyticsRepository()
+    repo = TortoiseNotificationRepository()
     deleted = await repo.clear_notifications(1)
     assert deleted == 2
     remaining = await Notification.all()
@@ -569,16 +518,20 @@ async def test_notification_endpoints_via_controller(db):
     mine = await make_notification(1)
     broadcast = await make_notification(None)
 
-    controller = _controller()
-    mark_all = _undecorate(AnalyticsController.mark_all_read)
+    # noinspection PyTypeChecker
+    controller = NotificationController(
+        NotificationApplicationService(TortoiseNotificationRepository()),
+        access_policy=None,
+    )
+    mark_all = _undecorate(NotificationController.mark_all_read)
     response = await mark_all(controller, _request(user_id=1))
     assert jsonlib.loads(response.body) == {"ok": True, "marked": 2}
 
-    delete_one = _undecorate(AnalyticsController.delete_notification)
+    delete_one = _undecorate(NotificationController.delete_notification)
     response = await delete_one(controller, _request(user_id=1), mine.id)
     assert jsonlib.loads(response.body) == {"ok": True}
 
-    clear = _undecorate(AnalyticsController.clear_notifications)
+    clear = _undecorate(NotificationController.clear_notifications)
     response = await clear(controller, _request(user_id=1))
     assert jsonlib.loads(response.body) == {"ok": True, "deleted": 0}
     assert await Notification.get_or_none(id=broadcast.id) is not None
@@ -587,8 +540,12 @@ async def test_notification_endpoints_via_controller(db):
 @pytest.mark.asyncio
 async def test_delete_notification_endpoint_rejects_others_notification(db):
     other = await make_notification(2)
-    controller = _controller()
-    delete_one = _undecorate(AnalyticsController.delete_notification)
+    # noinspection PyTypeChecker
+    controller = NotificationController(
+        NotificationApplicationService(TortoiseNotificationRepository()),
+        access_policy=None,
+    )
+    delete_one = _undecorate(NotificationController.delete_notification)
     with pytest.raises(NotFoundError):
         await delete_one(controller, _request(user_id=1), other.id)
 
@@ -597,26 +554,21 @@ async def test_delete_notification_endpoint_rejects_others_notification(db):
 
 
 async def _seed_compare_projects():
-    alpha = await make_project(contract_price=Decimal("12500"), progress=Decimal("82"))
-    batch_a = await make_batch(alpha.id, "2026-03")
-    await make_settlement(
-        batch_a.id,
-        **{
-            SETTLE_CUMULATIVE_OUTPUT: "10250",
-            SETTLE_CUMULATIVE_COST: "8050",
-            SETTLE_CURRENT_PROFIT: "2200",
-        },
-    )
-    beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
-    batch_b = await make_batch(beta.id, "2026-03")
-    await make_settlement(
-        batch_b.id,
-        **{
-            SETTLE_CUMULATIVE_OUTPUT: "6600",
-            SETTLE_CUMULATIVE_COST: "5060",
-            SETTLE_CURRENT_PROFIT: "1540",
-        },
-    )
+    async def _seed(price: str, progress: str, output: str, cost: str, profit: str) -> Project:
+        project = await make_project(contract_price=Decimal(price), progress=Decimal(progress))
+        batch = await make_batch(project.id, "2026-03")
+        await make_settlement(
+            batch.id,
+            **{
+                SETTLE_CUMULATIVE_OUTPUT: output,
+                SETTLE_CUMULATIVE_COST: cost,
+                SETTLE_CURRENT_PROFIT: profit,
+            },
+        )
+        return project
+
+    alpha = await _seed("12500", "82", "10250", "8050", "2200")
+    beta = await _seed("8800", "75", "6600", "5060", "1540")
     return alpha, beta
 
 

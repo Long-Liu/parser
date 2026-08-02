@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 # noinspection PyPackageRequirements
@@ -15,12 +15,20 @@ logger = logging.getLogger("parser.data_writer")
 BULK_CREATE_BATCH_SIZE = 500
 
 
+# Field maps are read per row during bulk inserts; cache per model class.
+_FIELDS_MAP_CACHE: dict[type, dict] = {}
+
+
 def _model_values(model, values: dict) -> dict:
     """Normalize values according to the destination model field types."""
+    fields_map = _FIELDS_MAP_CACHE.get(model)
+    if fields_map is None:
+        # noinspection PyProtectedMember
+        fields_map = model._meta.fields_map
+        _FIELDS_MAP_CACHE[model] = fields_map
     normalized = {}
     for key, value in values.items():
-        # noinspection PyProtectedMember
-        field = model._meta.fields_map.get(key)
+        field = fields_map.get(key)
         if field is None:
             continue
         if value is not None and isinstance(field, tortoise_fields.DecimalField):
@@ -29,7 +37,16 @@ def _model_values(model, values: dict) -> dict:
             # decimal value; quantizing before the ORM conversion also makes
             # half-cent/half-unit rounding deterministic.
             quantum = Decimal(1).scaleb(-field.decimal_places)
-            value = Decimal(str(value)).quantize(quantum, rounding=ROUND_HALF_UP)
+            try:
+                decimal_value = Decimal(str(value))
+                if not decimal_value.is_finite():
+                    raise ValueError("non-finite decimal value")
+                value = decimal_value.quantize(quantum, rounding=ROUND_HALF_UP)
+            except (InvalidOperation, ValueError) as exc:
+                # Validation rejects these upstream (see DataValidator), but a
+                # non-finite value reaching the writer must not abort the whole
+                # batch silently — surface the offending field.
+                raise ValueError(f"invalid decimal value {value!r} for field {key}") from exc
         normalized[key] = value
     return normalized
 

@@ -15,7 +15,7 @@ from contexts.auth.interface.auth_middleware import (
 from contexts.auth.interface.request_context import current_auth
 from contexts.parsing.application.dto import UploadedFile
 from contexts.parsing.application.upload_app_service import UploadApplicationService
-from contexts.parsing.domain.parse_job import UploadBatchStatus
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 from contexts.parsing.domain.upload_constraints import (
     ALLOWED_EXTENSIONS,
     ALLOWED_MIME_TYPES,

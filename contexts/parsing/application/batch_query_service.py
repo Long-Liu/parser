@@ -51,17 +51,33 @@ class BatchQueryApplicationService:
         self._parse_jobs = parse_jobs
         self._projects = projects
 
-    async def list_batches(self, project_id: ProjectId | None, pagination: Pagination) -> dict | None:
-        """List batches, optionally scoped to one project.
+    async def list_batches(
+        self,
+        project_id: ProjectId | None,
+        pagination: Pagination,
+        project_ids: list[ProjectId] | None = None,
+    ) -> dict | None:
+        """List batches, optionally scoped to one project or a project set.
 
-        Returns ``None`` when a project scope was requested but the project
-        does not exist (the interface layer maps that to a 404).
+        ``project_id`` wins over ``project_ids``. Returns ``None`` when a
+        project scope was requested but the project does not exist (the
+        interface layer maps that to a 404).
         """
         if project_id is not None:
             if await self._projects.find_by_id(project_id) is None:
                 return None
             jobs = await self._parse_jobs.find_by_project(project_id, limit=pagination.size, offset=pagination.offset)
             total = await self._parse_jobs.count(project_id)
+        elif project_ids is not None:
+            if not project_ids:
+                return {
+                    "batches": [],
+                    "pagination": {"page": pagination.page, "size": pagination.size, "total": 0},
+                }
+            jobs = await self._parse_jobs.find_by_projects(
+                project_ids, limit=pagination.size, offset=pagination.offset
+            )
+            total = await self._parse_jobs.count_projects(project_ids)
         else:
             jobs = await self._parse_jobs.list_recent(limit=pagination.size, offset=pagination.offset)
             total = await self._parse_jobs.count()

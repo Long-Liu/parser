@@ -22,6 +22,12 @@ class ParseJobRepository(ABC):
     async def count(self, project_id: ProjectId | None = None) -> int:
         raise NotImplementedError
 
+    async def find_by_projects(self, project_ids: list[ProjectId], limit: int = 20, offset: int = 0) -> list[ParseJob]:
+        raise NotImplementedError
+
+    async def count_projects(self, project_ids: list[ProjectId]) -> int:
+        raise NotImplementedError
+
 
 class UploadPreviewRepository(ABC):
     @abstractmethod

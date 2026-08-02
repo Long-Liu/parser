@@ -6,6 +6,8 @@ from typing import Any
 
 # noinspection PyPackageRequirements
 from tortoise.expressions import Q
+
+# noinspection PyPackageRequirements
 from tortoise.functions import Count, Sum
 
 from contexts.alert.application.constants import ALL_PROJECTS
@@ -18,7 +20,7 @@ from contexts.alert.infrastructure.tables import (
     AlertRuleModel,
     AlertRuleStateModel,
 )
-from contexts.parsing.domain.parse_job import UploadBatchStatus
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination

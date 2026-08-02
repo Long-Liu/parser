@@ -6,7 +6,7 @@ from tortoise import fields
 # noinspection PyPackageRequirements
 from tortoise.models import Model
 
-from contexts.parsing.domain.parse_job import UploadBatchStatus
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 
 
 class UploadBatch(Model):

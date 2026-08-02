@@ -18,6 +18,7 @@ from contexts.shared.domain.base_aggregate_root import AggregateRoot
 from contexts.shared.domain.base_entity import Entity
 from contexts.shared.domain.base_value_object import ValueObject
 from contexts.shared.domain.identifiers import JobId, ProjectId, TemplateId, UserId
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 
 
 class JobStatus(StrEnum):
@@ -33,17 +34,10 @@ class MatchStatus(StrEnum):
     ERROR = "error"
 
 
-class UploadBatchStatus(StrEnum):
-    """Persisted status of an upload batch row (upload_batches.status) and the
-    batch/sheet status surfaced by upload & preview APIs. Values are DB/API
-    strings — do not rename."""
+class PreviewStatus(StrEnum):
+    """Status of an upload_preview row (upload_preview.status)."""
 
-    PROCESSING = "processing"
-    SUCCESS = "success"
-    PARTIAL = "partial"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-    CANCELLED = "cancelled"
+    PENDING = "pending"
 
 
 @dataclass(frozen=True)
@@ -151,6 +145,15 @@ class SheetResult(Entity[str]):
         self._success_rows = len(valid_rows)
         self._error_rows = len(errors)
 
+    def reset_success_stats(self) -> None:
+        """Zero the per-sheet success/error counters.
+
+        Used when a batch FAILS: nothing was written to the DB, so the
+        persisted log must not imply data rows were inserted."""
+        self._success_rows = 0
+        self._error_rows = 0
+        self._errors = []
+
 
 class ParseJob(AggregateRoot[JobId]):
     """Root aggregate for an Excel file parsing operation."""
@@ -210,13 +213,17 @@ class ParseJob(AggregateRoot[JobId]):
         """Reconstitute a ParseJob from persisted state — for repository use only.
         Bypasses event recording since this is not a new operation."""
         job = cls(job_id, project_id, year_month, file_info, batch_no, uploaded_by)
-        # Map persisted status string to JobStatus, handling terminal states from the PR
+        # Map the persisted batch status string to JobStatus. Persisted statuses
+        # come from UploadBatchStatus via result_status (failed/skipped/success/
+        # partial) plus cancelled (preview cleanup). "preview" is never stored —
+        # batch rows carry result_status values only.
         _status_map = {
             "submitted": JobStatus.SUBMITTED,
+            "processing": JobStatus.SUBMITTED,
             "failed": JobStatus.FAILED,
             "success": JobStatus.DONE,
             "partial": JobStatus.DONE,
-            "preview": JobStatus.DONE,
+            "skipped": JobStatus.DONE,
             "cancelled": JobStatus.DONE,
         }
         job.status = _status_map.get(status, JobStatus.SUBMITTED)
@@ -354,6 +361,10 @@ class ParseJob(AggregateRoot[JobId]):
     def fail(self, reason: str) -> None:
         aggregate_id = self.id.value if self.id else None
         self.status = JobStatus.FAILED
+        # A failed batch wrote no data rows; keep the persisted per-sheet logs
+        # from implying otherwise (success/error counters are reset to 0).
+        for sheet in self._sheets.values():
+            sheet.reset_success_stats()
         self.record(
             ParseJobFailed(
                 aggregate_id=aggregate_id,

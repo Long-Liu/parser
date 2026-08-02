@@ -6,9 +6,10 @@ from contexts.parsing.domain.parse_job import (
     FileInfo,
     MatchStatus,
     ParseJob,
+    PreviewStatus,
     SheetResult,
-    UploadBatchStatus,
 )
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 from contexts.parsing.domain.repositories import (
     ParseJobRepository,
     UploadPreviewRepository,
@@ -41,7 +42,7 @@ def _sheet_to_log_values(sheet: SheetResult, batch_id: int) -> dict:
         "batch_id": batch_id,
         "sheet_name": sheet.sheet_name,
         "template_id": template_id,
-        "action": ("matched" if sheet.match_status == MatchStatus.MATCHED else sheet.match_status.value),
+        "action": sheet.match_status.value,
         "total_rows": sheet.total_rows,
         "success_rows": sheet.success_rows,
         "error_rows": sheet.error_rows,
@@ -52,7 +53,7 @@ def _orm_to_job(orm_batch: OrmBatch, orm_logs: list[OrmLog]) -> ParseJob:
     sheets = []
     for log in orm_logs:
         tid = TemplateId(log.template_id) if log.template_id else None
-        ms = MatchStatus.MATCHED if log.action == "matched" else MatchStatus.SKIPPED
+        ms = MatchStatus.MATCHED if log.action == MatchStatus.MATCHED.value else MatchStatus.SKIPPED
         sr = SheetResult(
             sheet_name=log.sheet_name or "",
             template_id=tid,
@@ -116,6 +117,18 @@ class TortoiseParseJobRepository(ParseJobRepository):
         batches = await OrmBatch.all().order_by("-id").limit(limit).offset(offset)
         return await self._jobs_with_logs(batches)
 
+    async def find_by_projects(self, project_ids: list[ProjectId], limit: int = 20, offset: int = 0) -> list[ParseJob]:
+        batches = (
+            await OrmBatch.filter(project_id__in=[p.value for p in project_ids])
+            .order_by("-id")
+            .limit(limit)
+            .offset(offset)
+        )
+        return await self._jobs_with_logs(batches)
+
+    async def count_projects(self, project_ids: list[ProjectId]) -> int:
+        return await OrmBatch.filter(project_id__in=[p.value for p in project_ids]).count()
+
     @staticmethod
     async def _jobs_with_logs(batches) -> list[ParseJob]:
         """Assemble jobs with a single batched log query (avoids N+1)."""
@@ -139,11 +152,12 @@ class TortoiseUploadPreviewRepository(UploadPreviewRepository):
         # noinspection PyPackageRequirements
         from tortoise.exceptions import IntegrityError
 
+        pending = PreviewStatus.PENDING.value
         existing = await UploadPreview.get_or_none(batch_id=batch_id)
         if existing:
             existing.payload = payload
             existing.summary = summary
-            existing.status = "pending"
+            existing.status = pending
             await existing.save(update_fields=["payload", "summary", "status"])
         else:
             try:
@@ -155,13 +169,13 @@ class TortoiseUploadPreviewRepository(UploadPreviewRepository):
                 if existing:
                     existing.payload = payload
                     existing.summary = summary
-                    existing.status = "pending"
+                    existing.status = pending
                     await existing.save(update_fields=["payload", "summary", "status"])
                 else:
                     raise
 
     async def get(self, batch_id: int) -> dict | None:
-        row = await UploadPreview.get_or_none(batch_id=batch_id, status="pending")
+        row = await UploadPreview.get_or_none(batch_id=batch_id, status=PreviewStatus.PENDING.value)
         return None if row is None else {"payload": row.payload, "summary": row.summary}
 
     async def delete(self, batch_id: int) -> None:
@@ -171,7 +185,7 @@ class TortoiseUploadPreviewRepository(UploadPreviewRepository):
         cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
         expired_ids = list(
             await UploadPreview.filter(
-                status="pending",
+                status=PreviewStatus.PENDING.value,
                 created_at__lt=cutoff,
             ).values_list("batch_id", flat=True)
         )

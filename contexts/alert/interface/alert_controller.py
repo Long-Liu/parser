@@ -8,7 +8,10 @@ from contexts.alert.infrastructure.push import AlertWebSocketHub
 from contexts.auth.application.authorization_app_service import (
     AuthorizationApplicationService,
 )
-from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.application.project_access import (
+    ProjectAccessPolicy,
+    resolve_project_scope,
+)
 from contexts.auth.interface.auth_middleware import require_auth, require_permission
 from contexts.auth.interface.request_context import current_auth
 from contexts.shared.domain.exceptions import AuthenticationError
@@ -48,10 +51,11 @@ class AlertController(BaseController):
 
     async def _scope(self, request) -> list[int] | None:
         auth = current_auth(request)
-        permissions = set(auth.permissions)
-        if ProjectAccessPolicy.has_elevated_permission(permissions):
-            return None
-        return await self.access.accessible_project_ids(UserId(auth.user_id))
+        return await resolve_project_scope(
+            self.access,
+            UserId(auth.user_id),
+            set(auth.permissions),
+        )
 
     async def _authorize_alert(self, request, alert_id: int, manager: bool = False) -> None:
         project_id = await self.alert_svc.project_id(alert_id)

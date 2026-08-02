@@ -18,7 +18,9 @@ jwt:
   expiry_hours: 24
 
 cors:
-  origins: "*"
+  # 生产环境禁止通配符 *：与 Authorization 头组合会让任何来源携带凭证跨域。
+  # 必须显式列出前端来源（逗号分隔），部署前填写。
+  origins: "https://your-frontend.example.com"   # ← fill in real frontend origin(s)
 
 upload:
   dir: "uploads"

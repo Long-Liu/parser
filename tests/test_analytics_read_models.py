@@ -9,24 +9,16 @@ Uses an in-memory sqlite database via Tortoise; each test gets a fresh schema.
 """
 
 from decimal import Decimal
-from itertools import count
 
 import pytest
-
-# noinspection PyPackageRequirements
-from tortoise import Tortoise
 
 from contexts.analytics.domain.scoring import compare_scores, grade_for
 from contexts.analytics.infrastructure.analytics_repository import (
     TortoiseAnalyticsRepository,
 )
-from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.pagination import Pagination
-
-# noinspection PyProtectedMember
-from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import (
     SETTLE_CONTRACT_PRICE,
     SETTLE_CUMULATIVE_COST,
@@ -38,59 +30,27 @@ from contexts.shared.infrastructure.database.tables import (
     SETTLE_FORECAST_REVENUE,
     DataBudgetLease,
     DataDynamicIndicator,
-    DataSettlementOutput,
 )
-
-
-@pytest.fixture
-async def db():
-    await Tortoise.init(
-        db_url="sqlite://:memory:",
-        modules={"models": list(_MODEL_MODULES)},
-    )
-    await Tortoise.generate_schemas()
-    yield
-    await Tortoise.close_connections()
-
-
-_seq = count(1)
-
-
-async def make_project(**kwargs) -> Project:
-    n = next(_seq)
-    defaults = {
-        "code": f"P{int(n):04d}",
-        "name": f"项目{n}",
-        "contract_price": Decimal("1000"),
-        "progress": Decimal("80"),
-        "status": "normal",
-    }
-    defaults.update(kwargs)
-    return await Project.create(**defaults)
-
-
-async def make_batch(project_id: int, ym: str, file_name: str = "cost.xlsx") -> UploadBatch:
-    return await UploadBatch.create(
-        batch_no=f"T{int(next(_seq)):06d}",
-        project_id=project_id,
-        ym=ym,
-        file_name=file_name,
-        status="success",
-    )
-
-
-async def make_settlement(batch_id: int, **indicators) -> None:
-    """Create 表11 settlement rows: one vertical row per indicator name."""
-    for name, value in indicators.items():
-        await DataSettlementOutput.create(
-            batch_id=batch_id,
-            indicator_name=name,
-            cumulative_value=Decimal(str(value)),
-        )
+from tests.analytics_factories import make_batch, make_project, make_settlement
 
 
 async def make_indicator(batch_id: int, **kwargs) -> DataDynamicIndicator:
     return await DataDynamicIndicator.create(batch_id=batch_id, **kwargs)
+
+
+async def _make_compare_beta() -> Project:
+    """Seed the standard 'beta' comparison project used by the compare tests."""
+    beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
+    batch = await make_batch(beta.id, "2026-03")
+    await make_settlement(
+        batch.id,
+        **{
+            SETTLE_CUMULATIVE_OUTPUT: "6600",
+            SETTLE_CUMULATIVE_COST: "5060",
+            SETTLE_CURRENT_PROFIT: "1540",
+        },
+    )
+    return beta
 
 
 @pytest.mark.asyncio
@@ -521,16 +481,7 @@ async def test_compare_projects_returns_metrics_scores_and_legacy_fields(db):
             SETTLE_CURRENT_PROFIT: "2200",
         },
     )
-    beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
-    batch_b = await make_batch(beta.id, "2026-03")
-    await make_settlement(
-        batch_b.id,
-        **{
-            SETTLE_CUMULATIVE_OUTPUT: "6600",
-            SETTLE_CUMULATIVE_COST: "5060",
-            SETTLE_CURRENT_PROFIT: "1540",
-        },
-    )
+    beta = await _make_compare_beta()
 
     repo = TortoiseAnalyticsRepository()
     result = await repo.compare_projects([alpha.id, beta.id], "2026-03")
@@ -627,16 +578,7 @@ async def test_compare_stored_rate_row_preferred_over_computed(db):
 @pytest.mark.asyncio
 async def test_compare_division_by_zero_yields_none_and_lowest_band(db):
     alpha = await make_project(contract_price=Decimal("1000"), progress=Decimal("0"))
-    beta = await make_project(contract_price=Decimal("8800"), progress=Decimal("75"))
-    batch_b = await make_batch(beta.id, "2026-03")
-    await make_settlement(
-        batch_b.id,
-        **{
-            SETTLE_CUMULATIVE_OUTPUT: "6600",
-            SETTLE_CUMULATIVE_COST: "5060",
-            SETTLE_CURRENT_PROFIT: "1540",
-        },
-    )
+    beta = await _make_compare_beta()
 
     repo = TortoiseAnalyticsRepository()
     result = await repo.compare_projects([alpha.id, beta.id], "2026-03")

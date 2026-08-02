@@ -11,6 +11,7 @@ from contexts.shared.domain.exceptions import (
     ConflictError,
     DomainError,
     NotFoundError,
+    TooManyRequestsError,
     ValidationError,
 )
 
@@ -61,12 +62,16 @@ class BaseController:
             AuthorizationError: 403,
             NotFoundError: 404,
             ConflictError: 409,
+            TooManyRequestsError: 429,
         }
         http_status = next(
             (status for error_type, status in status_map.items() if isinstance(exc, error_type)),
             500,
         )
-        return json({"error": str(exc)}, status=http_status)
+        headers = {}
+        if isinstance(exc, TooManyRequestsError) and exc.retry_after is not None:
+            headers["Retry-After"] = str(exc.retry_after)
+        return json({"error": str(exc)}, status=http_status, headers=headers or None)
 
 
 # ── module-level aliases for external callers (application.py) ─────

@@ -12,6 +12,7 @@ from contexts.auth.interface.auth_middleware import (
     require_project_access,
 )
 from contexts.auth.interface.request_context import current_auth
+from contexts.project.application.milestone_app_service import MilestoneApplicationService
 from contexts.project.application.project_app_service import ProjectApplicationService
 from contexts.shared.domain.exceptions import ValidationError
 from contexts.shared.domain.identifiers import ProjectId, UserId
@@ -60,9 +61,10 @@ def _ui_project_payload(data: dict) -> dict:
 class ProjectsController(BaseController):
     name = "project"
 
-    def __init__(self, project_svc: ProjectApplicationService):
+    def __init__(self, project_svc: ProjectApplicationService, milestone_svc: MilestoneApplicationService):
         super().__init__()
         self.svc = project_svc
+        self.milestone_svc = milestone_svc
 
     def setup(self):
         self.bp.add_route(self.list_projects, "/projects", methods=["GET"])
@@ -72,6 +74,11 @@ class ProjectsController(BaseController):
         self.bp.add_route(self.delete_project, "/projects/<project_id:int>", methods=["DELETE"])
         self.bp.add_route(self.assign_user, "/projects/<project_id:int>/users/<user_id:int>", methods=["POST"])
         self.bp.add_route(self.remove_user, "/projects/<project_id:int>/users/<user_id:int>", methods=["DELETE"])
+        self.bp.add_route(self.milestones, "/projects/<project_id:int>/milestones", methods=["GET"])
+        self.bp.add_route(self.create_milestone, "/projects/<project_id:int>/milestones", methods=["POST"])
+        self.bp.add_route(self.update_milestone, "/projects/<project_id:int>/milestones/<milestone_id:int>", methods=["PUT"])
+        self.bp.add_route(self.delete_milestone, "/projects/<project_id:int>/milestones/<milestone_id:int>", methods=["DELETE"])
+        self.bp.add_route(self.project_progress, "/projects/<project_id:int>/progress", methods=["GET"])
 
     @require_auth
     @require_permission("project:view")
@@ -154,4 +161,59 @@ class ProjectsController(BaseController):
     @openapi.summary("Remove a user from a project")
     async def remove_user(self, _request, project_id: int, user_id: int):
         await self.svc.remove_user(project_id, user_id)
+        return self.json_ok()
+
+    # ── milestones / progress (moved from the analytics context) ─────
+
+    @require_auth
+    @require_permission("project:view")
+    @require_project_access()
+    @openapi.tag("Project")
+    @openapi.summary("List project milestones")
+    async def milestones(self, request, project_id: int):
+        return self.json(await self.milestone_svc.milestones(project_id, pagination_from(request)))
+
+    @require_auth
+    @require_permission("project:view")
+    @require_project_access()
+    @openapi.tag("Project")
+    @openapi.summary("Project progress by milestone")
+    async def project_progress(self, request, project_id: int):
+        return self.json(await self.milestone_svc.project_progress(project_id, pagination_from(request)))
+
+    @require_auth
+    @require_permission("project:create")
+    @require_project_access(roles={"manager"})
+    @openapi.tag("Project")
+    @openapi.summary("Create milestone")
+    async def create_milestone(self, request, project_id: int):
+        try:
+            return self.json(await self.milestone_svc.create_milestone(project_id, request.json or {}), status=201)
+        except ValueError:
+            raise ValidationError("invalid milestone values") from None
+
+    @require_auth
+    @require_permission("project:create")
+    @require_project_access(roles={"manager"})
+    @openapi.tag("Project")
+    @openapi.summary("Update milestone")
+    async def update_milestone(self, request, project_id: int, milestone_id: int):
+        try:
+            return self.json(
+                await self.milestone_svc.update_milestone(
+                    project_id,
+                    milestone_id,
+                    request.json or {},
+                )
+            )
+        except ValueError:
+            raise ValidationError("invalid milestone values") from None
+
+    @require_auth
+    @require_permission("project:create")
+    @require_project_access(roles={"manager"})
+    @openapi.tag("Project")
+    @openapi.summary("Delete milestone")
+    async def delete_milestone(self, _request, project_id: int, milestone_id: int):
+        await self.milestone_svc.delete_milestone(project_id, milestone_id)
         return self.json_ok()

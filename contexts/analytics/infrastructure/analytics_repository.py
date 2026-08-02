@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 # noinspection PyPackageRequirements
-from tortoise.expressions import Q, Subquery
+from tortoise.expressions import Q
 
 # noinspection PyPackageRequirements
 from tortoise.functions import Count, Sum
@@ -19,8 +19,8 @@ from contexts.analytics.domain.hierarchy import resolve_hierarchy_paths
 from contexts.analytics.domain.ports import AIAnalysisPort
 from contexts.analytics.domain.repositories import AnalyticsRepository
 from contexts.analytics.domain.scoring import compare_scores
-from contexts.auth.infrastructure.tables import Notification, NotificationRead, User
-from contexts.parsing.domain.parse_job import UploadBatchStatus
+from contexts.auth.infrastructure.tables import User
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.domain.project import ProjectStatus
@@ -88,11 +88,305 @@ def _settle_rate(indicators: dict, name: str, profit: float, revenue: float) -> 
     return _rate(profit, revenue)
 
 
+def _settlement_core(indicators: dict) -> tuple[float, float, float]:
+    """revenue/profit/cost from a settlement indicator map.
+
+    Shared by the compare and monthly-item builders (previously copy-pasted).
+    Cost falls back to revenue - profit only when no indicators are present.
+    """
+    revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
+    profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
+    cost = _settle(indicators, SETTLE_CUMULATIVE_COST) if indicators else revenue - profit
+    return revenue, profit, cost
+
+
 def _sum_lease_rows(rows: list, field: str) -> float:
     return round(sum(_number(getattr(row, field)) for row in rows), 2)
 
 
-class TortoiseAnalyticsRepository(AnalyticsRepository):
+class AnalyticsAiMixin:
+    # Mixin methods run on the composed repository (TortoiseAnalyticsRepository);
+    # annotate self so PyCharm resolves the private helpers defined there.
+    async def ai_analysis(self: "TortoiseAnalyticsRepository", project_id: int, ym: str | None) -> dict:
+        project = await self._project(project_id)
+        profits = await self._profit_for(project_id, ym)
+        batch = await self._batch(project_id, ym)
+        monthly: dict | None = await self._monthly_item(batch) if batch else None
+        # Repository helpers return numeric rates, but keep the API resilient to
+        # nullable/legacy rows: missing rates stay None so they are omitted from
+        # the summary instead of being reported as a misleading 0.00%.
+        rate = _number_or_none(profits.get("profit_rate")) if profits.get("_has_settlement") else None
+        forecast_rate = (
+            _number_or_none(monthly.get("expected_complete_profit_rate"))
+            if monthly and monthly.get("_has_settlement")
+            else None
+        )
+        writeoff_rate = _number_or_none(monthly.get("write_off_rate")) if monthly else None
+        if rate is None:
+            health = "warning" if project.status == ProjectStatus.WARNING else "healthy"
+            summary = f"项目状态为 {project.status}。"
+        else:
+            health = "warning" if project.status == ProjectStatus.WARNING or rate < 10 else "healthy"
+            summary = f"当前毛利率为 {rate:.2f}%，项目状态为 {project.status}。"
+        if forecast_rate is not None:
+            summary += f"预计完工毛利率 {forecast_rate:.2f}%。"
+        if writeoff_rate is not None:
+            summary += f"租借核销率 {writeoff_rate:.2f}%。"
+        fallback: dict[str, Any] = {
+            "project_id": project_id,
+            "ym": profits["ym"],
+            "health": health,
+            "summary": summary,
+            "insights": [
+                {
+                    "type": "profit",
+                    "title": "毛利率表现",
+                    "message": (
+                        f"当前毛利 {profits['profit']:.2f}，毛利率 {rate:.2f}%"
+                        if rate is not None
+                        else f"当前毛利 {profits['profit']:.2f}，毛利率数据缺失"
+                    ),
+                },
+                {
+                    "type": "progress",
+                    "title": "项目进度",
+                    "message": f"当前项目进度 {float(project.progress):.2f}%",
+                },
+            ],
+            "recommendations": [
+                "持续跟踪实际成本与执行预算偏差",
+                "确保月度数据及时上传并完成异常项复核",
+            ],
+        }
+        if writeoff_rate is not None:
+            fallback["insights"].append(
+                {
+                    "type": "writeoff",
+                    "title": "租借核销进度",
+                    "message": f"当前核销率 {writeoff_rate:.2f}%",
+                }
+            )
+        if self._ai_provider:
+            try:
+                result = await self._ai_provider.analyze(
+                    {
+                        "project": {
+                            "id": project.id,
+                            "name": project.name,
+                            "status": project.status,
+                            "progress": float(project.progress),
+                        },
+                        "period": profits["ym"],
+                        "metrics": {**profits, "monthly": monthly},
+                    }
+                )
+            # 外部 AI 服务不可用时回退到本地确定性分析，而不是 500。
+            # Provider contract raises only ValueError (bad response) / OSError (network).
+            except (ValueError, OSError):
+                logger.exception("AI analysis provider failed for project %s; using fallback", project_id)
+                result = None
+            if result:
+                return {"project_id": project_id, "ym": profits["ym"], **result}
+        return fallback
+
+    async def compare_ai_analysis(
+        self: "TortoiseAnalyticsRepository", project_ids: list[int] | None, ym: str | None
+    ) -> dict:
+        """Multi-project AI report: five chapters aligned with the comparison UI.
+
+        Uses the external provider when configured; otherwise falls back to the
+        deterministic domain report built from compare metrics + scores.
+        """
+        comparison = await self.compare_projects(project_ids, ym)
+        metrics = comparison["projects"]
+        generated_at = datetime.now().isoformat(timespec="seconds")
+        if self._ai_provider:
+            try:
+                result = await self._ai_provider.analyze(
+                    {
+                        "type": "project_comparison",
+                        "period": ym,
+                        "projects": metrics,
+                    }
+                )
+            # 外部 AI 服务不可用时回退到本地确定性五章报告，而不是 500。
+            # Provider contract raises only ValueError (bad response) / OSError (network).
+            except (ValueError, OSError):
+                logger.exception("AI analysis provider failed for comparison; using fallback")
+                result = None
+            if result:
+                return {"project_ids": project_ids, "ym": ym, "generated_at": generated_at, **result}
+        return {
+            "project_ids": project_ids,
+            "ym": ym,
+            "generated_at": generated_at,
+            "projects": [
+                {
+                    "project_id": p["project_id"],
+                    "project_name": p["project_name"],
+                    "total_score": p["total_score"],
+                    "grade": p["grade"],
+                }
+                for p in metrics
+            ],
+            "chapters": build_compare_report(metrics, ym),
+        }
+
+class AnalyticsSearchMixin:
+    async def global_search(
+        self: "TortoiseAnalyticsRepository",
+        keyword: str,
+        pagination: Pagination,
+        project_ids: list[int] | None = None,
+        include_users: bool = True,
+    ) -> dict:
+        keyword = keyword.strip()
+        if not keyword:
+            return {"results": [], "pagination": {"page": pagination.page, "size": pagination.size, "total": 0}}
+        candidate_limit = pagination.offset + pagination.size
+        project_query = Project.filter(Q(name__icontains=keyword) | Q(code__icontains=keyword))
+        if project_ids is not None:
+            project_query = project_query.filter(id__in=project_ids)
+        if include_users:
+            user_query = User.filter(Q(real_name__icontains=keyword) | Q(email__icontains=keyword))
+            project_total, user_total, projects, users = await asyncio.gather(
+                project_query.count(),
+                user_query.count(),
+                project_query.order_by("name").limit(candidate_limit),
+                user_query.order_by("real_name", "id").limit(candidate_limit),
+            )
+        else:
+            users, user_total = [], 0
+            project_total = await project_query.count()
+            projects = await project_query.order_by("name").limit(candidate_limit)
+        reports = [
+            item for item in self._REPORT_CATALOG if keyword.lower() in (item["title"] + item["subtitle"]).lower()
+        ]
+        business_results, business_total = await self._business_search(
+            keyword,
+            project_ids,
+            candidate_limit,
+        )
+        all_results = (
+            [{"type": "project", "id": p.id, "title": p.name, "subtitle": p.code} for p in projects]
+            + [
+                {"type": "user", "id": u.id, "title": u.real_name or u.username, "subtitle": u.email or ""}
+                for u in users
+            ]
+            + reports
+            + business_results
+        )
+        all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
+        total = project_total + user_total + len(reports) + business_total
+        return {
+            "results": all_results[pagination.offset : pagination.offset + pagination.size],
+            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
+        }
+
+    async def _business_search(
+        self: "TortoiseAnalyticsRepository", keyword: str, project_ids: list[int] | None, limit: int
+    ) -> tuple[list[dict], int]:
+        """Search parsed business data (materials / cost items / alerts).
+
+        Data rows are scoped to the latest successful batch of each in-scope
+        project so stale monthly batches do not produce duplicate hits.
+        """
+        if project_ids:
+            latest = await self._latest_batch_map(project_ids, None)
+        else:
+            # Unscoped (elevated) search: latest successful batch per project
+            # across all projects — _latest_batch_map returns {} for no ids.
+            latest = {}
+            for b in await UploadBatch.filter(status=UploadBatchStatus.SUCCESS).order_by(
+                "project_id", "-ym", "-id"
+            ):
+                latest.setdefault(b.project_id, b)
+        batch_ids = [b.id for b in latest.values()]
+        if not batch_ids:
+            return [], 0
+        batch_to_project = {b.id: b.project_id for b in latest.values()}
+        project_names = {p.id: p.name for p in await Project.filter(id__in=latest.keys())}
+
+        alert_query = AlertModel.filter(Q(title__icontains=keyword) | Q(message__icontains=keyword))
+        if project_ids is not None:
+            alert_query = alert_query.filter(project_id__in=project_ids)
+
+        search_results = await asyncio.gather(
+            DataMaterialCost.filter(batch_id__in=batch_ids, budget_category__icontains=keyword).count(),
+            DataConstructionDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).count(),
+            DataInstallationDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).count(),
+            alert_query.count(),
+            DataMaterialCost.filter(batch_id__in=batch_ids, budget_category__icontains=keyword).limit(limit),
+            DataConstructionDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).limit(limit),
+            DataInstallationDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).limit(limit),
+            alert_query.order_by("-last_triggered_at").limit(limit),
+        )
+        mat_total = cast(int, search_results[0])
+        con_total = cast(int, search_results[1])
+        inst_total = cast(int, search_results[2])
+        alert_total = cast(int, search_results[3])
+        materials = cast(list[DataMaterialCost], search_results[4])
+        constructions = cast(list[DataConstructionDynamic], search_results[5])
+        installations = cast(list[DataInstallationDynamic], search_results[6])
+        alerts = cast(list[AlertModel], search_results[7])
+
+        results: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        def add(type_: str, row_id: int, title: str | None, subtitle: str) -> None:
+            if not title:
+                return
+            key = (type_, title)
+            if key in seen:
+                return
+            seen.add(key)
+            results.append({"type": type_, "id": row_id, "title": title, "subtitle": subtitle})
+
+        def project_of(row) -> str:
+            project_id = batch_to_project.get(int(row.batch_id))
+            return project_names.get(project_id, "") if project_id is not None else ""
+
+        for material in materials:
+            suffix = f" · {material.unit}" if material.unit else ""
+            add(
+                "material",
+                material.id,
+                material.budget_category,
+                f"{project_of(material)}{suffix}",
+            )
+        for construction in constructions:
+            add(
+                "cost_item",
+                construction.id,
+                construction.project_name,
+                f"{project_of(construction)} · 建筑工程",
+            )
+        for installation in installations:
+            add(
+                "cost_item",
+                installation.id,
+                installation.project_name,
+                f"{project_of(installation)} · 安装工程",
+            )
+        for alert in alerts:
+            add(
+                "alert",
+                alert.id,
+                alert.title,
+                f"{alert.level} · {alert.status}",
+            )
+        return results, mat_total + con_total + inst_total + alert_total
+
+    @staticmethod
+    async def sync_status() -> dict:
+        latest = await UploadBatch.all().order_by("-created_at").first()
+        return {
+            "status": "ok",
+            "latest_month": latest.ym if latest else None,
+            "last_synced_at": latest.created_at.isoformat() if latest else None,
+        }
+
+class TortoiseAnalyticsRepository(AnalyticsAiMixin, AnalyticsSearchMixin, AnalyticsRepository):
     _REPORT_CATALOG: list[dict] = [
         {"type": "report", "id": "cost-categories", "title": "成本科目", "subtitle": "多项目成本对比"},
         {"type": "report", "id": "project-profits", "title": "项目毛利情况", "subtitle": "项目盈利分析"},
@@ -223,8 +517,13 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         """
         mom = {}
         for metric in ("revenue", "cost", "profit", "profit_rate"):
-            change = round(current[metric] - previous[metric], 2)
-            base = previous[metric]
+            cur = current[metric]
+            prev = previous[metric]
+            if cur is None or prev is None:
+                mom[metric] = {"change": None, "change_pct": None}
+                continue
+            change = round(cur - prev, 2)
+            base = prev
             mom[metric] = {
                 "change": change,
                 "change_pct": round(change / base * 100, 2) if base else None,
@@ -285,9 +584,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         # 累计结算（截至当前实际·累计已结算）：取结算表产值行，缺行时回退表内
         # 合同总价行（与 _profit_item current 口径一致）；整批无数据时保持全零，
         # 不回退项目合同价，以免无数据项目虚增评分。
-        settlement = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
-        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
-        total_cost = _settle(indicators, SETTLE_CUMULATIVE_COST) if indicators else settlement - profit
+        settlement, profit, total_cost = _settlement_core(indicators)
         # 现有数据模型无独立"营收"列，营收与累计结算同源（revenue_ratio 恒为 100 或 None，
         # 待模板扩展独立营收列后区分）。
         revenue = settlement
@@ -425,75 +722,21 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "ym": cost["ym"],
             "profit": profit,
             "cost_categories": cost["data"],
-            "milestones": (await self.milestones(project_id, Pagination(1, 100, max_size=100)))["milestones"],
-        }
-
-    async def milestones(self, project_id: int, pagination: Pagination) -> dict:
-        await self._project(project_id)
-        query = ProjectMilestone.filter(project_id=project_id)
-        total = await query.count()
-        rows = await query.order_by("-ym", "-id").offset(pagination.offset).limit(pagination.size)
-        return {
-            "milestones": [self._milestone(row) for row in rows],
-            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
-        }
-
-    async def project_progress(self, project_id: int, pagination: Pagination) -> dict:
-        result = await self.milestones(project_id, pagination)
-        return {
-            "progress": [
+            # 里程碑是 project 上下文的数据；此处仅做读投影聚合，不写不删。
+            "milestones": [
                 {
-                    "id": row["id"],
-                    "ym": row["ym"],
-                    "progress": row["progress"],
-                    "completion": row["description"],
-                    "latest_milestone": row["title"],
-                    "completed_at": row["completed_at"],
+                    "id": row.id,
+                    "project_id": row.project_id,
+                    "ym": row.ym,
+                    "progress": _number(row.progress),
+                    "title": row.title,
+                    "description": row.description or "",
+                    "completed_at": row.completed_at.isoformat() if row.completed_at else None,
                 }
-                for row in result["milestones"]
+                for row in await ProjectMilestone.filter(project_id=project_id).order_by("-ym", "-id")
             ],
-            "pagination": result["pagination"],
         }
 
-    async def create_milestone(self, project_id: int, data: dict) -> dict:
-        async with self._tx.transaction():
-            await self._project(project_id)
-            if not data.get("ym") or not data.get("title"):
-                raise ValidationError("ym and title are required")
-            row = await ProjectMilestone.create(
-                project_id=project_id,
-                ym=data["ym"],
-                title=data["title"].strip(),
-                progress=Decimal(str(data.get("progress", 0))),
-                description=data.get("description", ""),
-                completed_at=data.get("completed_at") or None,
-            )
-            return self._milestone(row)
-
-    async def update_milestone(self, project_id: int, milestone_id: int, data: dict) -> dict:
-        async with self._tx.transaction():
-            row = await ProjectMilestone.get_or_none(
-                id=milestone_id,
-                project_id=project_id,
-            )
-            if row is None:
-                raise NotFoundError(f"milestone {milestone_id} not found")
-            for field in ("ym", "title", "description", "completed_at"):
-                if field in data:
-                    setattr(row, field, data[field] or None)
-            if "progress" in data:
-                row.progress = Decimal(str(data["progress"]))
-            await row.save()
-            return self._milestone(row)
-
-    async def delete_milestone(self, project_id: int, milestone_id: int) -> None:
-        async with self._tx.transaction():
-            deleted = await ProjectMilestone.filter(
-                id=milestone_id,
-                project_id=project_id,
-            ).delete()
-            if not deleted:
-                raise NotFoundError(f"milestone {milestone_id} not found")
 
     async def project_profits(
         self, ym: str | None, pagination: Pagination, project_ids: list[int] | None = None
@@ -600,21 +843,117 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     async def _load_batches(projects, ym):
         pids = [p.id for p in projects]
         batch_map = await TortoiseAnalyticsRepository._latest_batch_map(pids, ym)
-        settlement_rows = await DataSettlementOutput.filter(batch_id__in=[b.id for b in batch_map.values()])
+        batch_ids = [b.id for b in batch_map.values()]
+        settlement_rows, dynamic_rows = await asyncio.gather(
+            DataSettlementOutput.filter(batch_id__in=batch_ids),
+            DataDynamicIndicator.filter(batch_id__in=batch_ids),
+        )
+        profit_map, indicator_map = TortoiseAnalyticsRepository._profit_maps_from_rows(
+            settlement_rows, dynamic_rows, set(batch_ids)
+        )
+        return batch_map, profit_map, indicator_map
+
+    @staticmethod
+    def _profit_maps_from_rows(settlement_rows, dynamic_rows, batch_set: set[int]) -> tuple[dict, dict]:
+        """Build profit_map + indicator_map from already-loaded settlement rows.
+
+        Extracted so dashboard() can share one set of table reads across
+        project_profits, cost_composition and dashboard_trends instead of each
+        re-loading the same rows. ``batch_set`` restricts which batches' rows
+        are aggregated.
+        """
         profit_map = {}
         for row in settlement_rows:
+            if row.batch_id not in batch_set:
+                continue
             profit_map.setdefault(row.batch_id, {})[row.indicator_name] = row.cumulative_value
         # 指标（含税）口径来自 00 动态指标 sheet（data_dynamic_indicator）：
         # 预计完工成本取"预计完工量含税指标"合计，缺失时回退"清单量含税指标"。
         indicator_map = {}
-        for row in await DataDynamicIndicator.filter(batch_id__in=[b.id for b in batch_map.values()]):
+        for row in dynamic_rows:
+            if row.batch_id not in batch_set:
+                continue
             value = row.estimated_with_tax
             if value is None:
                 value = row.indicator_with_tax
             if value is None:
                 continue
             indicator_map[row.batch_id] = indicator_map.get(row.batch_id, 0.0) + float(value)
-        return batch_map, profit_map, indicator_map
+        return profit_map, indicator_map
+
+    @staticmethod
+    def _group_rows_by_batch(
+        settlement_rows,
+        dynamic_rows,
+        lease_rows,
+        batch_set: set[int],
+    ) -> dict[str, dict[int, list]]:
+        """Group raw settlement/dynamic/lease rows by batch id (only batches in
+        ``batch_set``), mirroring ``_monthly_data_maps`` but from shared rows."""
+        data: dict[str, dict[int, list]] = {"settlement": {}, "dynamic": {}, "lease": {}}
+        for rows, key in ((settlement_rows, "settlement"), (dynamic_rows, "dynamic"), (lease_rows, "lease")):
+            grouped = data[key]
+            for row in rows:
+                if row.batch_id in batch_set:
+                    grouped.setdefault(row.batch_id, []).append(row)
+        return data
+
+    @staticmethod
+    def _cost_composition_from_rows(dynamic_rows, batch_set: set[int]) -> list[dict]:
+        """Cost breakdown by item name from already-loaded dynamic rows."""
+        if not batch_set:
+            return []
+        totals: dict[str, float] = {}
+        for row in dynamic_rows:
+            if row.batch_id not in batch_set:
+                continue
+            name = row.item_name or "未分类"
+            totals[name] = totals.get(name, 0.0) + _number(row.incurred_cost)
+        return [
+            {"name": name, "amount": round(amount, 2)}
+            for name, amount in sorted(totals.items(), key=lambda item: -item[1])
+        ]
+
+    @staticmethod
+    async def _load_trend_batches(project_ids: list[int] | None) -> tuple[list[str], list[UploadBatch]]:
+        """Latest successful batch per (ym, project) for the last 12 months.
+
+        Shared by dashboard() and dashboard_trends() so the trend-batch
+        selection logic lives in one place.
+        """
+        base = UploadBatch.filter(status=UploadBatchStatus.SUCCESS)
+        if project_ids is not None:
+            base = base.filter(project_id__in=project_ids)
+        months = list(await base.order_by("-ym").distinct().values_list("ym", flat=True))[:12]
+        batch_rows = await base.filter(ym__in=months).order_by("ym", "project_id", "-id") if months else []
+        latest: dict[tuple[str, int], UploadBatch] = {}
+        for batch in batch_rows:
+            key = (batch.ym, batch.project_id)
+            if key not in latest:
+                latest[key] = batch
+        return months, list(latest.values())
+
+    @staticmethod
+    def _dashboard_trends_from_rows(months, batches, data_by_batch) -> list[dict]:
+        """Month revenue/cost/profit series from already-loaded, grouped rows."""
+        batches_by_month: dict[str, list[UploadBatch]] = {}
+        for batch in batches:
+            batches_by_month.setdefault(batch.ym, []).append(batch)
+        result = []
+        for ym in reversed(months):
+            revenue = cost = profit = 0.0
+            for batch in batches_by_month.get(ym, []):
+                item = TortoiseAnalyticsRepository._monthly_item_from_data(
+                    batch,
+                    data_by_batch["settlement"].get(batch.id, []),
+                    data_by_batch["dynamic"].get(batch.id, []),
+                    data_by_batch["lease"].get(batch.id, []),
+                )
+                revenue += item["revenue"]
+                cost += item["cost"]
+                profit += item["profit"]
+            result.append({"ym": ym, "revenue": round(revenue, 2), "cost": round(cost, 2), "profit": round(profit, 2)})
+        return result
 
     @staticmethod
     def _profit_item(project, batch_map, profit_map, indicator_map, ym) -> dict:
@@ -674,13 +1013,40 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         project_query = Project.all()
         if project_ids is not None:
             project_query = project_query.filter(id__in=project_ids)
-        summary, profits, projects, trends, cost_composition = await asyncio.gather(
+        summary, projects = await asyncio.gather(
             self.project_summary(project_ids),
-            self.project_profits(None, Pagination(1, 10_000, max_size=10_000), project_ids),
             project_query.order_by("id"),
-            self.dashboard_trends(project_ids),
-            self.cost_composition(project_ids),
         )
+        pids = [p.id for p in projects]
+
+        # Latest successful batch per project (feeds profit items + cost
+        # composition) and the last-12-months batch set (feeds trends). Their
+        # union is read once so the big data tables are not materialized
+        # 2-3x per dashboard call.
+        latest_batch_map = await self._latest_batch_map(pids, None)
+        latest_batch_ids = [b.id for b in latest_batch_map.values()]
+        months, trend_batches = await self._load_trend_batches(project_ids)
+        trend_batch_ids = [b.id for b in trend_batches]
+
+        batch_ids = list(dict.fromkeys(latest_batch_ids + trend_batch_ids))
+        settlement_rows, dynamic_rows, lease_rows = await asyncio.gather(
+            DataSettlementOutput.filter(batch_id__in=batch_ids),
+            DataDynamicIndicator.filter(batch_id__in=batch_ids),
+            DataBudgetLease.filter(batch_id__in=batch_ids),
+        )
+        latest_batch_set = set(latest_batch_ids)
+
+        profit_map, indicator_map = self._profit_maps_from_rows(
+            settlement_rows, dynamic_rows, latest_batch_set
+        )
+        profit_items = [self._profit_item(p, latest_batch_map, profit_map, indicator_map, None) for p in projects]
+        trends = self._dashboard_trends_from_rows(
+            months,
+            trend_batches,
+            self._group_rows_by_batch(settlement_rows, dynamic_rows, lease_rows, set(trend_batch_ids)),
+        )
+        cost_composition = self._cost_composition_from_rows(dynamic_rows, latest_batch_set)
+
         status = [
             {
                 "id": p.id,
@@ -690,14 +1056,14 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             }
             for p in projects
         ]
-        total_profit = sum(item["current"]["profit"] for item in profits["projects"])
+        total_profit = sum(item["current"]["profit"] for item in profit_items)
         return {
             "summary": {**summary, "total_profit": round(total_profit, 2)},
             "project_status": status,
-            "profit_distribution": profits["projects"],
+            "profit_distribution": profit_items,
             "trends": trends,
             "cost_composition": cost_composition,
-            "health_radar": self._health_radar_from_data(projects, profits["projects"]),
+            "health_radar": self._health_radar_from_data(projects, profit_items),
         }
 
     async def dashboard_summary(self, project_ids: list[int] | None = None) -> dict:
@@ -777,10 +1143,10 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
                     "profit": 0,
                 }
             }
-        rates = [max(0, min(100, item["current"]["profit_rate"] * 5)) for item in profits]
+        rates = [max(0, min(100, (item["current"]["profit_rate"] or 0) * 5)) for item in profits]
 
-        def _avg(values):
-            return round(sum(values) / len(values), 2) if values else 0
+        def _avg(values: list[float]) -> float:
+            return round(sum(values) / len(values), 2) if values else 0.0
 
         warning_ratio = sum(p.status == ProjectStatus.WARNING for p in projects) / len(projects)
         progress = _avg([_number(p.progress) for p in projects])
@@ -799,39 +1165,11 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         }
 
     async def dashboard_trends(self, project_ids: list[int] | None = None) -> list[dict]:
-        base = UploadBatch.filter(status=UploadBatchStatus.SUCCESS)
-        if project_ids is not None:
-            base = base.filter(project_id__in=project_ids)
-        months = list(await base.order_by("-ym").distinct().values_list("ym", flat=True))[:12]
-        batch_rows = await base.filter(ym__in=months).order_by("ym", "project_id", "-id") if months else []
-        latest: dict[tuple[str, int], UploadBatch] = {}
-        for batch in batch_rows:
-            key = (batch.ym, batch.project_id)
-            if key not in latest:
-                latest[key] = batch
-        batches = list(latest.values())
+        months, batches = await self._load_trend_batches(project_ids)
         data_by_batch = await self._monthly_data_maps([batch.id for batch in batches])
-        batches_by_month: dict[str, list[UploadBatch]] = {}
-        for batch in batches:
-            batches_by_month.setdefault(batch.ym, []).append(batch)
-        result = []
-        for ym in reversed(months):
-            revenue = cost = profit = 0.0
-            for batch in batches_by_month.get(ym, []):
-                item = self._monthly_item_from_data(
-                    batch,
-                    data_by_batch["settlement"].get(batch.id, []),
-                    data_by_batch["dynamic"].get(batch.id, []),
-                    data_by_batch["lease"].get(batch.id, []),
-                )
-                revenue += item["revenue"]
-                cost += item["cost"]
-                profit += item["profit"]
-            result.append({"ym": ym, "revenue": round(revenue, 2), "cost": round(cost, 2), "profit": round(profit, 2)})
-        return result
+        return self._dashboard_trends_from_rows(months, batches, data_by_batch)
 
     async def cost_composition(self, project_ids: list[int] | None = None) -> list[dict]:
-        totals: dict[str, float] = {}
         query = Project.all()
         if project_ids is not None:
             query = query.filter(id__in=project_ids)
@@ -839,401 +1177,8 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
         batch_map = await self._latest_batch_map([project.id for project in projects], None)
         batch_ids = [batch.id for batch in batch_map.values()]
         rows = await DataDynamicIndicator.filter(batch_id__in=batch_ids) if batch_ids else []
-        for row in rows:
-            name = row.item_name or "未分类"
-            totals[name] = totals.get(name, 0.0) + _number(row.incurred_cost)
-        return [
-            {"name": name, "amount": round(amount, 2)}
-            for name, amount in sorted(totals.items(), key=lambda item: -item[1])
-        ]
+        return self._cost_composition_from_rows(rows, set(batch_ids))
 
-    async def notifications(
-        self, user_id: int, pagination: Pagination, unread_only: bool = False, project_ids: list[int] | None = None
-    ) -> dict:
-        query = Notification.filter(Q(user_id=user_id) | Q(user_id=None))
-        if project_ids is not None:
-            query = query.filter(Q(project_id__in=project_ids) | Q(project_id=None))
-        # 已读集合用子查询而非全量拉取 ID 列表（原实现每请求把全部可见通知
-        # 与全部已读 ID 拉进内存再做 exclude），通知量增长后不再线性膨胀。
-        # 注意：Tortoise 1.1.7 的 __in 不接受未求值的 QuerySet，必须用 Subquery 包装。
-        read_subquery = Subquery(
-            NotificationRead.filter(user_id=user_id).values_list("notification_id", flat=True)
-        )
-        unread = await query.exclude(id__in=read_subquery).count()
-        if unread_only:
-            query = query.exclude(id__in=read_subquery)
-        total = unread if unread_only else await query.count()
-        rows = await query.order_by("-id").offset(pagination.offset).limit(pagination.size)
-        read_ids = (
-            set(
-                await NotificationRead.filter(user_id=user_id, notification_id__in=[r.id for r in rows]).values_list(
-                    "notification_id", flat=True
-                )
-            )
-            if rows
-            else set()
-        )
-        return {
-            "notifications": [
-                {
-                    "id": row.id,
-                    "type": row.notification_type,
-                    "title": row.title,
-                    "message": row.message,
-                    "project_id": row.project_id,
-                    "is_read": row.id in read_ids,
-                    "created_at": row.created_at.isoformat(),
-                }
-                for row in rows
-            ],
-            "unread": unread,
-            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
-        }
-
-    async def create_notification(self, data: dict) -> dict:
-        async with self._tx.transaction():
-            if not data.get("title") or not data.get("message"):
-                raise ValidationError("title and message are required")
-            row = await Notification.create(
-                user_id=data.get("user_id"),
-                notification_type=data.get("type", "system"),
-                title=data["title"],
-                message=data["message"],
-                project_id=data.get("project_id"),
-            )
-            return {"id": row.id, "title": row.title}
-
-    async def mark_notification_read(self, user_id: int, notification_id: int) -> None:
-        async with self._tx.transaction():
-            exists = await Notification.filter(id=notification_id).filter(Q(user_id=user_id) | Q(user_id=None)).exists()
-            if not exists:
-                raise NotFoundError(f"notification {notification_id} not found")
-            await NotificationRead.get_or_create(
-                notification_id=notification_id,
-                user_id=user_id,
-            )
-
-    async def mark_all_notifications_read(self, user_id: int) -> int:
-        """Mark every notification visible to the user (own + broadcast) as read.
-
-        Returns the number of newly marked notifications (idempotent).
-        """
-        async with self._tx.transaction():
-            all_ids = list(await Notification.filter(Q(user_id=user_id) | Q(user_id=None)).values_list("id", flat=True))
-            if not all_ids:
-                return 0
-            read_ids = set(
-                await NotificationRead.filter(
-                    user_id=user_id,
-                    notification_id__in=all_ids,
-                ).values_list("notification_id", flat=True)
-            )
-            unread = [nid for nid in all_ids if nid not in read_ids]
-            if unread:
-                await NotificationRead.bulk_create(
-                    [NotificationRead(notification_id=nid, user_id=user_id) for nid in unread],
-                    ignore_conflicts=True,
-                )
-            return len(unread)
-
-    async def delete_notification(self, user_id: int, notification_id: int) -> None:
-        """Delete one of the user's OWN notifications.
-
-        Broadcast notifications (user_id NULL) and other users' notifications
-        are not deletable and surface as NotFoundError.
-        """
-        async with self._tx.transaction():
-            deleted = await Notification.filter(
-                id=notification_id,
-                user_id=user_id,
-            ).delete()
-            if not deleted:
-                raise NotFoundError(f"notification {notification_id} not found")
-            await NotificationRead.filter(
-                notification_id=notification_id,
-                user_id=user_id,
-            ).delete()
-
-    async def clear_notifications(self, user_id: int) -> int:
-        """Delete all of the user's OWN notifications; returns deleted count.
-
-        Broadcast notifications (user_id NULL) belong to everyone and are kept.
-        """
-        async with self._tx.transaction():
-            own_ids = list(
-                await Notification.filter(
-                    user_id=user_id,
-                ).values_list("id", flat=True)
-            )
-            if not own_ids:
-                return 0
-            await NotificationRead.filter(
-                notification_id__in=own_ids,
-                user_id=user_id,
-            ).delete()
-            return await Notification.filter(id__in=own_ids).delete()
-
-    async def ai_analysis(self, project_id: int, ym: str | None) -> dict:
-        project = await self._project(project_id)
-        profits = await self._profit_for(project_id, ym)
-        batch = await self._batch(project_id, ym)
-        monthly = await self._monthly_item(batch) if batch else None
-        # Repository helpers return numeric rates, but keep the API resilient to
-        # nullable/legacy rows: missing rates stay None so they are omitted from
-        # the summary instead of being reported as a misleading 0.00%.
-        rate = _number_or_none(profits.get("profit_rate"))
-        forecast_rate = _number_or_none(monthly.get("expected_complete_profit_rate")) if monthly else None
-        writeoff_rate = _number_or_none(monthly.get("write_off_rate")) if monthly else None
-        if rate is None:
-            health = "warning" if project.status == ProjectStatus.WARNING else "healthy"
-            summary = f"项目状态为 {project.status}。"
-        else:
-            health = "warning" if project.status == ProjectStatus.WARNING or rate < 10 else "healthy"
-            summary = f"当前毛利率为 {rate:.2f}%，项目状态为 {project.status}。"
-        if forecast_rate is not None:
-            summary += f"预计完工毛利率 {forecast_rate:.2f}%。"
-        if writeoff_rate is not None:
-            summary += f"租借核销率 {writeoff_rate:.2f}%。"
-        fallback: dict[str, Any] = {
-            "project_id": project_id,
-            "ym": profits["ym"],
-            "health": health,
-            "summary": summary,
-            "insights": [
-                {
-                    "type": "profit",
-                    "title": "毛利率表现",
-                    "message": (
-                        f"当前毛利 {profits['profit']:.2f}，毛利率 {rate:.2f}%"
-                        if rate is not None
-                        else f"当前毛利 {profits['profit']:.2f}，毛利率数据缺失"
-                    ),
-                },
-                {
-                    "type": "progress",
-                    "title": "项目进度",
-                    "message": f"当前项目进度 {float(project.progress):.2f}%",
-                },
-            ],
-            "recommendations": [
-                "持续跟踪实际成本与执行预算偏差",
-                "确保月度数据及时上传并完成异常项复核",
-            ],
-        }
-        if writeoff_rate is not None:
-            fallback["insights"].append(
-                {
-                    "type": "writeoff",
-                    "title": "租借核销进度",
-                    "message": f"当前核销率 {writeoff_rate:.2f}%",
-                }
-            )
-        if self._ai_provider:
-            try:
-                result = await self._ai_provider.analyze(
-                    {
-                        "project": {
-                            "id": project.id,
-                            "name": project.name,
-                            "status": project.status,
-                            "progress": float(project.progress),
-                        },
-                        "period": profits["ym"],
-                        "metrics": {**profits, "monthly": monthly},
-                    }
-                )
-            except Exception:
-                # 外部 AI 服务不可用时回退到本地确定性分析，而不是 500。
-                logger.exception("AI analysis provider failed for project %s; using fallback", project_id)
-                result = None
-            if result:
-                return {"project_id": project_id, "ym": profits["ym"], **result}
-        return fallback
-
-    async def compare_ai_analysis(self, project_ids: list[int] | None, ym: str | None) -> dict:
-        """Multi-project AI report: five chapters aligned with the comparison UI.
-
-        Uses the external provider when configured; otherwise falls back to the
-        deterministic domain report built from compare metrics + scores.
-        """
-        comparison = await self.compare_projects(project_ids, ym)
-        metrics = comparison["projects"]
-        generated_at = datetime.now().isoformat(timespec="seconds")
-        if self._ai_provider:
-            try:
-                result = await self._ai_provider.analyze(
-                    {
-                        "type": "project_comparison",
-                        "period": ym,
-                        "projects": metrics,
-                    }
-                )
-            except Exception:
-                # 外部 AI 服务不可用时回退到本地确定性五章报告，而不是 500。
-                logger.exception("AI analysis provider failed for comparison; using fallback")
-                result = None
-            if result:
-                return {"project_ids": project_ids, "ym": ym, "generated_at": generated_at, **result}
-        return {
-            "project_ids": project_ids,
-            "ym": ym,
-            "generated_at": generated_at,
-            "projects": [
-                {
-                    "project_id": p["project_id"],
-                    "project_name": p["project_name"],
-                    "total_score": p["total_score"],
-                    "grade": p["grade"],
-                }
-                for p in metrics
-            ],
-            "chapters": build_compare_report(metrics, ym),
-        }
-
-    async def global_search(
-        self, keyword: str, pagination: Pagination, project_ids: list[int] | None = None, include_users: bool = True
-    ) -> dict:
-        keyword = keyword.strip()
-        if not keyword:
-            return {"results": [], "pagination": {"page": pagination.page, "size": pagination.size, "total": 0}}
-        candidate_limit = pagination.offset + pagination.size
-        project_query = Project.filter(Q(name__icontains=keyword) | Q(code__icontains=keyword))
-        if project_ids is not None:
-            project_query = project_query.filter(id__in=project_ids)
-        if include_users:
-            user_query = User.filter(Q(real_name__icontains=keyword) | Q(email__icontains=keyword))
-            project_total, user_total, projects, users = await asyncio.gather(
-                project_query.count(),
-                user_query.count(),
-                project_query.order_by("name").limit(candidate_limit),
-                user_query.order_by("real_name", "id").limit(candidate_limit),
-            )
-        else:
-            users, user_total = [], 0
-            project_total = await project_query.count()
-            projects = await project_query.order_by("name").limit(candidate_limit)
-        reports = [
-            item for item in self._REPORT_CATALOG if keyword.lower() in (item["title"] + item["subtitle"]).lower()
-        ]
-        business_results, business_total = await self._business_search(
-            keyword,
-            project_ids,
-            candidate_limit,
-        )
-        all_results = (
-            [{"type": "project", "id": p.id, "title": p.name, "subtitle": p.code} for p in projects]
-            + [
-                {"type": "user", "id": u.id, "title": u.real_name or u.username, "subtitle": u.email or ""}
-                for u in users
-            ]
-            + reports
-            + business_results
-        )
-        all_results.sort(key=lambda item: (item["title"], item["type"], str(item["id"])))
-        total = project_total + user_total + len(reports) + business_total
-        return {
-            "results": all_results[pagination.offset : pagination.offset + pagination.size],
-            "pagination": {"page": pagination.page, "size": pagination.size, "total": total},
-        }
-
-    @staticmethod
-    async def _business_search(keyword: str, project_ids: list[int] | None, limit: int) -> tuple[list[dict], int]:
-        """Search parsed business data (materials / cost items / alerts).
-
-        Data rows are scoped to the latest successful batch of each in-scope
-        project so stale monthly batches do not produce duplicate hits.
-        """
-        batch_query = UploadBatch.filter(status=UploadBatchStatus.SUCCESS)
-        if project_ids is not None:
-            batch_query = batch_query.filter(project_id__in=project_ids)
-        batches = await batch_query.order_by("project_id", "-ym", "-id")
-        latest: dict[int, int] = {}
-        for b in batches:
-            latest.setdefault(b.project_id, b.id)
-        batch_ids = list(latest.values())
-        if not batch_ids:
-            return [], 0
-        latest_ids = set(latest.values())
-        batch_to_project = {b.id: b.project_id for b in batches if b.id in latest_ids}
-        project_names = {p.id: p.name for p in await Project.filter(id__in=latest.keys())}
-
-        alert_query = AlertModel.filter(Q(title__icontains=keyword) | Q(message__icontains=keyword))
-        if project_ids is not None:
-            alert_query = alert_query.filter(project_id__in=project_ids)
-
-        search_results = await asyncio.gather(
-            DataMaterialCost.filter(batch_id__in=batch_ids, budget_category__icontains=keyword).count(),
-            DataConstructionDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).count(),
-            DataInstallationDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).count(),
-            alert_query.count(),
-            DataMaterialCost.filter(batch_id__in=batch_ids, budget_category__icontains=keyword).limit(limit),
-            DataConstructionDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).limit(limit),
-            DataInstallationDynamic.filter(batch_id__in=batch_ids, project_name__icontains=keyword).limit(limit),
-            alert_query.order_by("-last_triggered_at").limit(limit),
-        )
-        mat_total = cast(int, search_results[0])
-        con_total = cast(int, search_results[1])
-        inst_total = cast(int, search_results[2])
-        alert_total = cast(int, search_results[3])
-        materials = cast(list[DataMaterialCost], search_results[4])
-        constructions = cast(list[DataConstructionDynamic], search_results[5])
-        installations = cast(list[DataInstallationDynamic], search_results[6])
-        alerts = cast(list[AlertModel], search_results[7])
-
-        results: list[dict] = []
-        seen: set[tuple[str, str]] = set()
-
-        def add(type_: str, row_id: int, title: str | None, subtitle: str) -> None:
-            if not title:
-                return
-            key = (type_, title)
-            if key in seen:
-                return
-            seen.add(key)
-            results.append({"type": type_, "id": row_id, "title": title, "subtitle": subtitle})
-
-        def project_of(row) -> str:
-            project_id = batch_to_project.get(int(row.batch_id))
-            return project_names.get(project_id, "") if project_id is not None else ""
-
-        for material in materials:
-            suffix = f" · {material.unit}" if material.unit else ""
-            add(
-                "material",
-                material.id,
-                material.budget_category,
-                f"{project_of(material)}{suffix}",
-            )
-        for construction in constructions:
-            add(
-                "cost_item",
-                construction.id,
-                construction.project_name,
-                f"{project_of(construction)} · 建筑工程",
-            )
-        for installation in installations:
-            add(
-                "cost_item",
-                installation.id,
-                installation.project_name,
-                f"{project_of(installation)} · 安装工程",
-            )
-        for alert in alerts:
-            add(
-                "alert",
-                alert.id,
-                alert.title,
-                f"{alert.level} · {alert.status}",
-            )
-        return results, mat_total + con_total + inst_total + alert_total
-
-    async def sync_status(self) -> dict:
-        latest = await UploadBatch.all().order_by("-created_at").first()
-        return {
-            "status": "ok",
-            "latest_month": latest.ym if latest else None,
-            "last_synced_at": latest.created_at.isoformat() if latest else None,
-        }
 
     async def _monthly_item(self, batch: UploadBatch) -> dict:
         settlement_rows, dynamic_rows, lease_rows = await asyncio.gather(
@@ -1252,9 +1197,7 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
     ) -> dict:
         indicators = settlement_indicator_map(settlement_rows)
         # 毛利数据自 表11 结算产值表读取（旧毛利 sheet 已随远端重构废弃）。
-        revenue = _settle(indicators, SETTLE_CUMULATIVE_OUTPUT, SETTLE_CONTRACT_PRICE)
-        profit = _settle(indicators, SETTLE_CURRENT_PROFIT)
-        cost = _settle(indicators, SETTLE_CUMULATIVE_COST) if indicators else revenue - profit
+        revenue, profit, cost = _settlement_core(indicators)
         # 预计完工组：回退约定与 _profit_item forecast 组一致。
         f_rev = _settle(indicators, SETTLE_FORECAST_REVENUE)
         f_prf = _settle(indicators, SETTLE_FORECAST_PROFIT)
@@ -1307,6 +1250,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "rental_cost": written_off if lease_rows else None,
             "rental_profit": rental_profit,
             "write_off_rate": (round(written_off / lease_total * 100, 2) if lease_total else None),
+            # Internal flag: whether any settlement rows exist, so callers can
+            # omit rates instead of reporting a fabricated 0.00%.
+            "_has_settlement": bool(indicators),
         }
 
     @staticmethod
@@ -1345,6 +1291,9 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             "ym": batch.ym if batch else ym,
             "profit": profit,
             "profit_rate": _settle_rate(indicators, SETTLE_CURRENT_PROFIT_RATE, profit, revenue),
+            # Internal flag: whether any settlement rows exist, so callers can
+            # omit rates instead of reporting a fabricated 0.00%.
+            "_has_settlement": bool(indicators),
         }
 
     @staticmethod
@@ -1371,14 +1320,3 @@ class TortoiseAnalyticsRepository(AnalyticsRepository):
             raise NotFoundError(f"project {project_id} not found")
         return project
 
-    @staticmethod
-    def _milestone(row) -> dict:
-        return {
-            "id": row.id,
-            "project_id": row.project_id,
-            "ym": row.ym,
-            "progress": _number(row.progress),
-            "title": row.title,
-            "description": row.description or "",
-            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
-        }

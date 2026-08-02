@@ -86,11 +86,19 @@ class HttpAIAnalysisProvider(AIAnalysisPort):
         # The URL is restricted to HTTP(S) above; Bandit's generic B310 warning
         # cannot infer that validation.
         with urlopen(request, timeout=60) as response:  # nosec B310
-            result = json.loads(response.read().decode("utf-8"))
+            raw = response.read().decode("utf-8")
+        try:
+            result = json.loads(raw)
+        except ValueError as exc:
+            # Do not embed the provider body: it may echo the project metrics
+            # payload, which would leak financial data into logs via the caller.
+            raise ValueError("AI provider returned a non-JSON response") from exc
         try:
             content = result["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise ValueError(f"AI provider returned an unexpected response: {str(result)[:200]}") from exc
+            # Only report the response shape, never its (possibly echo'd) values.
+            keys = sorted(result.keys()) if isinstance(result, dict) else type(result).__name__
+            raise ValueError(f"AI provider returned an unexpected response (keys: {keys})") from exc
         parsed_content = json.loads(content)
         if not isinstance(parsed_content, dict):
             raise ValueError("AI analysis provider must return a JSON object")

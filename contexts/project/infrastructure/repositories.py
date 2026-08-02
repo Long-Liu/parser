@@ -4,11 +4,13 @@ from typing import Any, cast
 
 # noinspection PyPackageRequirements
 from tortoise.expressions import Q
+
+# noinspection PyPackageRequirements
 from tortoise.functions import Max
 
 from contexts.auth.infrastructure.tables import Notification
 from contexts.auth.infrastructure.tables import User as OrmUser
-from contexts.parsing.domain.parse_job import UploadBatchStatus
+from contexts.shared.domain.upload_batch import UploadBatchStatus
 from contexts.parsing.infrastructure.data_cleanup import ParsedDataCleanup
 from contexts.parsing.infrastructure.tables import UploadBatch
 from contexts.project.domain.project import Project

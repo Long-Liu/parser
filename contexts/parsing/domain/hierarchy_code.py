@@ -30,6 +30,19 @@ MAX_CODE_LENGTH = 50
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
+# Compiled per-separator code patterns: the separator set comes from the
+# handful of YAML templates, so the cache is small and bounded in practice.
+_CODE_PATTERN_CACHE: dict[str, re.Pattern] = {}
+
+
+def _code_pattern(separator: str) -> re.Pattern:
+    """Return the compiled hierarchy-code pattern for a separator."""
+    pattern = _CODE_PATTERN_CACHE.get(separator)
+    if pattern is None:
+        pattern = re.compile(rf"^{_SEGMENT_RE}(?:{re.escape(separator)}{_SEGMENT_RE})*$")
+        _CODE_PATTERN_CACHE[separator] = pattern
+    return pattern
+
 
 def normalize_serial_text(value: Any) -> str | None:
     """Stringify a raw cell value into candidate serial text, or None."""
@@ -61,5 +74,4 @@ def parse_hierarchy_code(value: object, separator: str) -> str | None:
     text = text.rstrip(_TRAILING_PUNCT)
     if not text or len(text) > MAX_CODE_LENGTH:
         return None
-    pattern = rf"^{_SEGMENT_RE}(?:{re.escape(separator)}{_SEGMENT_RE})*$"
-    return text if re.match(pattern, text) else None
+    return text if _code_pattern(separator).match(text) else None

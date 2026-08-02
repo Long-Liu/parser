@@ -13,44 +13,12 @@ from uuid import uuid4
 from sanic import Sanic
 
 from contexts.analytics.interface.analytics_controller import AnalyticsController
+from contexts.auth.interface.notification_controller import NotificationController
 from contexts.auth.interface.request_context import RequestAuth
 from contexts.shared.domain.pagination import Pagination
 from contexts.shared.infrastructure.config import Settings
 from contexts.shared.interface.health_controller import bp as health_bp
-
-# ── minimal ASGI client ─────────────────────────────────────────────────────
-
-
-async def _asgi_get(app, path: str):
-    status: dict = {}
-    body = bytearray()
-
-    async def receive():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    async def send(message):
-        if message["type"] == "http.response.start":
-            status["code"] = message["status"]
-        elif message["type"] == "http.response.body":
-            body.extend(message.get("body", b""))
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "root_path": "",
-        "headers": [],
-        "client": ("127.0.0.1", 12345),
-        "server": ("127.0.0.1", 80),
-    }
-    await app(scope, receive, send)
-    return status.get("code"), bytes(body)
-
+from tests.asgi_client import get as _asgi_get
 
 # ── /health ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +86,15 @@ class FakeAlertService:
         return {"alerts": [], "pagination": {}}
 
 
+class FakeNotificationService:
+    def __init__(self):
+        self.calls = {}
+
+    async def notifications(self, *args):
+        self.calls["notifications"] = args
+        return {"notifications": [], "unread": 0, "pagination": {}}
+
+
 def _controller():
     analytics = FakeAnalyticsService()
     alerts = FakeAlertService()
@@ -126,6 +103,15 @@ def _controller():
         AnalyticsController(analytics, SimpleNamespace(), alerts),
         analytics,
         alerts,
+    )
+
+
+def _notification_controller():
+    notifications = FakeNotificationService()
+    # noinspection PyTypeChecker
+    return (
+        NotificationController(notifications, SimpleNamespace()),
+        notifications,
     )
 
 
@@ -140,12 +126,12 @@ def _request(**args):
 
 
 async def test_notifications_passes_pagination_object():
-    controller, analytics, _ = _controller()
+    controller, notifications = _notification_controller()
     request = _request(page="2", size="5", unread_only="true")
 
-    response = await _unwrap(AnalyticsController.notifications)(controller, request)
+    response = await _unwrap(NotificationController.notifications)(controller, request)
 
-    user_id, pagination, unread_only, project_ids = analytics.calls["notifications"]
+    user_id, pagination, unread_only, project_ids = notifications.calls["notifications"]
     assert user_id == 7
     assert isinstance(pagination, Pagination)
     assert (pagination.page, pagination.size) == (2, 5)

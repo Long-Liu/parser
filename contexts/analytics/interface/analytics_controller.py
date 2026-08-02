@@ -14,10 +14,14 @@ from contexts.analytics.infrastructure.xlsx_export import (
     build_compare_workbook,
     build_cost_categories_workbook,
     build_month_comparison_workbook,
+    build_project_export_workbook,
     build_profits_workbook,
     content_disposition,
 )
-from contexts.auth.application.project_access import ProjectAccessPolicy
+from contexts.auth.application.project_access import (
+    ProjectAccessPolicy,
+    resolve_project_scope,
+)
 from contexts.auth.interface.auth_middleware import (
     require_auth,
     require_permission,
@@ -32,6 +36,11 @@ from contexts.shared.interface.controller_helpers import pagination_from
 
 # 导出全量上限：项目/科目数量级远低于此值，等价于全量导出。
 _EXPORT_PAGE = Pagination(1, 10_000, max_size=10_000)
+
+
+def _project_ids_from_query(raw_ids: str) -> list[int]:
+    """Parse a comma-separated project_ids query value ('' -> [])."""
+    return [int(v) for v in raw_ids.split(",") if v.strip()]
 
 
 async def _xlsx(workbook: Workbook, filename: str, fallback: str):
@@ -64,28 +73,17 @@ class AnalyticsController(BaseController):
 
     async def _project_scope(self, request, requested: list[int] | None = None) -> list[int] | None:
         auth = current_auth(request)
-        permissions = set(auth.permissions)
-        if ProjectAccessPolicy.has_elevated_permission(permissions):
-            return requested
-        accessible = set(await self.access_policy.accessible_project_ids(UserId(auth.user_id)))
-        if requested is None:
-            return sorted(accessible)
-        denied = set(requested) - accessible
-        if denied:
-            from contexts.shared.domain.exceptions import AuthorizationError
-
-            raise AuthorizationError(f"no access to projects: {sorted(denied)}")
-        return requested
+        return await resolve_project_scope(
+            self.access_policy,
+            UserId(auth.user_id),
+            set(auth.permissions),
+            requested,
+        )
 
     def setup(self):
         r = self.bp.add_route
         r(self.summary, "/projects/summary", methods=["GET"])
         r(self.monthly_data, "/projects/<project_id:int>/monthly-data", methods=["GET"])
-        r(self.project_progress, "/projects/<project_id:int>/progress", methods=["GET"])
-        r(self.milestones, "/projects/<project_id:int>/milestones", methods=["GET"])
-        r(self.create_milestone, "/projects/<project_id:int>/milestones", methods=["POST"])
-        r(self.update_milestone, "/projects/<project_id:int>/milestones/<milestone_id:int>", methods=["PUT"])
-        r(self.delete_milestone, "/projects/<project_id:int>/milestones/<milestone_id:int>", methods=["DELETE"])
         r(self.cost_details, "/projects/<project_id:int>/cost-details", methods=["GET"])
         r(self.project_analysis, "/projects/<project_id:int>/analysis", methods=["GET"])
         r(self.month_comparison, "/projects/<project_id:int>/month-comparison", methods=["POST"])
@@ -101,9 +99,6 @@ class AnalyticsController(BaseController):
         r(self.dashboard_health, "/dashboard/health", methods=["GET"])
         r(self.dashboard_status, "/dashboard/project-status", methods=["GET"])
         r(self.dashboard_alerts, "/dashboard/alerts", methods=["GET"])
-        r(self.notifications, "/notifications", methods=["GET"])
-        r(self.create_notification, "/notifications", methods=["POST"])
-        r(self.mark_read, "/notifications/<notification_id:int>/read", methods=["PUT"])
         r(self.ai_analysis, "/projects/<project_id:int>/ai-analysis", methods=["POST"])
         r(self.global_search, "/search", methods=["GET"])
         r(self.sync_status, "/system/sync-status", methods=["GET"])
@@ -114,9 +109,6 @@ class AnalyticsController(BaseController):
         r(self.export_month_comparison, "/projects/<project_id:int>/month-comparison/export", methods=["GET"])
         r(self.export_compare, "/projects/compare/export", methods=["GET"])
         r(self.compare_ai_analysis, "/projects/compare/ai-analysis", methods=["POST"])
-        r(self.mark_all_read, "/notifications/read-all", methods=["POST"])
-        r(self.delete_notification, "/notifications/<notification_id:int>", methods=["DELETE"])
-        r(self.clear_notifications, "/notifications", methods=["DELETE"])
 
     # ── project endpoints ──────────────────────────────────────────────
 
@@ -130,49 +122,6 @@ class AnalyticsController(BaseController):
     @require_project_access()
     async def monthly_data(self, request, project_id: int):
         return self.json(await self.analytics_svc.monthly_data(project_id, pagination_from(request)))
-
-    @require_auth
-    @require_permission("project:view")
-    @require_project_access()
-    async def project_progress(self, request, project_id: int):
-        return self.json(await self.analytics_svc.project_progress(project_id, pagination_from(request)))
-
-    @require_auth
-    @require_permission("project:view")
-    @require_project_access()
-    async def milestones(self, request, project_id: int):
-        return self.json(await self.analytics_svc.milestones(project_id, pagination_from(request)))
-
-    @require_auth
-    @require_permission("project:create")
-    @require_project_access(roles={"manager"})
-    async def create_milestone(self, request, project_id: int):
-        try:
-            return self.json(await self.analytics_svc.create_milestone(project_id, request.json or {}), status=201)
-        except ValueError:
-            raise ValidationError("invalid milestone values") from None
-
-    @require_auth
-    @require_permission("project:create")
-    @require_project_access(roles={"manager"})
-    async def update_milestone(self, request, project_id: int, milestone_id: int):
-        try:
-            return self.json(
-                await self.analytics_svc.update_milestone(
-                    project_id,
-                    milestone_id,
-                    request.json or {},
-                )
-            )
-        except ValueError:
-            raise ValidationError("invalid milestone values") from None
-
-    @require_auth
-    @require_permission("project:create")
-    @require_project_access(roles={"manager"})
-    async def delete_milestone(self, _request, project_id: int, milestone_id: int):
-        await self.analytics_svc.delete_milestone(project_id, milestone_id)
-        return self.json_ok()
 
     @require_auth
     @require_permission("data:view")
@@ -218,8 +167,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     async def cost_categories(self, request):
         try:
-            raw_ids = request.args.get("project_ids", "")
-            ids = [int(v) for v in raw_ids.split(",") if v.strip()]
+            ids = _project_ids_from_query(request.args.get("project_ids", ""))
             ids = await self._project_scope(request, ids or None)
             return self.json(
                 await self.analytics_svc.cost_categories(
@@ -247,7 +195,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:view")
     async def budget_lease_writeoffs(self, request):
         try:
-            ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v.strip()]
+            ids = _project_ids_from_query(request.args.get("project_ids", ""))
             ids = await self._project_scope(request, ids or None)
         except ValueError:
             raise ValidationError("invalid project_ids") from None
@@ -303,30 +251,6 @@ class AnalyticsController(BaseController):
         )
         return self.json(result)
 
-    # ── notification endpoints ──────────────────────────────────────────
-
-    @require_auth
-    async def notifications(self, request):
-        p = pagination_from(request)
-        return self.json(
-            await self.analytics_svc.notifications(
-                current_auth(request).user_id,
-                p,
-                request.args.get("unread_only", "false").lower() == "true",
-                await self._project_scope(request),
-            )
-        )
-
-    @require_auth
-    @require_permission("user:manage")
-    async def create_notification(self, request):
-        return self.json(await self.analytics_svc.create_notification(request.json or {}), status=201)
-
-    @require_auth
-    async def mark_read(self, request, notification_id: int):
-        await self.analytics_svc.mark_notification_read(current_auth(request).user_id, notification_id)
-        return self.json_ok()
-
     # ── misc ────────────────────────────────────────────────────────────
 
     @require_auth
@@ -349,6 +273,7 @@ class AnalyticsController(BaseController):
         )
 
     @require_auth
+    @require_permission("data:view")
     async def sync_status(self, _request):
         return self.json(await self.analytics_svc.sync_status())
 
@@ -366,7 +291,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:export")
     async def export_costs(self, request):
         try:
-            ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v.strip()]
+            ids = _project_ids_from_query(request.args.get("project_ids", ""))
             ids = await self._project_scope(request, ids or None)
             ym = request.args.get("ym")
             result = await self.analytics_svc.cost_categories(ids, ym, _EXPORT_PAGE)
@@ -379,7 +304,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:export")
     async def export_budget_lease_writeoffs(self, request):
         try:
-            ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v.strip()]
+            ids = _project_ids_from_query(request.args.get("project_ids", ""))
             ids = await self._project_scope(request, ids or None)
             ym = request.args.get("ym")
             result = await self.analytics_svc.budget_lease_writeoffs(
@@ -401,23 +326,7 @@ class AnalyticsController(BaseController):
     @require_project_access()
     async def export_project(self, request, project_id: int):
         result = await self.analytics_svc.project_analysis(project_id, request.args.get("ym"))
-
-        def build() -> Workbook:
-            workbook = Workbook()
-            overview = workbook.active
-            assert overview is not None
-            overview.title = "项目概览"
-            for k, v in result["project"].items():
-                overview.append([k, v])
-            costs = workbook.create_sheet("成本明细")
-            costs.append(["科目", "指标", "实际", "偏差", "偏差率"])
-            for item in result["cost_categories"]:
-                costs.append(
-                    [item["name"], item["indicator"], item["actual"], item["deviation"], item["deviation_rate"]]
-                )
-            return workbook
-
-        wb = await asyncio.to_thread(build)
+        wb = await asyncio.to_thread(build_project_export_workbook, result)
         return await _xlsx(wb, "项目导出_" + result["project"]["name"] + ".xlsx", f"project-{project_id}.xlsx")
 
     @require_auth
@@ -434,7 +343,7 @@ class AnalyticsController(BaseController):
     @require_permission("data:export")
     async def export_compare(self, request):
         try:
-            ids = [int(v) for v in request.args.get("project_ids", "").split(",") if v.strip()]
+            ids = _project_ids_from_query(request.args.get("project_ids", ""))
             ids = await self._project_scope(request, ids or None)
             ym = request.args.get("ym")
             result = await self.analytics_svc.compare_projects(ids, ym)
@@ -454,18 +363,3 @@ class AnalyticsController(BaseController):
         return self.json(
             await self.analytics_svc.compare_ai_analysis(await self._project_scope(request, ids), body.get("ym"))
         )
-
-    @require_auth
-    async def mark_all_read(self, request):
-        marked = await self.analytics_svc.mark_all_notifications_read(current_auth(request).user_id)
-        return self.json({"ok": True, "marked": marked})
-
-    @require_auth
-    async def delete_notification(self, request, notification_id: int):
-        await self.analytics_svc.delete_notification(current_auth(request).user_id, notification_id)
-        return self.json_ok()
-
-    @require_auth
-    async def clear_notifications(self, request):
-        deleted = await self.analytics_svc.clear_notifications(current_auth(request).user_id)
-        return self.json({"ok": True, "deleted": deleted})

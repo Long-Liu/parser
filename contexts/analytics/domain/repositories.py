@@ -53,23 +53,6 @@ class AnalyticsRepository(ABC):
         project_ids: list[int] | None = None,
     ) -> dict: ...
 
-    # ── milestones / progress ───────────────────────────────────────
-
-    @abstractmethod
-    async def milestones(self, project_id: int, pagination: Pagination) -> dict: ...
-
-    @abstractmethod
-    async def project_progress(self, project_id: int, pagination: Pagination) -> dict: ...
-
-    @abstractmethod
-    async def create_milestone(self, project_id: int, data: dict) -> dict: ...
-
-    @abstractmethod
-    async def update_milestone(self, project_id: int, milestone_id: int, data: dict) -> dict: ...
-
-    @abstractmethod
-    async def delete_milestone(self, project_id: int, milestone_id: int) -> None: ...
-
     # ── dashboard ───────────────────────────────────────────────────
 
     @abstractmethod
@@ -93,28 +76,6 @@ class AnalyticsRepository(ABC):
 
     @abstractmethod
     async def cost_composition(self, project_ids: list[int] | None = None) -> list[dict]: ...
-
-    # ── notifications ───────────────────────────────────────────────
-
-    @abstractmethod
-    async def notifications(
-        self, user_id: int, pagination: Pagination, unread_only: bool = False, project_ids: list[int] | None = None
-    ) -> dict: ...
-
-    @abstractmethod
-    async def create_notification(self, data: dict) -> dict: ...
-
-    @abstractmethod
-    async def mark_notification_read(self, user_id: int, notification_id: int) -> None: ...
-
-    @abstractmethod
-    async def mark_all_notifications_read(self, user_id: int) -> int: ...
-
-    @abstractmethod
-    async def delete_notification(self, user_id: int, notification_id: int) -> None: ...
-
-    @abstractmethod
-    async def clear_notifications(self, user_id: int) -> int: ...
 
     # ── misc ────────────────────────────────────────────────────────
 

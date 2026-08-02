@@ -8,59 +8,16 @@ garbage NULL-name rows excluded).
 """
 
 from decimal import Decimal
-from itertools import count
 
 import pytest
-
-# noinspection PyPackageRequirements
-from tortoise import Tortoise
 
 from contexts.analytics.domain.hierarchy import resolve_hierarchy_paths
 from contexts.analytics.infrastructure.analytics_repository import (
     TortoiseAnalyticsRepository,
 )
-from contexts.parsing.infrastructure.tables import UploadBatch
-from contexts.project.infrastructure.tables import Project
 from contexts.shared.domain.pagination import Pagination
-
-# noinspection PyProtectedMember
-from contexts.shared.infrastructure.database.engine import _MODEL_MODULES
 from contexts.shared.infrastructure.database.tables import DataDynamicIndicator
-
-
-@pytest.fixture
-async def db():
-    await Tortoise.init(
-        db_url="sqlite://:memory:",
-        modules={"models": list(_MODEL_MODULES)},
-    )
-    await Tortoise.generate_schemas()
-    yield
-    await Tortoise.close_connections()
-
-
-_seq = count(1)
-
-
-async def make_project() -> Project:
-    n = next(_seq)
-    return await Project.create(
-        code=f"H{int(n):04d}",
-        name=f"层级项目{n}",
-        contract_price=Decimal("1000"),
-        progress=Decimal("50"),
-        status="normal",
-    )
-
-
-async def make_batch(project_id: int, ym: str = "2026-07") -> UploadBatch:
-    return await UploadBatch.create(
-        batch_no=f"H{int(next(_seq)):06d}",
-        project_id=project_id,
-        ym=ym,
-        file_name="cost.xlsx",
-        status="success",
-    )
+from tests.analytics_factories import make_batch, make_project
 
 
 # ── pure resolver ────────────────────────────────────────────────────

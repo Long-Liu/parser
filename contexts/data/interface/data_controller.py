@@ -106,7 +106,7 @@ class DataController(BaseController):
     async def update(self, request, template_id: str, row_id: int):
         auth = current_auth(request)
         permissions = set(auth.permissions)
-        if "admin:roles" not in permissions and "user:manage" not in permissions:
+        if not ProjectAccessPolicy.has_elevated_permission(permissions):
             await self.access_policy.require_data_row(
                 UserId(auth.user_id),
                 template_id,

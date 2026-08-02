@@ -5,8 +5,9 @@ from sanic_ext import openapi
 
 from contexts.auth.application.auth_app_service import AuthApplicationService
 from contexts.auth.application.dto import LoginCommand, RegisterCommand
+from contexts.auth.application.login_throttle import LoginThrottler
 from contexts.auth.application.user_app_service import UserApplicationService
-from contexts.auth.interface.auth_middleware import require_auth, require_permission
+from contexts.auth.interface.auth_middleware import require_auth
 from contexts.auth.interface.request_context import current_auth
 from contexts.auth.interface.request_services import RequestServices
 from contexts.shared.domain.exceptions import AuthenticationError
@@ -16,10 +17,16 @@ from contexts.shared.interface.base_controller import BaseController
 class AuthController(BaseController):
     name = "auth"
 
-    def __init__(self, auth_svc: AuthApplicationService, user_svc: UserApplicationService):
+    def __init__(
+        self,
+        auth_svc: AuthApplicationService,
+        user_svc: UserApplicationService,
+        login_throttler: LoginThrottler | None = None,
+    ):
         super().__init__()
         self.auth_svc = auth_svc
         self.user_svc = user_svc
+        self._throttler = login_throttler or LoginThrottler()
 
     def setup(self):
         self.bp.add_route(self.login, "/auth/login", methods=["POST"])
@@ -32,9 +39,19 @@ class AuthController(BaseController):
     @openapi.summary("Login")
     async def login(self, request):
         data = request.json or {}
-        result = await self.auth_svc.login(
-            LoginCommand(username=data.get("username", ""), password=data.get("password", ""))
-        )
+        username = data.get("username", "")
+        ip = getattr(request, "ip", "") or ""
+        # Brute-force protection: 429 while locked out, failed attempts counted,
+        # cleared on success.
+        self._throttler.check(username, ip)
+        try:
+            result = await self.auth_svc.login(
+                LoginCommand(username=username, password=data.get("password", ""))
+            )
+        except AuthenticationError:
+            self._throttler.register_failure(username, ip)
+            raise
+        self._throttler.reset(username, ip)
         return self.json(
             {
                 "token": result.token,
@@ -74,10 +91,12 @@ class AuthController(BaseController):
         return self.json(await self.user_svc.get(current_auth(request).user_id))
 
     @require_auth
-    @require_permission("user:manage")
     @openapi.tag("Auth")
-    @openapi.summary("Change own password (admin only)")
+    @openapi.summary("Change own password (self-service, verifies current password)")
     async def change_password(self, request):
+        # Self-service: any authenticated user may rotate their own password;
+        # the application service verifies the current password and revokes the
+        # user's existing tokens.
         data = request.json or {}
         await self.auth_svc.change_password(
             user_id=current_auth(request).user_id,

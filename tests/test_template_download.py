@@ -124,7 +124,9 @@ def _fake_request(token: str | None = "good-token"):
 
 
 def _controller() -> TemplatesController:
-    controller = TemplatesController(TemplateApplicationService(YamlTemplateCatalog()))
+    controller = TemplatesController(
+        TemplateApplicationService(YamlTemplateCatalog(), build_template_workbook)
+    )
     controller.setup()
     return controller
 

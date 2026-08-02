@@ -1,17 +1,28 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from contexts.shared.domain.exceptions import NotFoundError
 from contexts.shared.domain.identifiers import TemplateId
 from contexts.shared.domain.pagination import Pagination
 from contexts.template.domain.repositories import TemplateCatalog
-from contexts.template.infrastructure.xlsx_template_builder import (
-    build_template_workbook,
-)
+from contexts.template.domain.template import Template
+
+
+class TemplateWorkbookBuilder(Protocol):
+    """Renders a template's .xlsx skeleton to bytes.
+
+    Implemented by the infrastructure openpyxl builder; injected so the
+    application layer does not depend on infrastructure (composition root
+    adapts)."""
+
+    def __call__(self, template: Template) -> bytes: ...
 
 
 class TemplateApplicationService:
-    def __init__(self, repo: TemplateCatalog) -> None:
+    def __init__(self, repo: TemplateCatalog, workbook_builder: TemplateWorkbookBuilder) -> None:
         self._repo = repo
+        self._builder = workbook_builder
 
     async def list_all(self, pagination: Pagination) -> dict:
         templates = await self._repo.find_all_active()
@@ -47,4 +58,4 @@ class TemplateApplicationService:
         if not t:
             raise NotFoundError(f"template {template_id} not found")
         filename = f"{t.description or template_id}.xlsx"
-        return build_template_workbook(t), filename
+        return self._builder(t), filename

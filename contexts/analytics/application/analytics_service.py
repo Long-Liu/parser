@@ -61,23 +61,6 @@ class AnalyticsApplicationService:
             project_ids,
         )
 
-    # ── milestones / progress ───────────────────────────────────────
-
-    async def milestones(self, project_id: int, pagination: Pagination) -> dict:
-        return await self._repository.milestones(project_id, pagination)
-
-    async def project_progress(self, project_id: int, pagination: Pagination) -> dict:
-        return await self._repository.project_progress(project_id, pagination)
-
-    async def create_milestone(self, project_id: int, data: dict) -> dict:
-        return await self._repository.create_milestone(project_id, data)
-
-    async def update_milestone(self, project_id: int, milestone_id: int, data: dict) -> dict:
-        return await self._repository.update_milestone(project_id, milestone_id, data)
-
-    async def delete_milestone(self, project_id: int, milestone_id: int) -> None:
-        return await self._repository.delete_milestone(project_id, milestone_id)
-
     # ── dashboard ───────────────────────────────────────────────────
 
     async def dashboard(self, project_ids: list[int] | None = None) -> dict:
@@ -101,28 +84,6 @@ class AnalyticsApplicationService:
 
     async def cost_composition(self, project_ids: list[int] | None = None) -> list[dict]:
         return await self._repository.cost_composition(project_ids)
-
-    # ── notifications ───────────────────────────────────────────────
-
-    async def notifications(
-        self, user_id: int, pagination: Pagination, unread_only: bool = False, project_ids: list[int] | None = None
-    ) -> dict:
-        return await self._repository.notifications(user_id, pagination, unread_only, project_ids)
-
-    async def create_notification(self, data: dict) -> dict:
-        return await self._repository.create_notification(data)
-
-    async def mark_notification_read(self, user_id: int, notification_id: int) -> None:
-        return await self._repository.mark_notification_read(user_id, notification_id)
-
-    async def mark_all_notifications_read(self, user_id: int) -> int:
-        return await self._repository.mark_all_notifications_read(user_id)
-
-    async def delete_notification(self, user_id: int, notification_id: int) -> None:
-        return await self._repository.delete_notification(user_id, notification_id)
-
-    async def clear_notifications(self, user_id: int) -> int:
-        return await self._repository.clear_notifications(user_id)
 
     # ── misc ────────────────────────────────────────────────────────
 

@@ -25,14 +25,19 @@ def worksheet_to_grid(ws) -> tuple[list[list], list[MergedCellRange]]:
     # while retaining merged-range edges required by CellUnmerger.
     # noinspection PyProtectedMember
     populated = [cell for cell in ws._cells.values() if cell.value is not None]
-    max_row = max(
-        [cell.row for cell in populated] + [item.max_row + 1 for item in ranges],
-        default=0,
-    )
-    max_col = max(
-        [cell.column for cell in populated] + [item.max_col + 1 for item in ranges],
-        default=0,
-    )
+    populated_max_row = max([cell.row for cell in populated], default=0)
+    populated_max_col = max([cell.column for cell in populated], default=0)
+    populated_pos = {(cell.row, cell.column) for cell in populated}
+    # Only merged ranges whose value cell is actually populated are retained
+    # when computing grid bounds. A format-only merge (empty value) has nothing
+    # to fill, so its edge must not inflate the grid — a styled merge spanning
+    # to row 65536 would otherwise materialize ~65k rows for the stop-detection
+    # pass to walk.
+    retained_ranges = [
+        item for item in ranges if (item.min_row + 1, item.min_col + 1) in populated_pos
+    ]
+    max_row = max([populated_max_row] + [item.max_row + 1 for item in retained_ranges])
+    max_col = max([populated_max_col] + [item.max_col + 1 for item in retained_ranges])
     if max_row == 0 or max_col == 0:
         return [], ranges
     grid = [

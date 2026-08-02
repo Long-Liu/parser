@@ -20,3 +20,11 @@ class AuthenticationError(DomainError):
 
 class AuthorizationError(DomainError):
     """Insufficient permissions."""
+
+
+class TooManyRequestsError(DomainError):
+    """Request rate limit or lockout exceeded (HTTP 429)."""
+
+    def __init__(self, message: str = "too many requests", *, retry_after: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
